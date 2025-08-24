@@ -1,0 +1,26 @@
+{
+  "name": "trontiq-stripe-api-minimal",
+  "version": "1.0.0",
+  "description": "Minimal Stripe payment API for Trontiq extension",
+  "main": "deploy-minimal.js",
+  "scripts": {
+    "start": "node deploy-minimal.js",
+    "dev": "nodemon deploy-minimal.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "stripe": "^14.0.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["stripe", "payment", "subscription", "trontiq"],
+  "author": "Trontiq",
+  "license": "MIT"
+}
