@@ -129,7 +129,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
                     paymentMethodTypes = ['card', 'apple_pay'];
                     break;
                 case 'googlepay':
-                    paymentMethodTypes = ['card', 'google_pay'];
+                    paymentMethodTypes = ['card']; // Google Pay is handled by Stripe automatically
                     break;
                 case 'link':
                     paymentMethodTypes = ['card', 'link'];
