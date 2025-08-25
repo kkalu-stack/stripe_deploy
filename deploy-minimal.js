@@ -63,16 +63,94 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Success page endpoint
+app.get('/success', (req, res) => {
+    const sessionId = req.query.session_id;
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Payment Successful - Trontiq</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                .success { color: green; font-size: 24px; }
+                .btn { background: #667eea; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <div class="success">✅ Payment Successful!</div>
+            <p>Your Trontiq Pro subscription has been activated.</p>
+            <button class="btn" onclick="window.close()">Close</button>
+            <script>
+                if (sessionId) {
+                    console.log('Payment successful:', sessionId);
+                }
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+// Cancel page endpoint
+app.get('/cancel', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Payment Cancelled - Trontiq</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                .cancel { color: red; font-size: 24px; }
+                .btn { background: #667eea; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <div class="cancel">❌ Payment Cancelled</div>
+            <p>Your payment was cancelled. You can try again anytime.</p>
+            <button class="btn" onclick="window.close()">Close</button>
+        </body>
+        </html>
+    `);
+});
+
 // Create checkout session (no user data required)
 app.post('/api/create-checkout-session', async (req, res) => {
     try {
-        const { priceId, successUrl, cancelUrl } = req.body;
+        const { priceId, successUrl, cancelUrl, paymentMethod } = req.body;
 
-        console.log('Creating checkout session');
+        console.log('Creating checkout session with:', { priceId, successUrl, cancelUrl, paymentMethod });
+
+        // Configure payment method types based on selection
+        let paymentMethodTypes = ['card'];
+        
+        if (paymentMethod) {
+            switch (paymentMethod) {
+                case 'applepay':
+                    paymentMethodTypes = ['card', 'apple_pay'];
+                    break;
+                case 'googlepay':
+                    paymentMethodTypes = ['card', 'google_pay'];
+                    break;
+                case 'link':
+                    paymentMethodTypes = ['card', 'link'];
+                    break;
+                case 'amazonpay':
+                    paymentMethodTypes = ['card', 'amazon_pay'];
+                    break;
+                case 'cashapp':
+                    paymentMethodTypes = ['card', 'cashapp'];
+                    break;
+                default:
+                    paymentMethodTypes = ['card'];
+            }
+        }
+
+        // Use hardcoded base URL
+        const baseUrl = 'https://stripe-deploy.onrender.com';
 
         // Create Stripe checkout session without storing user data
         const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
+            payment_method_types: paymentMethodTypes,
             line_items: [
                 {
                     price: priceId, // Your $4.99/month price ID
@@ -80,8 +158,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
                 },
             ],
             mode: 'subscription',
-            success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: cancelUrl,
+            success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${baseUrl}/cancel`,
             // Store minimal metadata in Stripe session
             metadata: {
                 created_at: new Date().toISOString()
@@ -184,9 +262,12 @@ app.post('/api/create-portal-session', async (req, res) => {
     try {
         const { customerId } = req.body;
         
+        // Use hardcoded base URL
+        const baseUrl = 'https://stripe-deploy.onrender.com';
+        
         const session = await stripe.billingPortal.sessions.create({
             customer: customerId,
-            return_url: `${process.env.FRONTEND_URL || 'https://your-extension-domain.com'}/dashboard`,
+            return_url: `${baseUrl}/account`,
         });
         
         res.json({ url: session.url });
