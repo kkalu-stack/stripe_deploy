@@ -594,6 +594,55 @@ app.get('/api/test-delete', (req, res) => {
     res.json({ message: 'Delete endpoint test - working!' });
 });
 
+// Test Supabase auth connection
+app.get('/api/test-auth-delete', async (req, res) => {
+    try {
+        console.log('🔗 Testing Supabase auth connection...');
+        console.log('🔗 Supabase URL:', process.env.SUPABASE_URL);
+        console.log('🔑 Service role key exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+        
+        // Test the auth endpoint
+        const testResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users`, {
+            method: 'GET',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('📡 Test response status:', testResponse.status);
+        
+        if (!testResponse.ok) {
+            const errorText = await testResponse.text();
+            console.error('❌ Test error response:', errorText);
+            return res.json({ 
+                success: false, 
+                error: `HTTP ${testResponse.status}: ${errorText}`,
+                url: `${process.env.SUPABASE_URL}/auth/v1/admin/users`
+            });
+        }
+        
+        const users = await testResponse.json();
+        console.log('✅ Supabase auth connection successful');
+        
+        res.json({ 
+            success: true, 
+            message: 'Supabase auth connection working',
+            userCount: users.length,
+            sampleUsers: users.slice(0, 3).map(u => ({ id: u.id, email: u.email }))
+        });
+        
+    } catch (error) {
+        console.error('❌ Test auth connection error:', error);
+        res.json({ 
+            success: false, 
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
 // Delete user account endpoint
 app.post('/api/delete-account', async (req, res) => {
     try {
@@ -640,6 +689,10 @@ app.post('/api/delete-account', async (req, res) => {
         
         // 3. Delete user from Supabase auth
         try {
+            console.log('🗑️ Attempting to delete user from Supabase auth:', userId);
+            console.log('🔗 Supabase URL:', process.env.SUPABASE_URL);
+            console.log('🔑 Service role key exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+            
             const deleteResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
                 method: 'DELETE',
                 headers: {
@@ -649,14 +702,21 @@ app.post('/api/delete-account', async (req, res) => {
                 }
             });
             
+            console.log('📡 Supabase delete response status:', deleteResponse.status);
+            
             if (!deleteResponse.ok) {
-                throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText}`);
+                const errorText = await deleteResponse.text();
+                console.error('❌ Supabase delete error response:', errorText);
+                throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText} - ${errorText}`);
             }
             
             console.log('✅ User deleted from Supabase auth');
         } catch (authError) {
             console.error('❌ Error deleting user from auth:', authError);
-            return res.status(500).json({ error: 'Failed to delete user account' });
+            return res.status(500).json({ 
+                error: 'Failed to delete user account',
+                details: authError.message 
+            });
         }
         
         // 4. Log the deletion for audit purposes
@@ -680,7 +740,11 @@ app.post('/api/delete-account', async (req, res) => {
         
     } catch (error) {
         console.error('❌ Error in delete account endpoint:', error);
-        res.status(500).json({ error: 'Failed to delete account' });
+        res.status(500).json({ 
+            error: 'Failed to delete account',
+            details: error.message,
+            stack: error.stack
+        });
     }
 });
 
