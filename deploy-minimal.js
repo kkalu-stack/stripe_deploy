@@ -591,6 +591,8 @@ app.post('/api/create-portal-session', async (req, res) => {
 
 
 
+
+
 // Error handling middleware
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
