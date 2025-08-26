@@ -17,6 +17,33 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     process.exit(1);
 }
 
+// Helper function to handle subscription creation errors
+function handleSubscriptionCreationError(createError, res) {
+    console.error('❌ Error creating free tier subscription:', createError);
+    
+    // Check if it's a foreign key constraint error
+    if (createError.code === '23503') {
+        console.log('⚠️ User does not exist in auth.users table, returning free tier status');
+        // Return free tier status without creating record
+        res.json({
+            status: 'free',
+            tokens_used: 0,
+            tokens_limit: 50,
+            is_unlimited: false,
+            current_period_end: null
+        });
+    } else {
+        // Other error - fallback to free tier response
+        res.json({
+            status: 'free',
+            tokens_used: 0,
+            tokens_limit: 50,
+            is_unlimited: false,
+            current_period_end: null
+        });
+    }
+}
+
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
     const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
