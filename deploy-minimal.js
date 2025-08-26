@@ -77,6 +77,56 @@ const SECURITY_CONFIG = {
 app.use(helmet());
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
 app.use(cors(SECURITY_CONFIG.cors));
+
+// Webhook handler for Stripe events (MUST come before JSON parsing middleware)
+app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event;
+
+    try {
+        event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        console.log('Webhook event received:', event.type);
+    } catch (err) {
+        console.error('Webhook signature verification failed:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle the event with Supabase database operations
+    switch (event.type) {
+        case 'checkout.session.completed':
+            await handleCheckoutCompleted(event.data.object);
+            break;
+            
+        case 'customer.subscription.created':
+            await handleSubscriptionCreated(event.data.object);
+            break;
+            
+        case 'customer.subscription.updated':
+            await handleSubscriptionUpdated(event.data.object);
+            break;
+            
+        case 'customer.subscription.deleted':
+            await handleSubscriptionDeleted(event.data.object);
+            break;
+            
+        case 'invoice.payment_succeeded':
+            await handlePaymentSucceeded(event.data.object);
+            break;
+            
+        case 'invoice.payment_failed':
+            await handlePaymentFailed(event.data.object);
+            break;
+            
+        default:
+            console.log(`Unhandled event type: ${event.type}`);
+    }
+
+    res.json({ received: true });
+});
+
+// JSON parsing middleware (MUST come after webhook handler)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true })); // Add this for form data
 
@@ -490,53 +540,7 @@ app.post('/api/create-portal-session', async (req, res) => {
     }
 });
 
-// Webhook handler for Stripe events (no user data storage)
-app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-    let event;
-
-    try {
-        event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-        console.log('Webhook event received:', event.type);
-    } catch (err) {
-        console.error('Webhook signature verification failed:', err.message);
-        return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-
-    // Handle the event with Supabase database operations
-    switch (event.type) {
-        case 'checkout.session.completed':
-            await handleCheckoutCompleted(event.data.object);
-            break;
-            
-        case 'customer.subscription.created':
-            await handleSubscriptionCreated(event.data.object);
-            break;
-            
-        case 'customer.subscription.updated':
-            await handleSubscriptionUpdated(event.data.object);
-            break;
-            
-        case 'customer.subscription.deleted':
-            await handleSubscriptionDeleted(event.data.object);
-            break;
-            
-        case 'invoice.payment_succeeded':
-            await handlePaymentSucceeded(event.data.object);
-            break;
-            
-        case 'invoice.payment_failed':
-            await handlePaymentFailed(event.data.object);
-            break;
-            
-        default:
-            console.log(`Unhandled event type: ${event.type}`);
-    }
-
-    res.json({ received: true });
-});
 
 // Error handling middleware
 app.use((error, req, res, next) => {
