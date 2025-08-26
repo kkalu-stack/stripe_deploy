@@ -589,9 +589,100 @@ app.post('/api/create-portal-session', async (req, res) => {
     }
 });
 
+// Test endpoint
+app.get('/api/test-delete', (req, res) => {
+    res.json({ message: 'Delete endpoint test - working!' });
+});
 
-
-
+// Delete user account endpoint
+app.post('/api/delete-account', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ error: 'User ID is required' });
+        }
+        
+        console.log('🗑️ Deleting user account:', userId);
+        
+        // 1. Cancel any active Stripe subscription
+        try {
+            const subscriptionResponse = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&status=eq.active`, {
+                method: 'GET'
+            });
+            
+            if (subscriptionResponse && subscriptionResponse.length > 0) {
+                const subscription = subscriptionResponse[0];
+                if (subscription.stripe_subscription_id) {
+                    console.log('🔄 Canceling Stripe subscription:', subscription.stripe_subscription_id);
+                    
+                    // Cancel the subscription in Stripe
+                    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+                    await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
+                    
+                    console.log('✅ Stripe subscription canceled');
+                }
+            }
+        } catch (stripeError) {
+            console.error('⚠️ Error canceling Stripe subscription:', stripeError);
+            // Continue with account deletion even if Stripe cancellation fails
+        }
+        
+        // 2. Delete user subscription record
+        try {
+            await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
+                method: 'DELETE'
+            });
+            console.log('✅ User subscription record deleted');
+        } catch (subscriptionError) {
+            console.error('⚠️ Error deleting subscription record:', subscriptionError);
+        }
+        
+        // 3. Delete user from Supabase auth
+        try {
+            const deleteResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+                method: 'DELETE',
+                headers: {
+                    'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!deleteResponse.ok) {
+                throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText}`);
+            }
+            
+            console.log('✅ User deleted from Supabase auth');
+        } catch (authError) {
+            console.error('❌ Error deleting user from auth:', authError);
+            return res.status(500).json({ error: 'Failed to delete user account' });
+        }
+        
+        // 4. Log the deletion for audit purposes
+        try {
+            await supabaseRequest('privacy_audit_log', {
+                method: 'POST',
+                body: {
+                    user_id: userId,
+                    action: 'account_deleted',
+                    details: 'User account permanently deleted',
+                    timestamp: new Date().toISOString()
+                }
+            });
+            console.log('✅ Deletion logged in audit log');
+        } catch (auditError) {
+            console.error('⚠️ Error logging deletion:', auditError);
+        }
+        
+        console.log('✅ Account deletion completed successfully');
+        res.json({ success: true, message: 'Account deleted successfully' });
+        
+    } catch (error) {
+        console.error('❌ Error in delete account endpoint:', error);
+        res.status(500).json({ error: 'Failed to delete account' });
+    }
+});
 
 // Error handling middleware
 app.use((error, req, res, next) => {
@@ -793,101 +884,6 @@ async function handlePaymentFailed(invoice) {
         console.error('Error updating failed payment in Supabase:', error);
     }
 }
-
-// Test endpoint
-app.get('/api/test-delete', (req, res) => {
-    res.json({ message: 'Delete endpoint test - working!' });
-});
-
-// Delete user account endpoint
-app.post('/api/delete-account', async (req, res) => {
-    try {
-        const { userId } = req.body;
-        
-        if (!userId) {
-            return res.status(400).json({ error: 'User ID is required' });
-        }
-        
-        console.log('🗑️ Deleting user account:', userId);
-        
-        // 1. Cancel any active Stripe subscription
-        try {
-            const subscriptionResponse = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&status=eq.active`, {
-                method: 'GET'
-            });
-            
-            if (subscriptionResponse && subscriptionResponse.length > 0) {
-                const subscription = subscriptionResponse[0];
-                if (subscription.stripe_subscription_id) {
-                    console.log('🔄 Canceling Stripe subscription:', subscription.stripe_subscription_id);
-                    
-                    // Cancel the subscription in Stripe
-                    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-                    await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
-                    
-                    console.log('✅ Stripe subscription canceled');
-                }
-            }
-        } catch (stripeError) {
-            console.error('⚠️ Error canceling Stripe subscription:', stripeError);
-            // Continue with account deletion even if Stripe cancellation fails
-        }
-        
-        // 2. Delete user subscription record
-        try {
-            await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
-                method: 'DELETE'
-            });
-            console.log('✅ User subscription record deleted');
-        } catch (subscriptionError) {
-            console.error('⚠️ Error deleting subscription record:', subscriptionError);
-        }
-        
-        // 3. Delete user from Supabase auth
-        try {
-            const deleteResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-                method: 'DELETE',
-                headers: {
-                    'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
-                    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (!deleteResponse.ok) {
-                throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText}`);
-            }
-            
-            console.log('✅ User deleted from Supabase auth');
-        } catch (authError) {
-            console.error('❌ Error deleting user from auth:', authError);
-            return res.status(500).json({ error: 'Failed to delete user account' });
-        }
-        
-        // 4. Log the deletion for audit purposes
-        try {
-            await supabaseRequest('privacy_audit_log', {
-                method: 'POST',
-                body: {
-                    user_id: userId,
-                    action: 'account_deleted',
-                    details: 'User account permanently deleted',
-                    timestamp: new Date().toISOString()
-                }
-            });
-            console.log('✅ Deletion logged in audit log');
-        } catch (auditError) {
-            console.error('⚠️ Error logging deletion:', auditError);
-        }
-        
-        console.log('✅ Account deletion completed successfully');
-        res.json({ success: true, message: 'Account deleted successfully' });
-        
-    } catch (error) {
-        console.error('❌ Error in delete account endpoint:', error);
-        res.status(500).json({ error: 'Failed to delete account' });
-    }
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
