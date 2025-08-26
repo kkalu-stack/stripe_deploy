@@ -8,8 +8,14 @@ const helmet = require('helmet');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Supabase configuration for direct HTTP requests
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vlsolqjzzelultbrpmis.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZsc29scWp6emVsdWx0YnJwbWlzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTIxNjAzNSwiZXhwIjoyMDcwNzkyMDM1fQ.lC9nTJSv6tOecSjb0vwJPIB38Jt-4X9mNnMD3N_UZaw';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Validate required environment variables
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('❌ Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+    process.exit(1);
+}
 
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
