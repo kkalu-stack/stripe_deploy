@@ -507,6 +507,10 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
 
     // Handle the event with Supabase database operations
     switch (event.type) {
+        case 'checkout.session.completed':
+            await handleCheckoutCompleted(event.data.object);
+            break;
+            
         case 'customer.subscription.created':
             await handleSubscriptionCreated(event.data.object);
             break;
@@ -546,6 +550,62 @@ app.use('*', (req, res) => {
 });
 
 // Webhook handler functions for Supabase integration
+
+async function handleCheckoutCompleted(session) {
+    try {
+        console.log('🔄 Handling checkout completed:', session.id);
+        
+        // Get subscription details from Stripe
+        const subscription = await stripe.subscriptions.retrieve(session.subscription);
+        console.log('📦 Subscription details:', subscription.id, subscription.status);
+        
+        // Get customer details from Stripe
+        const customer = await stripe.customers.retrieve(subscription.customer);
+        console.log('👤 Customer details:', customer.email);
+        
+        // Find user by email in Supabase
+        try {
+            const users = await supabaseRequest('auth/users', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+                }
+            });
+            
+            const user = users.find(u => u.email === customer.email);
+            if (!user) {
+                console.log('❌ No user found for email:', customer.email);
+                return;
+            }
+            
+            console.log('✅ Found user:', user.id);
+            
+            // Update or create subscription record
+            await supabaseRequest('user_subscriptions', {
+                method: 'POST',
+                body: {
+                    user_id: user.id,
+                    stripe_subscription_id: subscription.id,
+                    stripe_customer_id: subscription.customer,
+                    status: subscription.status,
+                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+                    tokens_limit: -1, // Unlimited for Pro
+                    tokens_used: 0, // Reset token usage
+                    updated_at: new Date().toISOString()
+                }
+            });
+            
+            console.log('✅ Subscription record created/updated for user:', user.id);
+            
+        } catch (supabaseError) {
+            console.error('❌ Error saving subscription to Supabase:', supabaseError);
+        }
+        
+    } catch (error) {
+        console.error('❌ Error handling checkout completed:', error);
+    }
+}
 
 async function handleSubscriptionCreated(subscription) {
     try {
