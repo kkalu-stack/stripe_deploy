@@ -294,6 +294,38 @@ app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
     }
 });
 
+// Update token usage in Supabase
+app.post('/api/update-token-usage', async (req, res) => {
+    try {
+        const { userId, tokensUsed } = req.body;
+        
+        if (!userId || tokensUsed === undefined) {
+            return res.status(400).json({ error: 'Missing userId or tokensUsed' });
+        }
+        
+        // Update token usage in Supabase
+        const { data, error } = await supabase
+            .from('user_subscriptions')
+            .update({
+                tokens_used: tokensUsed,
+                updated_at: new Date().toISOString()
+            })
+            .eq('user_id', userId);
+            
+        if (error) {
+            console.error('Error updating token usage in Supabase:', error);
+            return res.status(500).json({ error: 'Failed to update token usage' });
+        }
+        
+        console.log('✅ Token usage updated for user:', userId, 'tokens:', tokensUsed);
+        res.json({ success: true, tokensUsed });
+        
+    } catch (error) {
+        console.error('Error updating token usage:', error);
+        res.status(500).json({ error: 'Failed to update token usage' });
+    }
+});
+
 // Create customer portal session (for subscription management)
 app.post('/api/create-portal-session', async (req, res) => {
     try {
