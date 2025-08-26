@@ -154,12 +154,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
 
         console.log('Checkout session created:', session.id);
         
-        // Return JSON response with checkout URL for client-side handling
-        return res.json({ 
-            success: true, 
-            url: session.url,
-            sessionId: session.id
-        });
+        // Redirect directly to Stripe's checkout page (official Stripe approach)
+        return res.redirect(303, session.url);
         
     } catch (error) {
         console.error('Error creating checkout session:', error);
