@@ -206,6 +206,11 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Simple test endpoint
+app.get('/api/simple-test', (req, res) => {
+    res.json({ message: 'Simple test endpoint working!' });
+});
+
 // Test Supabase connection
 app.get('/api/test-supabase', async (req, res) => {
     try {
