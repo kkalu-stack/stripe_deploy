@@ -687,6 +687,16 @@ app.post('/api/delete-account', async (req, res) => {
             console.error('⚠️ Error deleting subscription record:', subscriptionError);
         }
         
+        // 2.5. Delete privacy audit log records for this user
+        try {
+            await supabaseRequest(`privacy_audit_log?user_id=eq.${userId}`, {
+                method: 'DELETE'
+            });
+            console.log('✅ Privacy audit log records deleted');
+        } catch (auditDeleteError) {
+            console.error('⚠️ Error deleting audit log records:', auditDeleteError);
+        }
+        
         // 3. Delete user from Supabase auth
         try {
             console.log('🗑️ Attempting to delete user from Supabase auth:', userId);
@@ -719,22 +729,7 @@ app.post('/api/delete-account', async (req, res) => {
             });
         }
         
-        // 4. Log the deletion for audit purposes
-        try {
-            await supabaseRequest('privacy_audit_log', {
-                method: 'POST',
-                body: {
-                    user_id: userId,
-                    action: 'account_deleted',
-                    details: 'User account permanently deleted',
-                    timestamp: new Date().toISOString()
-                }
-            });
-            console.log('✅ Deletion logged in audit log');
-        } catch (auditError) {
-            console.error('⚠️ Error logging deletion:', auditError);
-        }
-        
+        // 4. Log the deletion for audit purposes (removed to avoid foreign key constraint)
         console.log('✅ Account deletion completed successfully');
         res.json({ success: true, message: 'Account deleted successfully' });
         
