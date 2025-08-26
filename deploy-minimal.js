@@ -44,6 +44,7 @@ app.use(helmet());
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
 app.use(cors(SECURITY_CONFIG.cors));
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true })); // Add this for form data
 
 // Add security headers
 app.use((req, res, next) => {
@@ -116,41 +117,21 @@ app.get('/cancel', (req, res) => {
 // Create checkout session (no user data required)
 app.post('/api/create-checkout-session', async (req, res) => {
     try {
-        const { priceId, successUrl, cancelUrl, paymentMethod } = req.body;
+        // Handle both JSON and form data
+        const priceId = req.body.priceId;
 
-        console.log('Creating checkout session with:', { priceId, successUrl, cancelUrl, paymentMethod });
-
-        // Configure payment method types based on selection
-        let paymentMethodTypes = ['card'];
-        
-        if (paymentMethod) {
-            switch (paymentMethod) {
-                case 'applepay':
-                    paymentMethodTypes = ['card', 'apple_pay'];
-                    break;
-                case 'googlepay':
-                    paymentMethodTypes = ['card']; // Google Pay is handled by Stripe automatically
-                    break;
-                case 'link':
-                    paymentMethodTypes = ['card', 'link'];
-                    break;
-                case 'amazonpay':
-                    paymentMethodTypes = ['card', 'amazon_pay'];
-                    break;
-                case 'cashapp':
-                    paymentMethodTypes = ['card', 'cashapp'];
-                    break;
-                default:
-                    paymentMethodTypes = ['card'];
-            }
+        if (!priceId) {
+            return res.status(400).json({ error: 'Price ID is required' });
         }
+
+        console.log('Creating Stripe Prebuilt Checkout session for price:', priceId);
 
         // Use hardcoded base URL
         const baseUrl = 'https://stripe-deploy.onrender.com';
 
-        // Create Stripe checkout session without storing user data
+        // Create Stripe checkout session for Prebuilt Checkout
         const session = await stripe.checkout.sessions.create({
-            payment_method_types: paymentMethodTypes,
+            payment_method_types: ['card', 'apple_pay', 'google_pay', 'link', 'klarna'],
             line_items: [
                 {
                     price: priceId, // Your $4.99/month price ID
@@ -160,6 +141,16 @@ app.post('/api/create-checkout-session', async (req, res) => {
             mode: 'subscription',
             success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${baseUrl}/cancel`,
+            // Enable all the features you want
+            allow_promotion_codes: true,
+            automatic_tax: {
+                enabled: true
+            },
+            customer_update: {
+                address: 'auto',
+                name: 'auto',
+                shipping: 'auto'
+            },
             // Store minimal metadata in Stripe session
             metadata: {
                 created_at: new Date().toISOString()
@@ -167,7 +158,10 @@ app.post('/api/create-checkout-session', async (req, res) => {
         });
 
         console.log('Checkout session created:', session.id);
-        res.json({ sessionId: session.id });
+        
+        // Redirect directly to Stripe's checkout page (official Stripe approach)
+        return res.redirect(303, session.url);
+        
     } catch (error) {
         console.error('Error creating checkout session:', error);
         res.status(500).json({ error: 'Failed to create checkout session', details: error.message });
