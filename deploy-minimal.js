@@ -787,6 +787,11 @@ async function handlePaymentFailed(invoice) {
     }
 }
 
+// Test endpoint
+app.get('/api/test-delete', (req, res) => {
+    res.json({ message: 'Delete endpoint test - working!' });
+});
+
 // Delete user account endpoint
 app.post('/api/delete-account', async (req, res) => {
     try {
