@@ -7,13 +7,33 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-// Supabase client for database operations
-const { createClient } = require('@supabase/supabase-js');
+// Supabase configuration for direct HTTP requests
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vlsolqjzzelultbrpmis.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZsc29scWp6emVsdWx0YnJwbWlzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTIxNjAzNSwiZXhwIjoyMDcwNzkyMDM1fQ.lC9nTJSv6tOecSjb0vwJPIB38Jt-4X9mNnMD3N_UZaw';
 
-const supabase = createClient(
-    process.env.SUPABASE_URL || 'https://vlsolqjzzelultbrpmis.supabase.co',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZsc29scWp6emVsdWx0YnJwbWlzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTIxNjAzNSwiZXhwIjoyMDcwNzkyMDM1fQ.lC9nTJSv6tOecSjb0vwJPIB38Jt-4X9mNnMD3N_UZaw'
-);
+// Helper function to make Supabase requests
+async function supabaseRequest(endpoint, options = {}) {
+    const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+    const headers = {
+        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+    
+    const response = await fetch(url, {
+        method: options.method || 'GET',
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: `HTTP error! status: ${response.status}` }));
+        throw error;
+    }
+    
+    return response.json();
+}
 
 const app = express();
 
@@ -240,14 +260,31 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
         const { userId } = req.params;
         
         // Get subscription from Supabase
-        const { data, error } = await supabase
-            .from('user_subscriptions')
-            .select('*')
-            .eq('user_id', userId)
-            .single();
+        try {
+            const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
             
-        if (error) {
-            if (error.code === 'PGRST116') {
+            if (data && data.length > 0) {
+                const subscription = data[0];
+                res.json({
+                    status: subscription.status,
+                    tokens_used: subscription.tokens_used || 0,
+                    tokens_limit: subscription.tokens_limit,
+                    is_unlimited: subscription.tokens_limit === -1,
+                    current_period_end: subscription.current_period_end,
+                    stripe_subscription_id: subscription.stripe_subscription_id
+                });
+            } else {
+                // No subscription found, return free tier
+                res.json({
+                    status: 'free',
+                    tokens_used: 0,
+                    tokens_limit: 50,
+                    is_unlimited: false,
+                    current_period_end: null
+                });
+            }
+        } catch (supabaseError) {
+            if (supabaseError.message && supabaseError.message.includes('404')) {
                 // No subscription found, return free tier
                 return res.json({
                     status: 'free',
@@ -257,17 +294,8 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                     current_period_end: null
                 });
             }
-            throw error;
+            throw supabaseError;
         }
-        
-        res.json({
-            status: data.status,
-            tokens_used: data.tokens_used || 0,
-            tokens_limit: data.tokens_limit,
-            is_unlimited: data.tokens_limit === -1,
-            current_period_end: data.current_period_end,
-            stripe_subscription_id: data.stripe_subscription_id
-        });
     } catch (error) {
         console.error('Error retrieving subscription from Supabase:', error);
         res.status(500).json({ error: 'Failed to retrieve subscription' });
@@ -304,24 +332,19 @@ app.post('/api/update-token-usage', async (req, res) => {
         }
         
         // Update token usage in Supabase
-        const { data, error } = await supabase
-            .from('user_subscriptions')
-            .update({
+        await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
+            method: 'PATCH',
+            body: {
                 tokens_used: tokensUsed,
                 updated_at: new Date().toISOString()
-            })
-            .eq('user_id', userId);
-            
-        if (error) {
-            console.error('Error updating token usage in Supabase:', error);
-            return res.status(500).json({ error: 'Failed to update token usage' });
-        }
+            }
+        });
         
         console.log('✅ Token usage updated for user:', userId, 'tokens:', tokensUsed);
         res.json({ success: true, tokensUsed });
         
     } catch (error) {
-        console.error('Error updating token usage:', error);
+        console.error('Error updating token usage in Supabase:', error);
         res.status(500).json({ error: 'Failed to update token usage' });
     }
 });
@@ -410,37 +433,40 @@ async function handleSubscriptionCreated(subscription) {
         // Get customer details from Stripe
         const customer = await stripe.customers.retrieve(subscription.customer);
         
-        // Find user by email in Supabase
-        const { data: users, error: userError } = await supabase.auth.admin.listUsers();
-        if (userError) {
-            console.error('Error fetching users:', userError);
-            return;
-        }
-        
-        const user = users.users.find(u => u.email === customer.email);
-        if (!user) {
-            console.log('No user found for email:', customer.email);
-            return;
-        }
-        
-        // Insert or update subscription record
-        const { data, error } = await supabase
-            .from('user_subscriptions')
-            .upsert({
-                user_id: user.id,
-                stripe_subscription_id: subscription.id,
-                stripe_customer_id: subscription.customer,
-                status: subscription.status,
-                current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-                current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                tokens_limit: -1, // Unlimited for Pro
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'stripe_subscription_id' });
+        // Find user by email in Supabase (using direct HTTP request)
+        try {
+            const users = await supabaseRequest('auth/users', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+                }
+            });
             
-        if (error) {
-            console.error('Error saving subscription to Supabase:', error);
-        } else {
+            const user = users.find(u => u.email === customer.email);
+            if (!user) {
+                console.log('No user found for email:', customer.email);
+                return;
+            }
+            
+            // Insert or update subscription record
+            await supabaseRequest('user_subscriptions', {
+                method: 'POST',
+                body: {
+                    user_id: user.id,
+                    stripe_subscription_id: subscription.id,
+                    stripe_customer_id: subscription.customer,
+                    status: subscription.status,
+                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+                    tokens_limit: -1, // Unlimited for Pro
+                    updated_at: new Date().toISOString()
+                }
+            });
+            
             console.log('✅ Subscription saved to Supabase for user:', user.id);
+            
+        } catch (supabaseError) {
+            console.error('Error saving subscription to Supabase:', supabaseError);
         }
         
     } catch (error) {
@@ -452,25 +478,21 @@ async function handleSubscriptionUpdated(subscription) {
     try {
         console.log('🔄 Handling subscription updated:', subscription.id);
         
-        // Update subscription record
-        const { data, error } = await supabase
-            .from('user_subscriptions')
-            .update({
+        // Update subscription record using PATCH request
+        await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
+            method: 'PATCH',
+            body: {
                 status: subscription.status,
                 current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
                 current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
                 updated_at: new Date().toISOString()
-            })
-            .eq('stripe_subscription_id', subscription.id);
-            
-        if (error) {
-            console.error('Error updating subscription in Supabase:', error);
-        } else {
-            console.log('✅ Subscription updated in Supabase');
-        }
+            }
+        });
+        
+        console.log('✅ Subscription updated in Supabase');
         
     } catch (error) {
-        console.error('Error handling subscription updated:', error);
+        console.error('Error updating subscription in Supabase:', error);
     }
 }
 
@@ -479,23 +501,19 @@ async function handleSubscriptionDeleted(subscription) {
         console.log('🔄 Handling subscription deleted:', subscription.id);
         
         // Update subscription status to canceled
-        const { data, error } = await supabase
-            .from('user_subscriptions')
-            .update({
+        await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
+            method: 'PATCH',
+            body: {
                 status: 'canceled',
                 tokens_limit: 50, // Back to free tier
                 updated_at: new Date().toISOString()
-            })
-            .eq('stripe_subscription_id', subscription.id);
-            
-        if (error) {
-            console.error('Error updating deleted subscription in Supabase:', error);
-        } else {
-            console.log('✅ Subscription marked as canceled in Supabase');
-        }
+            }
+        });
+        
+        console.log('✅ Subscription marked as canceled in Supabase');
         
     } catch (error) {
-        console.error('Error handling subscription deleted:', error);
+        console.error('Error updating deleted subscription in Supabase:', error);
     }
 }
 
@@ -524,23 +542,19 @@ async function handlePaymentFailed(invoice) {
         
         // Update subscription status to past_due
         if (invoice.subscription) {
-            const { data, error } = await supabase
-                .from('user_subscriptions')
-                .update({
+            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${invoice.subscription}`, {
+                method: 'PATCH',
+                body: {
                     status: 'past_due',
                     updated_at: new Date().toISOString()
-                })
-                .eq('stripe_subscription_id', invoice.subscription);
-                
-            if (error) {
-                console.error('Error updating failed payment in Supabase:', error);
-            } else {
-                console.log('✅ Payment failure recorded in Supabase');
-            }
+                }
+            });
+            
+            console.log('✅ Payment failure recorded in Supabase');
         }
         
     } catch (error) {
-        console.error('Error handling payment failed:', error);
+        console.error('Error updating failed payment in Supabase:', error);
     }
 }
 
