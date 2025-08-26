@@ -131,7 +131,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
 
         // Create Stripe checkout session for Prebuilt Checkout
         const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card', 'apple_pay', 'google_pay', 'link', 'klarna'],
+            payment_method_types: ['card'],
             line_items: [
                 {
                     price: priceId, // Your $4.99/month price ID
