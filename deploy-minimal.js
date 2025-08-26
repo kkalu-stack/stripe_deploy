@@ -146,11 +146,6 @@ app.post('/api/create-checkout-session', async (req, res) => {
             automatic_tax: {
                 enabled: true
             },
-            customer_update: {
-                address: 'auto',
-                name: 'auto',
-                shipping: 'auto'
-            },
             // Store minimal metadata in Stripe session
             metadata: {
                 created_at: new Date().toISOString()
