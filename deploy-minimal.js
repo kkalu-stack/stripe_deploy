@@ -280,27 +280,90 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                     stripe_subscription_id: subscription.stripe_subscription_id
                 });
             } else {
-                // No subscription found, return free tier
-                res.json({
-                    status: 'free',
-                    tokens_used: 0,
-                    tokens_limit: 50,
-                    is_unlimited: false,
-                    current_period_end: null
-                });
+                // Create free tier subscription record for new user
+                try {
+                    await supabaseRequest('user_subscriptions', {
+                        method: 'POST',
+                        body: {
+                            user_id: userId,
+                            status: 'free',
+                            tokens_used: 0,
+                            tokens_limit: 50,
+                            stripe_subscription_id: null,
+                            stripe_customer_id: null,
+                            current_period_start: null,
+                            current_period_end: null,
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        }
+                    });
+                    
+                    console.log('✅ Created free tier subscription for user:', userId);
+                    
+                    // Return free tier status
+                    res.json({
+                        status: 'free',
+                        tokens_used: 0,
+                        tokens_limit: 50,
+                        is_unlimited: false,
+                        current_period_end: null
+                    });
+                } catch (createError) {
+                    console.error('Error creating free tier subscription:', createError);
+                    // Fallback to free tier response
+                    res.json({
+                        status: 'free',
+                        tokens_used: 0,
+                        tokens_limit: 50,
+                        is_unlimited: false,
+                        current_period_end: null
+                    });
+                }
             }
         } catch (supabaseError) {
             if (supabaseError.message && supabaseError.message.includes('404')) {
-                // No subscription found, return free tier
-                return res.json({
-                    status: 'free',
-                    tokens_used: 0,
-                    tokens_limit: 50,
-                    is_unlimited: false,
-                    current_period_end: null
-                });
+                // Create free tier subscription record for new user
+                try {
+                    await supabaseRequest('user_subscriptions', {
+                        method: 'POST',
+                        body: {
+                            user_id: userId,
+                            status: 'free',
+                            tokens_used: 0,
+                            tokens_limit: 50,
+                            stripe_subscription_id: null,
+                            stripe_customer_id: null,
+                            current_period_start: null,
+                            current_period_end: null,
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        }
+                    });
+                    
+                    console.log('✅ Created free tier subscription for user:', userId);
+                    
+                    // Return free tier status
+                    res.json({
+                        status: 'free',
+                        tokens_used: 0,
+                        tokens_limit: 50,
+                        is_unlimited: false,
+                        current_period_end: null
+                    });
+                } catch (createError) {
+                    console.error('Error creating free tier subscription:', createError);
+                    // Fallback to free tier response
+                    res.json({
+                        status: 'free',
+                        tokens_used: 0,
+                        tokens_limit: 50,
+                        is_unlimited: false,
+                        current_period_end: null
+                    });
+                }
+            } else {
+                throw supabaseError;
             }
-            throw supabaseError;
         }
     } catch (error) {
         console.error('Error retrieving subscription from Supabase:', error);
@@ -352,6 +415,58 @@ app.post('/api/update-token-usage', async (req, res) => {
     } catch (error) {
         console.error('Error updating token usage in Supabase:', error);
         res.status(500).json({ error: 'Failed to update token usage' });
+    }
+});
+
+// Create subscription record for existing user (admin endpoint)
+app.post('/api/create-subscription-record', async (req, res) => {
+    try {
+        const { userId, status = 'free' } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ error: 'Missing userId' });
+        }
+        
+        // Check if subscription record already exists
+        try {
+            const existingData = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+            
+            if (existingData && existingData.length > 0) {
+                return res.json({ 
+                    success: true, 
+                    message: 'Subscription record already exists',
+                    subscription: existingData[0]
+                });
+            }
+        } catch (error) {
+            // Continue to create new record
+        }
+        
+        // Create new subscription record
+        const subscriptionData = {
+            user_id: userId,
+            status: status,
+            tokens_used: 0,
+            tokens_limit: status === 'active' ? -1 : 50,
+            stripe_subscription_id: null,
+            stripe_customer_id: null,
+            current_period_start: null,
+            current_period_end: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+        
+        await supabaseRequest('user_subscriptions', {
+            method: 'POST',
+            body: subscriptionData
+        });
+        
+        console.log('✅ Created subscription record for user:', userId, 'status:', status);
+        res.json({ success: true, subscription: subscriptionData });
+        
+    } catch (error) {
+        console.error('Error creating subscription record:', error);
+        res.status(500).json({ error: 'Failed to create subscription record' });
     }
 });
 
