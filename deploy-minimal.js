@@ -139,6 +139,8 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
     console.log('📝 Stripe signature header:', sig ? 'Present' : 'Missing');
     console.log('🔑 Webhook secret exists:', !!endpointSecret);
     console.log('📦 Request body length:', req.body ? req.body.length : 'No body');
+    console.log('🌐 Request headers:', Object.keys(req.headers));
+    console.log('📅 Timestamp:', new Date().toISOString());
 
     let event;
 
@@ -248,6 +250,66 @@ app.get('/api/test-supabase', async (req, res) => {
         res.status(500).json({ 
             status: 'error',
             message: 'Supabase connection failed',
+            error: error.message,
+            details: error
+        });
+    }
+});
+
+// Test webhook secret
+app.get('/api/test-webhook-secret', (req, res) => {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    res.json({
+        hasWebhookSecret: !!webhookSecret,
+        secretLength: webhookSecret ? webhookSecret.length : 0,
+        secretPrefix: webhookSecret ? webhookSecret.substring(0, 5) + '...' : 'none',
+        message: webhookSecret ? 'Webhook secret is configured' : 'Webhook secret is missing',
+        stripeMode: process.env.STRIPE_SECRET_KEY ? (process.env.STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' : 'live') : 'unknown'
+    });
+});
+
+// Test webhook processing manually
+app.post('/api/test-webhook-processing', async (req, res) => {
+    try {
+        const { email } = req.body;
+        
+        if (!email) {
+            return res.status(400).json({ error: 'email is required' });
+        }
+        
+        console.log('🧪 Testing webhook processing manually...');
+        console.log('📧 Email:', email);
+        
+        // Simulate a subscription created event
+        const mockEvent = {
+            type: 'customer.subscription.created',
+            data: {
+                object: {
+                    id: 'sub_test_' + Date.now(),
+                    customer: 'cus_test_' + Date.now(),
+                    status: 'active',
+                    current_period_start: Math.floor(Date.now() / 1000),
+                    current_period_end: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000)
+                }
+            }
+        };
+        
+        console.log('📦 Mock event:', mockEvent);
+        
+        // Process the mock event
+        await handleSubscriptionCreated(mockEvent.data.object);
+        
+        res.json({ 
+            status: 'ok',
+            message: 'Mock webhook event processed successfully',
+            event: mockEvent
+        });
+        
+    } catch (error) {
+        console.error('❌ Test webhook processing failed:', error);
+        res.status(500).json({ 
+            status: 'error',
+            message: 'Test webhook processing failed',
             error: error.message,
             details: error
         });
