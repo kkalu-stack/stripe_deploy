@@ -384,6 +384,105 @@ app.post('/api/test-create-subscription', async (req, res) => {
     }
 });
 
+// Complete test flow: Stripe → Supabase → Extension
+// Test with curl: curl -X POST https://stripe-deploy.onrender.com/api/test-complete-flow \
+//   -H "Content-Type: application/json" \
+//   -d '{"userId":"YOUR_UUID_HERE","email":"user@example.com"}'
+app.post('/api/test-complete-flow', async (req, res) => {
+    try {
+        const { userId, email, stripeSubscriptionId, stripeCustomerId } = req.body;
+        
+        if (!userId || !email) {
+            return res.status(400).json({ error: 'userId and email are required' });
+        }
+        
+        console.log('🧪 Testing complete flow: Stripe → Supabase → Extension');
+        console.log('👤 User ID:', userId);
+        console.log('📧 Email:', email);
+        console.log('💳 Stripe Subscription ID:', stripeSubscriptionId || 'test_sub_' + Date.now());
+        console.log('👤 Stripe Customer ID:', stripeCustomerId || 'test_cust_' + Date.now());
+        
+        // Step 1: Simulate Stripe webhook event
+        const mockStripeEvent = {
+            type: 'customer.subscription.created',
+            data: {
+                object: {
+                    id: stripeSubscriptionId || 'test_sub_' + Date.now(),
+                    customer: stripeCustomerId || 'test_cust_' + Date.now(),
+                    status: 'active',
+                    current_period_start: Math.floor(Date.now() / 1000),
+                    current_period_end: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000)
+                }
+            }
+        };
+        
+        console.log('📦 Mock Stripe event:', mockStripeEvent);
+        
+        // Step 2: Process the webhook event (same as real webhook)
+        await handleSubscriptionCreated(mockStripeEvent.data.object);
+        
+        // Step 3: Verify the subscription was created in Supabase
+        const verificationResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?user_id=eq.${userId}&select=*`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!verificationResponse.ok) {
+            const errorText = await verificationResponse.text();
+            console.error('❌ Failed to verify subscription:', verificationResponse.status, errorText);
+            return res.status(500).json({ 
+                error: 'Failed to verify subscription creation',
+                details: errorText
+            });
+        }
+        
+        const subscriptions = await verificationResponse.json();
+        console.log('✅ Verification - subscriptions found:', subscriptions.length);
+        
+        if (subscriptions.length === 0) {
+            return res.status(500).json({ 
+                error: 'No subscription found after creation',
+                details: 'The webhook processing did not create a subscription record'
+            });
+        }
+        
+        const subscription = subscriptions[0];
+        console.log('✅ Subscription verified:', subscription);
+        
+        res.json({ 
+            status: 'ok',
+            message: 'Complete test flow successful',
+            flow: {
+                step1: 'Mock Stripe event created',
+                step2: 'Webhook processed',
+                step3: 'Subscription verified in Supabase'
+            },
+            subscription: subscription,
+            testData: {
+                userId: userId,
+                email: email,
+                stripeSubscriptionId: subscription.stripe_subscription_id,
+                stripeCustomerId: subscription.stripe_customer_id,
+                status: subscription.status,
+                tokensLimit: subscription.tokens_limit
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Complete test flow failed:', error);
+        res.status(500).json({ 
+            status: 'error',
+            message: 'Complete test flow failed',
+            error: error.message,
+            details: error
+        });
+    }
+});
+
 // Success page endpoint
 app.get('/success', (req, res) => {
     const sessionId = req.query.session_id;
@@ -404,9 +503,9 @@ app.get('/success', (req, res) => {
         </head>
         <body>
             <div class="container">
-                <div class="success">✅ Payment Successful!</div>
+            <div class="success">✅ Payment Successful!</div>
                 <div class="message">
-                    <p>Your Trontiq Pro subscription has been activated.</p>
+            <p>Your Trontiq Pro subscription has been activated.</p>
                     <p>You can now close this window and return to the extension.</p>
                 </div>
                 <button class="btn" onclick="closeAndRefresh()">Close & Refresh Extension</button>
@@ -818,6 +917,55 @@ app.get('/api/test-auth-delete', async (req, res) => {
             success: false, 
             error: error.message,
             stack: error.stack
+        });
+    }
+});
+
+// Get user ID by email endpoint
+app.get('/api/get-user-id', async (req, res) => {
+    try {
+        const { email } = req.query;
+        
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+        
+        console.log('🔍 Looking up user ID for email:', email);
+        
+        // Get user from Supabase auth by email
+        const response = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users`, {
+            method: 'GET',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Error fetching users:', errorText);
+            return res.status(500).json({ error: 'Failed to fetch users' });
+        }
+        
+        const users = await response.json();
+        console.log('📊 Found users:', users.length);
+        
+        // Find user by email
+        const user = users.find(u => u.email === email);
+        
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        console.log('✅ Found user ID:', user.id);
+        res.json({ userId: user.id });
+        
+    } catch (error) {
+        console.error('❌ Error in get-user-id endpoint:', error);
+        res.status(500).json({ 
+            error: 'Failed to get user ID',
+            details: error.message 
         });
     }
 });
