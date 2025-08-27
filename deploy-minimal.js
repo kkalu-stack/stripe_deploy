@@ -145,6 +145,7 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
     try {
         event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
         console.log('✅ Webhook signature verified, event type:', event.type);
+        console.log('📊 Event data object:', JSON.stringify(event.data.object, null, 2));
     } catch (err) {
         console.error('❌ Webhook signature verification failed:', err.message);
         console.error('❌ Error details:', err);
@@ -152,33 +153,48 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
     }
 
     // Handle the event with Supabase database operations
-    switch (event.type) {
-        case 'checkout.session.completed':
-            await handleCheckoutCompleted(event.data.object);
-            break;
-            
-        case 'customer.subscription.created':
-            await handleSubscriptionCreated(event.data.object);
-            break;
-            
-        case 'customer.subscription.updated':
-            await handleSubscriptionUpdated(event.data.object);
-            break;
-            
-        case 'customer.subscription.deleted':
-            await handleSubscriptionDeleted(event.data.object);
-            break;
-            
-        case 'invoice.payment_succeeded':
-            await handlePaymentSucceeded(event.data.object);
-            break;
-            
-        case 'invoice.payment_failed':
-            await handlePaymentFailed(event.data.object);
-            break;
-            
-        default:
-            console.log(`Unhandled event type: ${event.type}`);
+    try {
+        console.log('🔄 Processing webhook event:', event.type);
+        
+        switch (event.type) {
+            case 'checkout.session.completed':
+                console.log('💳 Processing checkout.session.completed...');
+                await handleCheckoutCompleted(event.data.object);
+                break;
+                
+            case 'customer.subscription.created':
+                console.log('📦 Processing customer.subscription.created...');
+                await handleSubscriptionCreated(event.data.object);
+                break;
+                
+            case 'customer.subscription.updated':
+                console.log('🔄 Processing customer.subscription.updated...');
+                await handleSubscriptionUpdated(event.data.object);
+                break;
+                
+            case 'customer.subscription.deleted':
+                console.log('🗑️ Processing customer.subscription.deleted...');
+                await handleSubscriptionDeleted(event.data.object);
+                break;
+                
+            case 'invoice.payment_succeeded':
+                console.log('💰 Processing invoice.payment_succeeded...');
+                await handlePaymentSucceeded(event.data.object);
+                break;
+                
+            case 'invoice.payment_failed':
+                console.log('❌ Processing invoice.payment_failed...');
+                await handlePaymentFailed(event.data.object);
+                break;
+                
+            default:
+                console.log(`⚠️ Unhandled event type: ${event.type}`);
+        }
+        
+        console.log('✅ Webhook event processed successfully');
+    } catch (error) {
+        console.error('❌ Error processing webhook event:', error);
+        console.error('❌ Error stack:', error.stack);
     }
 
     res.json({ received: true });
@@ -232,6 +248,74 @@ app.get('/api/test-supabase', async (req, res) => {
         res.status(500).json({ 
             status: 'error',
             message: 'Supabase connection failed',
+            error: error.message,
+            details: error
+        });
+    }
+});
+
+// Test subscription creation manually
+app.post('/api/test-create-subscription', async (req, res) => {
+    try {
+        const { userId, email } = req.body;
+        
+        if (!userId || !email) {
+            return res.status(400).json({ error: 'userId and email are required' });
+        }
+        
+        console.log('🧪 Testing manual subscription creation...');
+        console.log('👤 User ID:', userId);
+        console.log('📧 Email:', email);
+        
+        // Create a test subscription record
+        const subscriptionData = {
+            user_id: userId,
+            stripe_subscription_id: 'test_sub_' + Date.now(),
+            stripe_customer_id: 'test_cust_' + Date.now(),
+            status: 'active',
+            current_period_start: new Date().toISOString(),
+            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+            tokens_limit: -1, // Unlimited for Pro
+            tokens_used: 0,
+            updated_at: new Date().toISOString()
+        };
+        
+        console.log('💾 Test subscription data:', subscriptionData);
+        
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify(subscriptionData)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Failed to create test subscription:', response.status, errorText);
+            return res.status(500).json({ 
+                error: 'Failed to create test subscription',
+                details: errorText
+            });
+        }
+        
+        const result = await response.json();
+        console.log('✅ Test subscription created:', result);
+        
+        res.json({ 
+            status: 'ok',
+            message: 'Test subscription created successfully',
+            subscription: result
+        });
+        
+    } catch (error) {
+        console.error('❌ Test subscription creation failed:', error);
+        res.status(500).json({ 
+            status: 'error',
+            message: 'Test subscription creation failed',
             error: error.message,
             details: error
         });
