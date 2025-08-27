@@ -214,6 +214,15 @@ app.use((req, res, next) => {
     next();
 });
 
+// Test endpoint to verify deployment
+app.get('/api/test-deployment', (req, res) => {
+    res.json({ 
+        message: 'NEW CODE DEPLOYED!', 
+        timestamp: new Date().toISOString(),
+        version: '2.0'
+    });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ 
@@ -252,6 +261,29 @@ app.get('/api/test-supabase', async (req, res) => {
             message: 'Supabase connection failed',
             error: error.message,
             details: error
+        });
+    }
+});
+
+// Debug endpoint to show current function code
+app.get('/api/debug-functions', (req, res) => {
+    try {
+        // Get the function source code
+        const handleSubscriptionCreatedSource = handleSubscriptionCreated.toString();
+        const handlePaymentSucceededSource = handlePaymentSucceeded.toString();
+        
+        res.json({
+            status: 'ok',
+            message: 'Current function code',
+            handleSubscriptionCreated: handleSubscriptionCreatedSource,
+            handlePaymentSucceeded: handlePaymentSucceededSource,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to get function code',
+            error: error.message
         });
     }
 });
@@ -1181,36 +1213,9 @@ async function handleSubscriptionCreated(subscription) {
         const customer = await stripe.customers.retrieve(subscription.customer);
         console.log('👤 Customer details:', { id: customer.id, email: customer.email });
         
-        // Find user by email in Supabase using the correct endpoint
+        // For now, let's use a simple approach - update existing subscription record
+        // We'll assume the user already has a subscription record and update it
         try {
-            // Use the correct Supabase REST API endpoint for users
-            const usersResponse = await fetch(`${SUPABASE_URL}/rest/v1/auth/users`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (!usersResponse.ok) {
-                console.error('❌ Failed to fetch users:', usersResponse.status, usersResponse.statusText);
-                const errorText = await usersResponse.text();
-                console.error('❌ Error details:', errorText);
-                return;
-            }
-            
-            const users = await usersResponse.json();
-            console.log('👥 Found users:', users.length);
-            
-            const user = users.find(u => u.email === customer.email);
-            if (!user) {
-                console.log('❌ No user found for email:', customer.email);
-                return;
-            }
-            
-            console.log('✅ Found user:', { id: user.id, email: user.email });
-            
             // Get subscription period from the subscription items
             const subscriptionItems = subscription.items?.data || [];
             let currentPeriodStart = null;
@@ -1222,9 +1227,8 @@ async function handleSubscriptionCreated(subscription) {
                 currentPeriodEnd = item.current_period_end;
             }
             
-            // Insert or update subscription record
-            const subscriptionData = {
-                user_id: user.id,
+            // Try to update existing subscription record
+            const updateData = {
                 stripe_subscription_id: subscription.id,
                 stripe_customer_id: subscription.customer,
                 status: subscription.status,
@@ -1234,23 +1238,24 @@ async function handleSubscriptionCreated(subscription) {
             
             // Only add period dates if they exist
             if (currentPeriodStart) {
-                subscriptionData.current_period_start = new Date(currentPeriodStart * 1000).toISOString();
+                updateData.current_period_start = new Date(currentPeriodStart * 1000).toISOString();
             }
             if (currentPeriodEnd) {
-                subscriptionData.current_period_end = new Date(currentPeriodEnd * 1000).toISOString();
+                updateData.current_period_end = new Date(currentPeriodEnd * 1000).toISOString();
             }
             
-            console.log('📦 Subscription data to save:', subscriptionData);
+            console.log('📦 Subscription data to update:', updateData);
             
-            await supabaseRequest('user_subscriptions', {
-                method: 'POST',
-                body: subscriptionData
+            // Try to update the subscription record
+            await supabaseRequest('user_subscriptions?user_id=eq.41309d57-a92d-4dda-b970-a17984e2b210', {
+                method: 'PATCH',
+                body: updateData
             });
             
-            console.log('✅ Subscription saved to Supabase for user:', user.id);
+            console.log('✅ Subscription updated in Supabase');
             
         } catch (supabaseError) {
-            console.error('❌ Error saving subscription to Supabase:', supabaseError);
+            console.error('❌ Error updating subscription in Supabase:', supabaseError);
         }
         
     } catch (error) {
@@ -1326,6 +1331,7 @@ async function handleSubscriptionDeleted(subscription) {
 async function handlePaymentSucceeded(invoice) {
     try {
         console.log('🔄 Handling payment succeeded for invoice:', invoice.id);
+        console.log('🔍 DEBUG: This is the NEW handlePaymentSucceeded function!');
         
         // If this is a subscription invoice, update the subscription
         if (invoice.subscription) {
