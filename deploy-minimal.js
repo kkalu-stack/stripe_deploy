@@ -84,6 +84,13 @@ async function supabaseRequest(endpoint, options = {}) {
             throw error;
         }
         
+        // Handle 204 No Content responses (no JSON body)
+        if (response.status === 204) {
+            console.log('✅ Supabase request successful (204 No Content)');
+            return null;
+        }
+        
+        // Only try to parse JSON for responses that have content
         const data = await response.json();
         console.log('✅ Supabase request successful');
         return data;
