@@ -625,12 +625,15 @@ app.get('/api/test-auth-delete', async (req, res) => {
         
         const users = await testResponse.json();
         console.log('✅ Supabase auth connection successful');
+        console.log('📊 Users response type:', typeof users);
+        console.log('📊 Users response:', JSON.stringify(users, null, 2));
         
         res.json({ 
             success: true, 
             message: 'Supabase auth connection working',
-            userCount: users.length,
-            sampleUsers: users.slice(0, 3).map(u => ({ id: u.id, email: u.email }))
+            userCount: Array.isArray(users) ? users.length : 0,
+            sampleUsers: Array.isArray(users) ? users.slice(0, 3).map(u => ({ id: u.id, email: u.email })) : [],
+            rawResponse: users
         });
         
     } catch (error) {
