@@ -1179,45 +1179,82 @@ async function handleSubscriptionCreated(subscription) {
         
         // Get customer details from Stripe
         const customer = await stripe.customers.retrieve(subscription.customer);
+        console.log('👤 Customer details:', { id: customer.id, email: customer.email });
         
-        // Find user by email in Supabase (using direct HTTP request)
+        // Find user by email in Supabase using the correct endpoint
         try {
-            const users = await supabaseRequest('auth/users', {
+            // Use the correct Supabase REST API endpoint for users
+            const usersResponse = await fetch(`${SUPABASE_URL}/rest/v1/auth/users`, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                    'Content-Type': 'application/json'
                 }
             });
             
-            const user = users.find(u => u.email === customer.email);
-            if (!user) {
-                console.log('No user found for email:', customer.email);
+            if (!usersResponse.ok) {
+                console.error('❌ Failed to fetch users:', usersResponse.status, usersResponse.statusText);
+                const errorText = await usersResponse.text();
+                console.error('❌ Error details:', errorText);
                 return;
             }
             
+            const users = await usersResponse.json();
+            console.log('👥 Found users:', users.length);
+            
+            const user = users.find(u => u.email === customer.email);
+            if (!user) {
+                console.log('❌ No user found for email:', customer.email);
+                return;
+            }
+            
+            console.log('✅ Found user:', { id: user.id, email: user.email });
+            
+            // Get subscription period from the subscription items
+            const subscriptionItems = subscription.items?.data || [];
+            let currentPeriodStart = null;
+            let currentPeriodEnd = null;
+            
+            if (subscriptionItems.length > 0) {
+                const item = subscriptionItems[0];
+                currentPeriodStart = item.current_period_start;
+                currentPeriodEnd = item.current_period_end;
+            }
+            
             // Insert or update subscription record
+            const subscriptionData = {
+                user_id: user.id,
+                stripe_subscription_id: subscription.id,
+                stripe_customer_id: subscription.customer,
+                status: subscription.status,
+                tokens_limit: -1, // Unlimited for Pro
+                updated_at: new Date().toISOString()
+            };
+            
+            // Only add period dates if they exist
+            if (currentPeriodStart) {
+                subscriptionData.current_period_start = new Date(currentPeriodStart * 1000).toISOString();
+            }
+            if (currentPeriodEnd) {
+                subscriptionData.current_period_end = new Date(currentPeriodEnd * 1000).toISOString();
+            }
+            
+            console.log('📦 Subscription data to save:', subscriptionData);
+            
             await supabaseRequest('user_subscriptions', {
                 method: 'POST',
-                body: {
-                    user_id: user.id,
-                    stripe_subscription_id: subscription.id,
-                    stripe_customer_id: subscription.customer,
-                    status: subscription.status,
-                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                    tokens_limit: -1, // Unlimited for Pro
-                    updated_at: new Date().toISOString()
-                }
+                body: subscriptionData
             });
             
             console.log('✅ Subscription saved to Supabase for user:', user.id);
             
         } catch (supabaseError) {
-            console.error('Error saving subscription to Supabase:', supabaseError);
+            console.error('❌ Error saving subscription to Supabase:', supabaseError);
         }
         
     } catch (error) {
-        console.error('Error handling subscription created:', error);
+        console.error('❌ Error handling subscription created:', error);
     }
 }
 
@@ -1225,21 +1262,43 @@ async function handleSubscriptionUpdated(subscription) {
     try {
         console.log('🔄 Handling subscription updated:', subscription.id);
         
+        // Get subscription period from the subscription items
+        const subscriptionItems = subscription.items?.data || [];
+        let currentPeriodStart = null;
+        let currentPeriodEnd = null;
+        
+        if (subscriptionItems.length > 0) {
+            const item = subscriptionItems[0];
+            currentPeriodStart = item.current_period_start;
+            currentPeriodEnd = item.current_period_end;
+        }
+        
+        // Prepare update data
+        const updateData = {
+            status: subscription.status,
+            updated_at: new Date().toISOString()
+        };
+        
+        // Only add period dates if they exist
+        if (currentPeriodStart) {
+            updateData.current_period_start = new Date(currentPeriodStart * 1000).toISOString();
+        }
+        if (currentPeriodEnd) {
+            updateData.current_period_end = new Date(currentPeriodEnd * 1000).toISOString();
+        }
+        
+        console.log('📦 Update data:', updateData);
+        
         // Update subscription record using PATCH request
         await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
             method: 'PATCH',
-            body: {
-                status: subscription.status,
-                current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-                current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                updated_at: new Date().toISOString()
-            }
+            body: updateData
         });
         
         console.log('✅ Subscription updated in Supabase');
         
     } catch (error) {
-        console.error('Error updating subscription in Supabase:', error);
+        console.error('❌ Error updating subscription in Supabase:', error);
     }
 }
 
