@@ -1329,16 +1329,28 @@ async function handlePaymentSucceeded(invoice) {
         
         // If this is a subscription invoice, update the subscription
         if (invoice.subscription) {
-            await handleSubscriptionUpdated({
-                id: invoice.subscription,
-                status: 'active',
-                current_period_start: invoice.period_start,
-                current_period_end: invoice.period_end
+            console.log('📦 Invoice is for subscription:', invoice.subscription);
+            
+            // Get the subscription details from Stripe
+            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+            console.log('📦 Retrieved subscription:', { id: subscription.id, status: subscription.status });
+            
+            // Update the subscription record directly using the subscription ID
+            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
+                method: 'PATCH',
+                body: {
+                    status: subscription.status,
+                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+                    updated_at: new Date().toISOString()
+                }
             });
+            
+            console.log('✅ Subscription updated for payment success');
         }
         
     } catch (error) {
-        console.error('Error handling payment succeeded:', error);
+        console.error('❌ Error handling payment succeeded:', error);
     }
 }
 
