@@ -247,19 +247,49 @@ app.get('/success', (req, res) => {
         <head>
             <title>Payment Successful - Trontiq</title>
             <style>
-                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                .success { color: green; font-size: 24px; }
-                .btn { background: #667eea; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                .container { background: white; border-radius: 12px; padding: 40px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto; }
+                .success { color: #28a745; font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+                .message { color: #6c757d; margin-bottom: 30px; line-height: 1.5; }
+                .btn { background: #2c3e50; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; }
+                .btn:hover { background: #34495e; }
+                .auto-close { color: #6c757d; font-size: 14px; margin-top: 20px; }
             </style>
         </head>
         <body>
-            <div class="success">✅ Payment Successful!</div>
-            <p>Your Trontiq Pro subscription has been activated.</p>
-            <button class="btn" onclick="window.close()">Close</button>
+            <div class="container">
+                <div class="success">✅ Payment Successful!</div>
+                <div class="message">
+                    <p>Your Trontiq Pro subscription has been activated.</p>
+                    <p>You can now close this window and return to the extension.</p>
+                </div>
+                <button class="btn" onclick="closeAndRefresh()">Close & Refresh Extension</button>
+                <div class="auto-close">This window will close automatically in 5 seconds...</div>
+            </div>
+            
             <script>
                 if (sessionId) {
                     console.log('Payment successful:', sessionId);
                 }
+                
+                function closeAndRefresh() {
+                    // Try to send a message to the extension if it's open
+                    try {
+                        if (window.opener) {
+                            window.opener.postMessage({ type: 'PAYMENT_SUCCESS', sessionId: sessionId }, '*');
+                        }
+                    } catch (e) {
+                        console.log('Could not send message to opener:', e);
+                    }
+                    
+                    // Close the window
+                    window.close();
+                }
+                
+                // Auto-close after 5 seconds
+                setTimeout(() => {
+                    closeAndRefresh();
+                }, 5000);
             </script>
         </body>
         </html>
@@ -773,36 +803,70 @@ async function handleCheckoutCompleted(session) {
         
         // Find user by email in Supabase
         try {
-            const users = await supabaseRequest('auth/users', {
+            console.log('🔍 Looking for user with email:', customer.email);
+            
+            // Use the correct Supabase admin API endpoint
+            const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                    'Content-Type': 'application/json'
                 }
             });
+            
+            if (!response.ok) {
+                console.error('❌ Failed to fetch users from Supabase:', response.status, response.statusText);
+                return;
+            }
+            
+            const users = await response.json();
+            console.log('📋 Found users in Supabase:', users.length);
             
             const user = users.find(u => u.email === customer.email);
             if (!user) {
                 console.log('❌ No user found for email:', customer.email);
+                console.log('📧 Available emails:', users.map(u => u.email));
                 return;
             }
             
             console.log('✅ Found user:', user.id);
             
             // Update or create subscription record
-            await supabaseRequest('user_subscriptions', {
+            const subscriptionData = {
+                user_id: user.id,
+                stripe_subscription_id: subscription.id,
+                stripe_customer_id: subscription.customer,
+                status: subscription.status,
+                current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+                current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+                tokens_limit: -1, // Unlimited for Pro
+                tokens_used: 0, // Reset token usage
+                updated_at: new Date().toISOString()
+            };
+            
+            console.log('💾 Saving subscription data:', subscriptionData);
+            
+            const subResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
                 method: 'POST',
-                body: {
-                    user_id: user.id,
-                    stripe_subscription_id: subscription.id,
-                    stripe_customer_id: subscription.customer,
-                    status: subscription.status,
-                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                    tokens_limit: -1, // Unlimited for Pro
-                    tokens_used: 0, // Reset token usage
-                    updated_at: new Date().toISOString()
-                }
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'resolution=merge-duplicates'
+                },
+                body: JSON.stringify(subscriptionData)
             });
+            
+            if (!subResponse.ok) {
+                console.error('❌ Failed to save subscription:', subResponse.status, subResponse.statusText);
+                const errorText = await subResponse.text();
+                console.error('❌ Error details:', errorText);
+                return;
+            }
+            
+            const savedSubscription = await subResponse.json();
+            console.log('✅ Subscription saved successfully:', savedSubscription);
             
             console.log('✅ Subscription record created/updated for user:', user.id);
             
