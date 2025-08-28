@@ -1668,6 +1668,28 @@ app.post('/api/generate', async (req, res) => {
             return res.json(data);
         }
         
+        // Check if any keys are available
+        const availableKeys = await keyPool.list();
+        if (!availableKeys || availableKeys.length === 0) {
+            console.log('⚠️ No API keys available, using fallback OpenAI call');
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+            }
+            
+            const data = await response.json();
+            return res.json(data);
+        }
+        
         const data = await callAI(payload);
         res.json(data);
     } catch (error) {
