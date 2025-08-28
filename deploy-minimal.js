@@ -6,10 +6,100 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Redis = require('ioredis');
+
+// Redis configuration for key management
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 // Supabase configuration for direct HTTP requests
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Lua script for atomic RPM reservation
+const LUA_TRY_RESERVE_RPM = `
+-- KEYS[1] = meta hash (status)
+-- KEYS[2] = rpm counter key (string)
+-- ARGV[1] = rpmLimit
+-- ARGV[2] = ttlSec (60)
+
+local status = redis.call('HGET', KEYS[1], 'status')
+if status and status ~= 'active' then
+  return {0, 'disabled'}
+end
+
+local rpmLimit = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local cur = tonumber(redis.call('GET', KEYS[2]) or '0')
+
+if cur >= rpmLimit then
+  return {0, 'saturated'}
+end
+
+cur = redis.call('INCR', KEYS[2])
+if cur == 1 then redis.call('EXPIRE', KEYS[2], ttl) end
+
+return {1, tostring(cur)}
+`;
+
+// KeyPool class for round-robin key management
+class KeyPool {
+    constructor() {
+        this.redis = redis;
+    }
+
+    aliasesKey() { return "ai:keys:aliases"; }
+    metaKey(alias) { return `ai:key:${alias}:meta`; }
+    rpmKey(alias) { return `ai:key:${alias}:rpm_count`; }
+    rrKey() { return "ai:keys:rr_index"; }
+
+    async list() {
+        const aliases = await this.redis.smembers(this.aliasesKey());
+        const metas = [];
+        for (const alias of aliases) {
+            const h = await this.redis.hgetall(this.metaKey(alias));
+            if (h && h.key) {
+                metas.push({
+                    alias: alias,
+                    key: h.key,
+                    rpm: Number(h.rpm || process.env.DEFAULT_RPM || 60),
+                    status: h.status || 'active'
+                });
+            }
+        }
+        return metas.sort((a, b) => a.alias.localeCompare(b.alias));
+    }
+
+    async acquire() {
+        const metas = await this.list();
+        if (!metas.length) return null;
+
+        const n = metas.length;
+        const start = Number(await this.redis.get(this.rrKey()) || 0) % n;
+
+        for (let i = 0; i < n; i++) {
+            const idx = (start + i) % n;
+            const m = metas[idx];
+            if (m.status !== 'active') continue;
+
+            const res = await this.redis.eval(
+                LUA_TRY_RESERVE_RPM, 2,
+                this.metaKey(m.alias),
+                this.rpmKey(m.alias),
+                String(m.rpm),
+                "60"
+            );
+
+            if (Array.isArray(res) && res[0] === 1) {
+                await this.redis.set(this.rrKey(), (idx + 1) % n);
+                return m;
+            }
+        }
+        return null;
+    }
+}
+
+// Initialize key pool
+const keyPool = new KeyPool();
 
 // Validate required environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -1405,6 +1495,122 @@ async function handlePaymentFailed(invoice) {
         console.error('Error updating failed payment in Supabase:', error);
     }
 }
+
+// AI Proxy function with key pool
+async function callAI(payload) {
+    const maxWaitMs = 5000;
+    const pollMs = 100;
+    const t0 = Date.now();
+    
+    // Wait for an available key
+    while (Date.now() - t0 < maxWaitMs) {
+        const meta = await keyPool.acquire();
+        if (meta) {
+            console.log(`🔑 Using key: ${meta.alias} (RPM: ${meta.rpm})`);
+            
+            const res = await fetch(process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${meta.key}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                timeout: Number(process.env.REQUEST_TIMEOUT_MS || 60000)
+            });
+
+            if (res.ok) {
+                return res.json();
+            }
+
+            const text = await res.text();
+            throw new Error(`Provider error ${res.status}: ${text}`);
+        }
+        
+        // Wait before trying again
+        await new Promise(resolve => setTimeout(resolve, pollMs));
+    }
+    
+    throw new Error('All API keys are at RPM right now. Please try again in a few seconds.');
+}
+
+// Admin endpoints for key management
+app.post('/admin/keys', async (req, res) => {
+    if (req.headers.authorization !== `Bearer ${process.env.ADMIN_TOKEN}`) {
+        return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    const { action, alias, key, rpm, status } = req.body || {};
+    const aliasesKey = 'ai:keys:aliases';
+    const metaKey = (alias) => `ai:key:${alias}:meta`;
+
+    try {
+        if (action === 'add') {
+            if (!alias || !key) {
+                return res.status(400).json({ error: 'alias and key required' });
+            }
+            await redis.sadd(aliasesKey, alias);
+            await redis.hset(metaKey(alias), {
+                key: key,
+                rpm: String(rpm || process.env.DEFAULT_RPM || 60),
+                status: 'active'
+            });
+            console.log(`✅ Added key: ${alias}`);
+            return res.json({ ok: true, message: `Key ${alias} added successfully` });
+        }
+
+        if (action === 'disable') {
+            await redis.hset(metaKey(alias), { status: 'disabled' });
+            console.log(`⚠️ Disabled key: ${alias}`);
+            return res.json({ ok: true, message: `Key ${alias} disabled` });
+        }
+
+        if (action === 'remove') {
+            await redis.srem(aliasesKey, alias);
+            await redis.del(metaKey(alias));
+            console.log(`🗑️ Removed key: ${alias}`);
+            return res.json({ ok: true, message: `Key ${alias} removed` });
+        }
+
+        if (action === 'list') {
+            const aliases = await redis.smembers(aliasesKey);
+            const metas = [];
+            for (const a of aliases) {
+                const meta = await redis.hgetall(metaKey(a));
+                metas.push({ alias: a, ...meta });
+            }
+            return res.json(metas);
+        }
+
+        res.status(400).json({ error: 'unsupported action' });
+    } catch (error) {
+        console.error('❌ Admin key operation failed:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// AI generation endpoint
+app.post('/api/generate', async (req, res) => {
+    try {
+        // TODO: Add your Supabase user quota checks here
+        // For now, we'll just call the AI directly
+        
+        const payload = {
+            model: req.body.model || 'gpt-4o-mini',
+            messages: req.body.messages,
+            max_tokens: req.body.max_tokens || 1000
+        };
+        
+        console.log('🤖 Calling AI with payload:', { model: payload.model, max_tokens: payload.max_tokens });
+        
+        const data = await callAI(payload);
+        res.json(data);
+    } catch (error) {
+        console.error('❌ AI generation failed:', error);
+        const msg = String(error.message || error);
+        const code = /RPM limit/i.test(msg) || /keys are at RPM/i.test(msg) ? 503 : 400;
+        res.status(code).json({ error: msg, retryAfterSeconds: 30 });
+    }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
