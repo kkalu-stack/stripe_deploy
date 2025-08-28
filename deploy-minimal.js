@@ -975,7 +975,7 @@ app.get('/upgrade', (req, res) => {
         title: 'Upgrade to Pro',
         message: 'Get unlimited AI assistance and advanced features',
         features: [
-            'Unlimited AI requests per month',
+            'Unlimited access per month',
             'Advanced resume and cover letter tools',
             'Priority support',
             'Early access to new features'
@@ -1007,7 +1007,7 @@ app.get('/api/user-status/:userId', async (req, res) => {
                 isUnlimited: isUnlimited,
                 canChat: isUnlimited || requestsUsed < monthlyLimit,
                 upgradeRequired: !isUnlimited && requestsUsed >= monthlyLimit,
-                upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited AI assistance!`,
+                upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited access!`,
                 upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
             });
         } else {
@@ -1630,7 +1630,7 @@ app.post('/api/generate', async (req, res) => {
                                     limit: monthlyLimit,
                                     used: requestsThisMonth,
                                     upgradeRequired: true,
-                                    upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited AI assistance!`,
+                                    upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for Unlimited access!`,
                                     upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
                                 });
                             }
