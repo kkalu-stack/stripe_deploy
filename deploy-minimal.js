@@ -969,6 +969,66 @@ app.get('/api/test-delete', (req, res) => {
     res.json({ message: 'Delete endpoint test - working!' });
 });
 
+// Upgrade page endpoint
+app.get('/upgrade', (req, res) => {
+    res.json({
+        title: 'Upgrade to Pro',
+        message: 'Get unlimited AI assistance and advanced features',
+        features: [
+            'Unlimited AI requests per month',
+            'Advanced resume and cover letter tools',
+            'Priority support',
+            'Early access to new features'
+        ],
+        price: '$4.99/month',
+        upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
+    });
+});
+
+// Check user status and quota
+app.get('/api/user-status/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log('🔍 Checking user status for:', userId);
+        
+        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        
+        if (data && data.length > 0) {
+            const subscription = data[0];
+            const requestsUsed = subscription.requests_used_this_month || 0;
+            const monthlyLimit = subscription.monthly_request_limit || 75;
+            const isUnlimited = subscription.is_unlimited || false;
+            
+            res.json({
+                success: true,
+                status: subscription.status,
+                requestsUsed: requestsUsed,
+                monthlyLimit: monthlyLimit,
+                isUnlimited: isUnlimited,
+                canChat: isUnlimited || requestsUsed < monthlyLimit,
+                upgradeRequired: !isUnlimited && requestsUsed >= monthlyLimit,
+                upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited AI assistance!`,
+                upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'No subscription found',
+                canChat: false,
+                upgradeRequired: true,
+                upgradeMessage: 'Please create an account to start using AI assistance.',
+                upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
+            });
+        }
+    } catch (error) {
+        console.error('❌ User status check error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Debug endpoint to check user subscription data
 app.get('/api/debug-subscription/:userId', async (req, res) => {
     try {
@@ -1568,7 +1628,10 @@ app.post('/api/generate', async (req, res) => {
                                 return res.status(429).json({ 
                                     error: 'Monthly request limit reached. Upgrade to Pro for unlimited requests.',
                                     limit: monthlyLimit,
-                                    used: requestsThisMonth
+                                    used: requestsThisMonth,
+                                    upgradeRequired: true,
+                                    upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited AI assistance!`,
+                                    upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
                                 });
                             }
                             
