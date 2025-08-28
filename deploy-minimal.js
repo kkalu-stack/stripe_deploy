@@ -6,180 +6,46 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-// Redis configuration for key management (optional - only if REDIS_URL is provided)
-let Redis, redis;
-try {
-    Redis = require('ioredis');
-    if (process.env.REDIS_URL) {
-        // Create Redis client with robust connection settings
-        redis = new Redis(process.env.REDIS_URL, {
-            maxRetriesPerRequest: 1,
-            retryDelayOnFailover: 100,
-            enableReadyCheck: false,
-            lazyConnect: true,
-            connectTimeout: 10000,
-            commandTimeout: 5000,
-            keepAlive: 0, // Disable keepalive for Upstash
-            family: 4, // Force IPv4
-            retryDelayOnClusterDown: 200,
-            maxLoadingTimeout: 10000,
-            autoResubscribe: false,
-            autoResendUnfulfilledCommands: false,
-            // Upstash-specific settings
-            tls: process.env.REDIS_URL.includes('rediss://') ? {} : undefined,
-            reconnectOnError: (err) => {
-                console.log('🔄 Redis reconnect on error:', err.message);
-                return false; // Don't auto-reconnect on errors
-            }
-        });
-        
-        // Add error handlers with connection limits
-        let connectionAttempts = 0;
-        const maxConnectionAttempts = 3;
-        
-        redis.on('error', (err) => {
-            console.log('⚠️ Redis connection error:', err.message);
-            connectionAttempts++;
-            if (connectionAttempts >= maxConnectionAttempts) {
-                console.log('❌ Max Redis connection attempts reached, disabling Redis');
-                redis = null;
-            }
-        });
-        
-        redis.on('connect', () => {
-            console.log('✅ Redis connected successfully');
-            connectionAttempts = 0; // Reset on successful connection
-        });
-        
-        redis.on('close', () => {
-            console.log('⚠️ Redis connection closed');
-        });
-        
-        redis.on('reconnecting', () => {
-            console.log('🔄 Redis reconnecting...');
-        });
-        
-        // Test connection with timeout
-        const connectionTest = async () => {
-            try {
-                await redis.ping();
-                console.log('✅ Redis ping successful');
-            } catch (err) {
-                console.log('❌ Redis ping failed:', err.message);
-                redis = null;
-            }
-        };
-        
-        // Test connection after a short delay
-        setTimeout(connectionTest, 2000);
-        
-    } else {
-        console.log('⚠️ REDIS_URL not provided, key management disabled');
+// Environment-based API key management (no Redis needed)
+const API_KEYS = [
+    process.env.OPENAI_API_KEY_1,
+    process.env.OPENAI_API_KEY_2,
+    process.env.OPENAI_API_KEY_3,
+    process.env.OPENAI_API_KEY_4,
+    process.env.OPENAI_API_KEY_5,
+    process.env.OPENAI_API_KEY_6,
+    process.env.OPENAI_API_KEY_7,
+    process.env.OPENAI_API_KEY_8,
+    process.env.OPENAI_API_KEY_9,
+    process.env.OPENAI_API_KEY_10
+].filter(key => key); // Remove any undefined keys
+
+let currentKeyIndex = 0;
+
+// Simple round-robin key rotation
+function getNextApiKey() {
+    if (API_KEYS.length === 0) {
+        return process.env.OPENAI_API_KEY; // Fallback to single key
     }
-} catch (error) {
-    console.log('⚠️ ioredis not available, key management disabled:', error.message);
+    
+    const key = API_KEYS[currentKeyIndex];
+    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+    return key;
+}
+
+console.log(`🚀 Loaded ${API_KEYS.length} API keys from environment variables`);
+if (API_KEYS.length > 0) {
+    console.log(`⚡ Round-robin rotation enabled - ${API_KEYS.length * 60} RPM capacity`);
+} else {
+    console.log('⚠️ No rotation keys found, using fallback single key');
 }
 
 // Supabase configuration for direct HTTP requests
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Lua script for atomic RPM reservation
-const LUA_TRY_RESERVE_RPM = `
--- KEYS[1] = meta hash (status)
--- KEYS[2] = rpm counter key (string)
--- ARGV[1] = rpmLimit
--- ARGV[2] = ttlSec (60)
-
-local status = redis.call('HGET', KEYS[1], 'status')
-if status and status ~= 'active' then
-  return {0, 'disabled'}
-end
-
-local rpmLimit = tonumber(ARGV[1])
-local ttl = tonumber(ARGV[2])
-local cur = tonumber(redis.call('GET', KEYS[2]) or '0')
-
-if cur >= rpmLimit then
-  return {0, 'saturated'}
-end
-
-cur = redis.call('INCR', KEYS[2])
-if cur == 1 then redis.call('EXPIRE', KEYS[2], ttl) end
-
-return {1, tostring(cur)}
-`;
-
-// KeyPool class for round-robin key management
-class KeyPool {
-    constructor() {
-        this.redis = redis;
-        if (!this.redis) {
-            console.log('⚠️ KeyPool initialized without Redis - key management disabled');
-        }
-    }
-
-    aliasesKey() { return "ai:keys:aliases"; }
-    metaKey(alias) { return `ai:key:${alias}:meta`; }
-    rpmKey(alias) { return `ai:key:${alias}:rpm_count`; }
-    rrKey() { return "ai:keys:rr_index"; }
-
-    async list() {
-        if (!this.redis) {
-            console.log('⚠️ Redis not available, returning empty key list');
-            return [];
-        }
-        const aliases = await this.redis.smembers(this.aliasesKey());
-        const metas = [];
-        for (const alias of aliases) {
-            const h = await this.redis.hgetall(this.metaKey(alias));
-            if (h && h.key) {
-                metas.push({
-                    alias: alias,
-                    key: h.key,
-                    rpm: Number(h.rpm || process.env.DEFAULT_RPM || 60),
-                    status: h.status || 'active'
-                });
-            }
-        }
-        return metas.sort((a, b) => a.alias.localeCompare(b.alias));
-    }
-
-    async acquire() {
-        if (!this.redis) {
-            console.log('⚠️ Redis not available, cannot acquire key');
-            return null;
-        }
-        const metas = await this.list();
-        if (!metas.length) return null;
-
-        const n = metas.length;
-        const start = Number(await this.redis.get(this.rrKey()) || 0) % n;
-
-        for (let i = 0; i < n; i++) {
-            const idx = (start + i) % n;
-            const m = metas[idx];
-            if (m.status !== 'active') continue;
-
-            const res = await this.redis.eval(
-                LUA_TRY_RESERVE_RPM, 2,
-                this.metaKey(m.alias),
-                this.rpmKey(m.alias),
-                String(m.rpm),
-                "60"
-            );
-
-            if (Array.isArray(res) && res[0] === 1) {
-                await this.redis.set(this.rrKey(), (idx + 1) % n);
-                return m;
-            }
-        }
-        return null;
-    }
-}
-
-// Initialize key pool
-const keyPool = new KeyPool();
+// Simple environment-based key management (no Redis needed)
+console.log('⚡ Using environment-based API key rotation (no Redis)');
 
 // Validate required environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -1611,64 +1477,8 @@ async function callAI(payload) {
     throw new Error('All API keys are at RPM right now. Please try again in a few seconds.');
 }
 
-// Admin endpoints for key management
-app.post('/admin/keys', async (req, res) => {
-    if (req.headers.authorization !== `Bearer ${process.env.ADMIN_TOKEN}`) {
-        return res.status(401).json({ error: 'unauthorized' });
-    }
-    
-    if (!redis) {
-        return res.status(503).json({ error: 'Redis not available - key management disabled' });
-    }
-    
-    const { action, alias, key, rpm, status } = req.body || {};
-    const aliasesKey = 'ai:keys:aliases';
-    const metaKey = (alias) => `ai:key:${alias}:meta`;
-
-    try {
-        if (action === 'add') {
-            if (!alias || !key) {
-                return res.status(400).json({ error: 'alias and key required' });
-            }
-            await redis.sadd(aliasesKey, alias);
-            await redis.hset(metaKey(alias), {
-                key: key,
-                rpm: String(rpm || process.env.DEFAULT_RPM || 60),
-                status: 'active'
-            });
-            console.log(`✅ Added key: ${alias}`);
-            return res.json({ ok: true, message: `Key ${alias} added successfully` });
-        }
-
-        if (action === 'disable') {
-            await redis.hset(metaKey(alias), { status: 'disabled' });
-            console.log(`⚠️ Disabled key: ${alias}`);
-            return res.json({ ok: true, message: `Key ${alias} disabled` });
-        }
-
-        if (action === 'remove') {
-            await redis.srem(aliasesKey, alias);
-            await redis.del(metaKey(alias));
-            console.log(`🗑️ Removed key: ${alias}`);
-            return res.json({ ok: true, message: `Key ${alias} removed` });
-        }
-
-        if (action === 'list') {
-            const aliases = await redis.smembers(aliasesKey);
-            const metas = [];
-            for (const a of aliases) {
-                const meta = await redis.hgetall(metaKey(a));
-                metas.push({ alias: a, ...meta });
-            }
-            return res.json(metas);
-        }
-
-        res.status(400).json({ error: 'unsupported action' });
-    } catch (error) {
-        console.error('❌ Admin key operation failed:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+// Environment-based key management (no admin endpoints needed)
+// Keys are managed via environment variables: OPENAI_API_KEY_1 through OPENAI_API_KEY_10
 
 // AI generation endpoint
 app.post('/api/generate', async (req, res) => {
@@ -1740,82 +1550,31 @@ app.post('/api/generate', async (req, res) => {
         
         console.log('🤖 Calling AI with payload:', { model: payload.model, max_tokens: payload.max_tokens });
         
-        // If Redis is not available, fall back to direct OpenAI call
-        if (!redis) {
-            console.log('⚠️ Redis not available, using fallback OpenAI call');
-            
-            if (!process.env.OPENAI_API_KEY) {
-                throw new Error('OpenAI API key not configured. Please add OPENAI_API_KEY to environment variables.');
-            }
-            
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-            }
-            
-            const data = await response.json();
-            return res.json(data);
+        // Use environment-based key rotation (no Redis needed)
+        const apiKey = getNextApiKey();
+        
+        if (!apiKey) {
+            throw new Error('No OpenAI API keys configured. Please add OPENAI_API_KEY or OPENAI_API_KEY_1 through OPENAI_API_KEY_10 to environment variables.');
         }
         
-        // Check if any keys are available
-        try {
-            const availableKeys = await keyPool.list();
-            if (!availableKeys || availableKeys.length === 0) {
-                console.log('⚠️ No API keys available, using fallback OpenAI call');
-                if (!process.env.OPENAI_API_KEY) {
-                    throw new Error('No API keys configured. Please add keys via admin endpoint or set OPENAI_API_KEY.');
-                }
-                const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-                }
-                
-                const data = await response.json();
-                return res.json(data);
-            }
-        } catch (keyError) {
-            console.log('⚠️ Key pool error, using fallback:', keyError.message);
-            if (!process.env.OPENAI_API_KEY) {
-                throw new Error('Key management failed and no fallback API key configured.');
-            }
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-            }
-            
-            const data = await response.json();
-            return res.json(data);
+        console.log(`🔑 Using API key ${currentKeyIndex}/${API_KEYS.length} (round-robin rotation)`);
+        
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
         }
         
-        const data = await callAI(payload);
-        res.json(data);
+        const data = await response.json();
+        return res.json(data);
     } catch (error) {
         console.error('❌ AI generation failed:', error);
         const msg = String(error.message || error);
