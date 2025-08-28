@@ -969,6 +969,46 @@ app.get('/api/test-delete', (req, res) => {
     res.json({ message: 'Delete endpoint test - working!' });
 });
 
+// Debug endpoint to check user subscription data
+app.get('/api/debug-subscription/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log('🔍 Debugging subscription for user:', userId);
+        
+        // Get subscription from Supabase
+        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        console.log('📊 Raw subscription data:', data);
+        
+        if (data && data.length > 0) {
+            const subscription = data[0];
+            res.json({
+                success: true,
+                subscription: subscription,
+                fields: {
+                    has_requests_used: 'requests_used_this_month' in subscription,
+                    has_monthly_limit: 'monthly_request_limit' in subscription,
+                    has_is_unlimited: 'is_unlimited' in subscription,
+                    requests_used: subscription.requests_used_this_month,
+                    monthly_limit: subscription.monthly_request_limit,
+                    is_unlimited: subscription.is_unlimited
+                }
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'No subscription found',
+                userId: userId
+            });
+        }
+    } catch (error) {
+        console.error('❌ Debug subscription error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Test Supabase auth connection
 app.get('/api/test-auth-delete', async (req, res) => {
     try {
@@ -1531,7 +1571,9 @@ app.post('/api/generate', async (req, res) => {
                             }
                             
                             // Increment request count
-                            await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?id=eq.${subscription.id}`, {
+                            console.log(`📊 Updating request count for user ${userEmail}: ${requestsThisMonth} → ${requestsThisMonth + 1}`);
+                            
+                            const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?id=eq.${subscription.id}`, {
                                 method: 'PATCH',
                                 headers: {
                                     'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
@@ -1544,7 +1586,12 @@ app.post('/api/generate', async (req, res) => {
                                 })
                             });
                             
-                            console.log(`📊 Free user ${userEmail} - ${requestsThisMonth + 1}/${monthlyLimit} requests used`);
+                            if (!updateResponse.ok) {
+                                const errorText = await updateResponse.text();
+                                console.error(`❌ Failed to update request count: ${updateResponse.status} - ${errorText}`);
+                            } else {
+                                console.log(`✅ Request count updated successfully: ${requestsThisMonth + 1}/${monthlyLimit}`);
+                            }
                         }
                     }
                 }
