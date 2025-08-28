@@ -11,31 +11,9 @@ let Redis, redis;
 try {
     Redis = require('ioredis');
     if (process.env.REDIS_URL) {
-        redis = new Redis(process.env.REDIS_URL, {
-            maxRetriesPerRequest: 3,
-            retryDelayOnFailover: 100,
-            enableReadyCheck: false,
-            maxRetriesPerRequest: 3,
-            lazyConnect: true
-        });
-        
-        // Add error handlers to prevent unhandled errors
-        redis.on('error', (err) => {
-            console.log('⚠️ Redis connection error:', err.message);
-        });
-        
-        redis.on('connect', () => {
-            console.log('✅ Redis connected successfully');
-        });
-        
-        redis.on('close', () => {
-            console.log('⚠️ Redis connection closed');
-        });
-        
-        redis.on('reconnecting', () => {
-            console.log('🔄 Redis reconnecting...');
-        });
-        
+        // Temporarily disable Redis due to connection issues
+        console.log('⚠️ Redis temporarily disabled due to connection issues');
+        redis = null;
     } else {
         console.log('⚠️ REDIS_URL not provided, key management disabled');
     }
