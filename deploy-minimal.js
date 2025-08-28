@@ -1198,11 +1198,23 @@ app.post('/api/delete-account', async (req, res) => {
                 if (subscription.stripe_subscription_id) {
                     console.log('🔄 Canceling Stripe subscription:', subscription.stripe_subscription_id);
                     
-                    // Cancel the subscription in Stripe
+                    // Cancel the subscription in Stripe (at period end)
                     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
                     await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
                     
-                    console.log('✅ Stripe subscription canceled');
+                    // Update Supabase to reflect cancellation but keep Pro access until period ends
+                    await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
+                        method: 'PATCH',
+                        body: {
+                            status: 'canceled',
+                            cancel_at_period_end: true,
+                            monthly_request_limit: -1, // Keep unlimited until period ends
+                            is_unlimited: true,
+                            updated_at: new Date().toISOString()
+                        }
+                    });
+                    
+                    console.log('✅ Stripe subscription canceled, user keeps Pro access until period ends');
                 }
             }
         } catch (stripeError) {
@@ -1275,6 +1287,50 @@ app.post('/api/delete-account', async (req, res) => {
         });
     }
 });
+
+// Check for expired subscriptions and move to free tier
+async function checkExpiredSubscriptions() {
+    try {
+        console.log('🔍 Checking for expired subscriptions...');
+        
+        // Get all canceled subscriptions that should have expired
+        const now = new Date().toISOString();
+        const expiredSubscriptions = await supabaseRequest(
+            `user_subscriptions?status=eq.canceled&cancel_at_period_end=eq.true&current_period_end=lt.${now}&select=*`
+        );
+        
+        if (expiredSubscriptions && expiredSubscriptions.length > 0) {
+            console.log(`📅 Found ${expiredSubscriptions.length} expired subscriptions`);
+            
+            for (const subscription of expiredSubscriptions) {
+                console.log(`🔄 Moving user ${subscription.user_id} to free tier (period ended: ${subscription.current_period_end})`);
+                
+                await supabaseRequest(`user_subscriptions?id=eq.${subscription.id}`, {
+                    method: 'PATCH',
+                    body: {
+                        status: 'free',
+                        cancel_at_period_end: false,
+                        monthly_request_limit: 75,
+                        requests_used_this_month: 0,
+                        is_unlimited: false,
+                        updated_at: new Date().toISOString()
+                    }
+                });
+            }
+            
+            console.log('✅ Expired subscriptions processed');
+        } else {
+            console.log('✅ No expired subscriptions found');
+        }
+    } catch (error) {
+        console.error('❌ Error checking expired subscriptions:', error);
+    }
+}
+
+// Run expired subscription check every hour
+setInterval(checkExpiredSubscriptions, 60 * 60 * 1000); // Every hour
+// Also run it on startup
+checkExpiredSubscriptions();
 
 // Error handling middleware
 app.use((error, req, res, next) => {
@@ -1482,19 +1538,40 @@ async function handleSubscriptionDeleted(subscription) {
     try {
         console.log('🔄 Handling subscription deleted:', subscription.id);
         
-        // Update subscription status back to free plan
-        await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
-            method: 'PATCH',
-            body: {
-                status: 'free', // Back to free plan (not 'canceled')
-                monthly_request_limit: 10, // Back to free tier
-                requests_used_this_month: 0, // Reset request usage for new month
-                is_unlimited: false,
-                updated_at: new Date().toISOString()
-            }
-        });
+        // Check if subscription was cancelled but still in paid period
+        const now = new Date();
+        const periodEnd = subscription.current_period_end ? new Date(subscription.current_period_end) : null;
         
-        console.log('✅ User moved back to free plan in Supabase');
+        if (periodEnd && now < periodEnd) {
+            // Subscription cancelled but still in paid period - keep Pro access until period ends
+            console.log('📅 Subscription cancelled but still in paid period until:', periodEnd);
+            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
+                method: 'PATCH',
+                body: {
+                    status: 'canceled',
+                    cancel_at_period_end: true,
+                    monthly_request_limit: -1, // Keep unlimited
+                    is_unlimited: true,
+                    updated_at: new Date().toISOString()
+                }
+            });
+            console.log('✅ User keeps Pro access until period ends');
+        } else {
+            // Period has ended or no period data - move to free plan
+            console.log('📅 Subscription period ended, moving to free plan');
+            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
+                method: 'PATCH',
+                body: {
+                    status: 'free',
+                    cancel_at_period_end: false,
+                    monthly_request_limit: 75, // Free tier gets 75 requests
+                    requests_used_this_month: 0, // Reset request usage for new month
+                    is_unlimited: false,
+                    updated_at: new Date().toISOString()
+                }
+            });
+            console.log('✅ User moved to free plan');
+        }
         
     } catch (error) {
         console.error('Error updating deleted subscription in Supabase:', error);
