@@ -1264,11 +1264,6 @@ app.use((error, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-    res.status(404).json({ error: 'Endpoint not found' });
-});
-
 // Webhook handler functions for Supabase integration
 
 async function handleCheckoutCompleted(session) {
@@ -1689,6 +1684,11 @@ app.listen(PORT, () => {
     console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
     console.log(`🔒 Security: Rate limiting and CORS enabled`);
     console.log(`🔗 Supabase integration: Active`);
+});
+
+// 404 handler - must be at the very end
+app.use('*', (req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
 });
 
 module.exports = app;
