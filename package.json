@@ -1,26 +1,41 @@
 {
-  "name": "trontiq-stripe-api-minimal",
+  "name": "trontiq-stripe-api",
   "version": "1.0.0",
-  "description": "Minimal Stripe payment API for Trontiq extension",
+  "description": "Stripe payment API for Trontiq extension (no user data storage)",
   "main": "deploy-minimal.js",
   "scripts": {
     "start": "node deploy-minimal.js",
-    "dev": "nodemon deploy-minimal.js"
+    "dev": "nodemon deploy-minimal.js",
+    "build": "npm install && npm list ioredis",
+    "build:dev": "webpack --mode development",
+    "build:prod": "webpack --mode production",
+    "build:protected": "webpack --mode production --env protected=true",
+    "obfuscate": "javascript-obfuscator dist --output dist-obfuscated --config obfuscator-config.json"
   },
   "dependencies": {
     "express": "^4.18.2",
     "stripe": "^14.0.0",
     "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
     "helmet": "^7.1.0",
-    "express-rate-limit": "^7.1.5"
+    "express-rate-limit": "^7.1.5",
+    "ioredis": "^5.3.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-obfuscator": "^3.5.1",
+    "terser-webpack-plugin": "^5.3.9",
+    "babel-loader": "^9.1.3",
+    "@babel/core": "^7.23.6",
+    "@babel/preset-env": "^7.23.6",
+    "javascript-obfuscator": "^4.1.0"
   },
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["stripe", "payment", "subscription", "trontiq"],
+  "keywords": ["stripe", "payment", "subscription", "trontiq", "security"],
   "author": "Trontiq",
   "license": "MIT"
 }
