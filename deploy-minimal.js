@@ -12,13 +12,24 @@ try {
     Redis = require('ioredis');
     if (process.env.REDIS_URL) {
         redis = new Redis(process.env.REDIS_URL, {
-            maxRetriesPerRequest: 1, // Reduce retries
-            retryDelayOnFailover: 50, // Faster retry
+            maxRetriesPerRequest: 1,
+            retryDelayOnFailover: 50,
             enableReadyCheck: false,
             lazyConnect: true,
-            connectTimeout: 5000, // 5 second timeout
-            commandTimeout: 3000, // 3 second command timeout
-            keepAlive: 1000
+            connectTimeout: 5000,
+            commandTimeout: 3000,
+            keepAlive: 0, // Disable keepalive for Upstash
+            family: 4, // Force IPv4
+            retryDelayOnClusterDown: 100,
+            maxLoadingTimeout: 5000,
+            autoResubscribe: false,
+            autoResendUnfulfilledCommands: false,
+            // Upstash-specific settings
+            tls: process.env.REDIS_URL.includes('rediss://') ? {} : undefined,
+            reconnectOnError: (err) => {
+                console.log('🔄 Redis reconnect on error:', err.message);
+                return true;
+            }
         });
         
         // Add error handlers to prevent unhandled errors
