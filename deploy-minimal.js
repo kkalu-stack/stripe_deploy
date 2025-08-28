@@ -272,7 +272,13 @@ app.get('/api/health', (req, res) => {
         status: 'ok', 
         timestamp: new Date().toISOString(),
         message: 'Trontiq Stripe API is running',
-        environment: process.env.NODE_ENV || 'production'
+        environment: process.env.NODE_ENV || 'production',
+        apiKeys: {
+            total: API_KEYS.length,
+            currentIndex: currentKeyIndex,
+            rotationEnabled: API_KEYS.length > 0,
+            rpmCapacity: API_KEYS.length * 60
+        }
     });
 });
 
