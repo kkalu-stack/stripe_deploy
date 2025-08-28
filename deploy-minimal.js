@@ -693,12 +693,27 @@ app.post('/api/cancel-subscription', async (req, res) => {
 
         console.log('Canceling subscription:', subscriptionId);
 
-        // Cancel subscription directly in Stripe
-        const subscription = await stripe.subscriptions.update(subscriptionId, {
-            cancel_at_period_end: true
-        });
+        // Cancel subscription immediately in Stripe
+        const subscription = await stripe.subscriptions.cancel(subscriptionId);
 
-        console.log('Subscription canceled successfully');
+        console.log('✅ Subscription canceled in Stripe:', subscription.id);
+
+        // Manually update Supabase to reflect the cancellation
+        console.log('🔄 Updating Supabase subscription status...');
+        try {
+            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscriptionId}`, {
+                method: 'PATCH',
+                body: {
+                    status: 'canceled',
+                    tokens_limit: 50, // Back to free tier
+                    updated_at: new Date().toISOString()
+                }
+            });
+            console.log('✅ Supabase updated successfully');
+        } catch (supabaseError) {
+            console.error('❌ Error updating Supabase:', supabaseError);
+            // Continue anyway - the webhook might handle it
+        }
 
         res.json({
             success: true,
