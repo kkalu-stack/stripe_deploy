@@ -704,12 +704,13 @@ app.post('/api/cancel-subscription', async (req, res) => {
             await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscriptionId}`, {
                 method: 'PATCH',
                 body: {
-                    status: 'canceled',
+                    status: 'free', // Back to free plan (not 'canceled')
                     tokens_limit: 50, // Back to free tier
+                    tokens_used: 0, // Reset token usage for new month
                     updated_at: new Date().toISOString()
                 }
             });
-            console.log('✅ Supabase updated successfully');
+            console.log('✅ Supabase updated successfully - user back to free plan');
         } catch (supabaseError) {
             console.error('❌ Error updating Supabase:', supabaseError);
             // Continue anyway - the webhook might handle it
@@ -1333,17 +1334,18 @@ async function handleSubscriptionDeleted(subscription) {
     try {
         console.log('🔄 Handling subscription deleted:', subscription.id);
         
-        // Update subscription status to canceled
+        // Update subscription status back to free plan
         await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
             method: 'PATCH',
             body: {
-                status: 'canceled',
+                status: 'free', // Back to free plan (not 'canceled')
                 tokens_limit: 50, // Back to free tier
+                tokens_used: 0, // Reset token usage for new month
                 updated_at: new Date().toISOString()
             }
         });
         
-        console.log('✅ Subscription marked as canceled in Supabase');
+        console.log('✅ User moved back to free plan in Supabase');
         
     } catch (error) {
         console.error('Error updating deleted subscription in Supabase:', error);
