@@ -11,9 +11,41 @@ let Redis, redis;
 try {
     Redis = require('ioredis');
     if (process.env.REDIS_URL) {
-        // Temporarily disable Redis due to connection issues
-        console.log('⚠️ Redis temporarily disabled due to connection issues');
-        redis = null;
+        redis = new Redis(process.env.REDIS_URL, {
+            maxRetriesPerRequest: 1, // Reduce retries
+            retryDelayOnFailover: 50, // Faster retry
+            enableReadyCheck: false,
+            lazyConnect: true,
+            connectTimeout: 5000, // 5 second timeout
+            commandTimeout: 3000, // 3 second command timeout
+            keepAlive: 1000
+        });
+        
+        // Add error handlers to prevent unhandled errors
+        redis.on('error', (err) => {
+            console.log('⚠️ Redis connection error:', err.message);
+        });
+        
+        redis.on('connect', () => {
+            console.log('✅ Redis connected successfully');
+        });
+        
+        redis.on('close', () => {
+            console.log('⚠️ Redis connection closed');
+        });
+        
+        redis.on('reconnecting', () => {
+            console.log('🔄 Redis reconnecting...');
+        });
+        
+        // Test connection
+        redis.ping().then(() => {
+            console.log('✅ Redis ping successful');
+        }).catch((err) => {
+            console.log('❌ Redis ping failed:', err.message);
+            redis = null; // Disable if ping fails
+        });
+        
     } else {
         console.log('⚠️ REDIS_URL not provided, key management disabled');
     }
@@ -1684,6 +1716,11 @@ app.post('/api/generate', async (req, res) => {
         // If Redis is not available, fall back to direct OpenAI call
         if (!redis) {
             console.log('⚠️ Redis not available, using fallback OpenAI call');
+            
+            if (!process.env.OPENAI_API_KEY) {
+                throw new Error('OpenAI API key not configured. Please add OPENAI_API_KEY to environment variables.');
+            }
+            
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -1703,9 +1740,35 @@ app.post('/api/generate', async (req, res) => {
         }
         
         // Check if any keys are available
-        const availableKeys = await keyPool.list();
-        if (!availableKeys || availableKeys.length === 0) {
-            console.log('⚠️ No API keys available, using fallback OpenAI call');
+        try {
+            const availableKeys = await keyPool.list();
+            if (!availableKeys || availableKeys.length === 0) {
+                console.log('⚠️ No API keys available, using fallback OpenAI call');
+                if (!process.env.OPENAI_API_KEY) {
+                    throw new Error('No API keys configured. Please add keys via admin endpoint or set OPENAI_API_KEY.');
+                }
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+                }
+                
+                const data = await response.json();
+                return res.json(data);
+            }
+        } catch (keyError) {
+            console.log('⚠️ Key pool error, using fallback:', keyError.message);
+            if (!process.env.OPENAI_API_KEY) {
+                throw new Error('Key management failed and no fallback API key configured.');
+            }
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
