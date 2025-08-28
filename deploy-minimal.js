@@ -1630,7 +1630,7 @@ app.post('/api/generate', async (req, res) => {
                                     limit: monthlyLimit,
                                     used: requestsThisMonth,
                                     upgradeRequired: true,
-                                    upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for Unlimited access!`,
+                                    upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for Unlimited Access!`,
                                     upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
                                 });
                             }
