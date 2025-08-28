@@ -1614,13 +1614,69 @@ app.post('/admin/keys', async (req, res) => {
 // AI generation endpoint
 app.post('/api/generate', async (req, res) => {
     try {
-        // TODO: Add your Supabase user quota checks here
-        // For now, we'll just call the AI directly
+        // Check user's request quota
+        const userEmail = req.headers['x-user-email']; // Chrome extension will send this
+        if (userEmail) {
+            try {
+                // Get user's subscription status from Supabase
+                const userResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?user_email=eq.${encodeURIComponent(userEmail)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (userResponse.ok) {
+                    const subscriptions = await userResponse.json();
+                    if (subscriptions && subscriptions.length > 0) {
+                        const subscription = subscriptions[0];
+                        
+                        // Check if user has unlimited requests (Pro users)
+                        if (subscription.status === 'active' && subscription.is_unlimited) {
+                            console.log(`✅ Pro user ${userEmail} - unlimited requests`);
+                        } else {
+                            // Free tier: check monthly request limit
+                            const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+                            const requestsThisMonth = subscription.requests_used_this_month || 0;
+                            const monthlyLimit = 10; // Free tier gets 10 requests per month
+                            
+                            if (requestsThisMonth >= monthlyLimit) {
+                                return res.status(429).json({ 
+                                    error: 'Monthly request limit reached. Upgrade to Pro for unlimited requests.',
+                                    limit: monthlyLimit,
+                                    used: requestsThisMonth
+                                });
+                            }
+                            
+                            // Increment request count
+                            await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?id=eq.${subscription.id}`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    requests_used_this_month: requestsThisMonth + 1,
+                                    updated_at: new Date().toISOString()
+                                })
+                            });
+                            
+                            console.log(`📊 Free user ${userEmail} - ${requestsThisMonth + 1}/${monthlyLimit} requests used`);
+                        }
+                    }
+                }
+            } catch (quotaError) {
+                console.log('⚠️ Could not check user quota:', quotaError.message);
+                // Continue without quota check if there's an error
+            }
+        }
         
         const payload = {
             model: req.body.model || 'gpt-4o-mini',
             messages: req.body.messages,
-            max_tokens: req.body.max_tokens || 1000
+            max_tokens: req.body.max_tokens || 2000  // Increased from 1000
         };
         
         console.log('🤖 Calling AI with payload:', { model: payload.model, max_tokens: payload.max_tokens });
