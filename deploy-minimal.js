@@ -1622,7 +1622,7 @@ app.post('/api/generate', async (req, res) => {
                             // Free tier: check monthly request limit
                             const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
                             const requestsThisMonth = subscription.requests_used_this_month || 0;
-                            const monthlyLimit = 10; // Free tier gets 10 requests per month
+                            const monthlyLimit = 75; // Free tier gets 75 requests per month
                             
                             if (requestsThisMonth >= monthlyLimit) {
                                 return res.status(429).json({ 
