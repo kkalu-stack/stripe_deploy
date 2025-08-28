@@ -6,10 +6,19 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const Redis = require('ioredis');
-
-// Redis configuration for key management
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+// Redis configuration for key management (optional - only if REDIS_URL is provided)
+let Redis, redis;
+try {
+    Redis = require('ioredis');
+    if (process.env.REDIS_URL) {
+        redis = new Redis(process.env.REDIS_URL);
+        console.log('✅ Redis connected successfully');
+    } else {
+        console.log('⚠️ REDIS_URL not provided, key management disabled');
+    }
+} catch (error) {
+    console.log('⚠️ ioredis not available, key management disabled:', error.message);
+}
 
 // Supabase configuration for direct HTTP requests
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -45,6 +54,9 @@ return {1, tostring(cur)}
 class KeyPool {
     constructor() {
         this.redis = redis;
+        if (!this.redis) {
+            console.log('⚠️ KeyPool initialized without Redis - key management disabled');
+        }
     }
 
     aliasesKey() { return "ai:keys:aliases"; }
@@ -53,6 +65,10 @@ class KeyPool {
     rrKey() { return "ai:keys:rr_index"; }
 
     async list() {
+        if (!this.redis) {
+            console.log('⚠️ Redis not available, returning empty key list');
+            return [];
+        }
         const aliases = await this.redis.smembers(this.aliasesKey());
         const metas = [];
         for (const alias of aliases) {
@@ -70,6 +86,10 @@ class KeyPool {
     }
 
     async acquire() {
+        if (!this.redis) {
+            console.log('⚠️ Redis not available, cannot acquire key');
+            return null;
+        }
         const metas = await this.list();
         if (!metas.length) return null;
 
@@ -1498,6 +1518,9 @@ async function handlePaymentFailed(invoice) {
 
 // AI Proxy function with key pool
 async function callAI(payload) {
+    // If Redis is not available, this function won't be called
+    // The fallback is handled in the /api/generate endpoint
+    
     const maxWaitMs = 5000;
     const pollMs = 100;
     const t0 = Date.now();
@@ -1537,6 +1560,10 @@ async function callAI(payload) {
 app.post('/admin/keys', async (req, res) => {
     if (req.headers.authorization !== `Bearer ${process.env.ADMIN_TOKEN}`) {
         return res.status(401).json({ error: 'unauthorized' });
+    }
+    
+    if (!redis) {
+        return res.status(503).json({ error: 'Redis not available - key management disabled' });
     }
     
     const { action, alias, key, rpm, status } = req.body || {};
@@ -1601,6 +1628,27 @@ app.post('/api/generate', async (req, res) => {
         };
         
         console.log('🤖 Calling AI with payload:', { model: payload.model, max_tokens: payload.max_tokens });
+        
+        // If Redis is not available, fall back to direct OpenAI call
+        if (!redis) {
+            console.log('⚠️ Redis not available, using fallback OpenAI call');
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+            }
+            
+            const data = await response.json();
+            return res.json(data);
+        }
         
         const data = await callAI(payload);
         res.json(data);
