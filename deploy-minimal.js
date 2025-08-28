@@ -11,9 +11,68 @@ let Redis, redis;
 try {
     Redis = require('ioredis');
     if (process.env.REDIS_URL) {
-        // Temporarily disable Redis due to connection loop issues
-        console.log('⚠️ Redis temporarily disabled due to connection loop issues');
-        redis = null;
+        // Create Redis client with robust connection settings
+        redis = new Redis(process.env.REDIS_URL, {
+            maxRetriesPerRequest: 1,
+            retryDelayOnFailover: 100,
+            enableReadyCheck: false,
+            lazyConnect: true,
+            connectTimeout: 10000,
+            commandTimeout: 5000,
+            keepAlive: 0, // Disable keepalive for Upstash
+            family: 4, // Force IPv4
+            retryDelayOnClusterDown: 200,
+            maxLoadingTimeout: 10000,
+            autoResubscribe: false,
+            autoResendUnfulfilledCommands: false,
+            // Upstash-specific settings
+            tls: process.env.REDIS_URL.includes('rediss://') ? {} : undefined,
+            reconnectOnError: (err) => {
+                console.log('🔄 Redis reconnect on error:', err.message);
+                return false; // Don't auto-reconnect on errors
+            }
+        });
+        
+        // Add error handlers with connection limits
+        let connectionAttempts = 0;
+        const maxConnectionAttempts = 3;
+        
+        redis.on('error', (err) => {
+            console.log('⚠️ Redis connection error:', err.message);
+            connectionAttempts++;
+            if (connectionAttempts >= maxConnectionAttempts) {
+                console.log('❌ Max Redis connection attempts reached, disabling Redis');
+                redis = null;
+            }
+        });
+        
+        redis.on('connect', () => {
+            console.log('✅ Redis connected successfully');
+            connectionAttempts = 0; // Reset on successful connection
+        });
+        
+        redis.on('close', () => {
+            console.log('⚠️ Redis connection closed');
+        });
+        
+        redis.on('reconnecting', () => {
+            console.log('🔄 Redis reconnecting...');
+        });
+        
+        // Test connection with timeout
+        const connectionTest = async () => {
+            try {
+                await redis.ping();
+                console.log('✅ Redis ping successful');
+            } catch (err) {
+                console.log('❌ Redis ping failed:', err.message);
+                redis = null;
+            }
+        };
+        
+        // Test connection after a short delay
+        setTimeout(connectionTest, 2000);
+        
     } else {
         console.log('⚠️ REDIS_URL not provided, key management disabled');
     }
