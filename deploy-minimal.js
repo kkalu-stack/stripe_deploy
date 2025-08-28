@@ -747,14 +747,12 @@ app.post('/api/cancel-subscription', async (req, res) => {
             await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscriptionId}`, {
                 method: 'PATCH',
                 body: {
-                    status: 'free', // Back to free plan (not 'canceled')
-                    monthly_request_limit: 10, // Back to free tier
-                    requests_used_this_month: 0, // Reset request usage for new month
-                    is_unlimited: false,
+                    status: 'canceled', // Mark as canceled but keep Pro access until period end
+                    cancel_at_period_end: true, // Will revert to free at period end
                     updated_at: new Date().toISOString()
                 }
             });
-            console.log('✅ Supabase updated successfully - user back to free plan');
+            console.log('✅ Supabase updated successfully - user keeps Pro access until period end');
         } catch (supabaseError) {
             console.error('❌ Error updating Supabase:', supabaseError);
             // Continue anyway - the webhook might handle it
@@ -999,14 +997,20 @@ app.get('/api/user-status/:userId', async (req, res) => {
             const monthlyLimit = subscription.monthly_request_limit || 75;
             const isUnlimited = subscription.is_unlimited || false;
             
+            // Check if user is Pro (active or canceled but still in paid period)
+            const isProUser = (subscription.status === 'active' || 
+                              (subscription.status === 'canceled' && subscription.cancel_at_period_end)) && 
+                             isUnlimited;
+            
             res.json({
                 success: true,
                 status: subscription.status,
                 requestsUsed: requestsUsed,
                 monthlyLimit: monthlyLimit,
                 isUnlimited: isUnlimited,
-                canChat: isUnlimited || requestsUsed < monthlyLimit,
-                upgradeRequired: !isUnlimited && requestsUsed >= monthlyLimit,
+                isProUser: isProUser,
+                canChat: isProUser || requestsUsed < monthlyLimit,
+                upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
                 upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited access!`,
                 upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
             });
@@ -1615,9 +1619,13 @@ app.post('/api/generate', async (req, res) => {
                     if (subscriptions && subscriptions.length > 0) {
                         const subscription = subscriptions[0];
                         
-                        // Check if user has unlimited requests (Pro users)
-                        if (subscription.status === 'active' && subscription.is_unlimited) {
-                            console.log(`✅ Pro user ${userEmail} - unlimited requests`);
+                        // Check if user has unlimited requests (Pro users - active or canceled but still in paid period)
+                        const isProUser = (subscription.status === 'active' || 
+                                          (subscription.status === 'canceled' && subscription.cancel_at_period_end)) && 
+                                         subscription.is_unlimited;
+                        
+                        if (isProUser) {
+                            console.log(`✅ Pro user ${userEmail} - unlimited requests (status: ${subscription.status})`);
                         } else {
                             // Free tier: check monthly request limit
                             const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
