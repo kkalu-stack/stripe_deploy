@@ -1537,10 +1537,12 @@ app.post('/api/generate', async (req, res) => {
     try {
         // Check user's request quota
         const userEmail = req.headers['x-user-email']; // Chrome extension will send this
-        if (userEmail) {
+        const userId = req.headers['x-user-id']; // Alternative: user ID
+        if (userEmail || userId) {
             try {
                 // Get user's subscription status from Supabase
-                const userResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?user_email=eq.${encodeURIComponent(userEmail)}`, {
+                const queryParam = userId ? `user_id=eq.${userId}` : `user_email=eq.${encodeURIComponent(userEmail)}`;
+                const userResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?${queryParam}`, {
                     headers: {
                         'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
                         'apikey': SUPABASE_SERVICE_ROLE_KEY,
