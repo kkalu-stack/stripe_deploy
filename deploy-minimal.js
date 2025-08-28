@@ -11,52 +11,9 @@ let Redis, redis;
 try {
     Redis = require('ioredis');
     if (process.env.REDIS_URL) {
-        redis = new Redis(process.env.REDIS_URL, {
-            maxRetriesPerRequest: 1,
-            retryDelayOnFailover: 50,
-            enableReadyCheck: false,
-            lazyConnect: true,
-            connectTimeout: 5000,
-            commandTimeout: 3000,
-            keepAlive: 0, // Disable keepalive for Upstash
-            family: 4, // Force IPv4
-            retryDelayOnClusterDown: 100,
-            maxLoadingTimeout: 5000,
-            autoResubscribe: false,
-            autoResendUnfulfilledCommands: false,
-            // Upstash-specific settings
-            tls: process.env.REDIS_URL.includes('rediss://') ? {} : undefined,
-            reconnectOnError: (err) => {
-                console.log('🔄 Redis reconnect on error:', err.message);
-                return true;
-            }
-        });
-        
-        // Add error handlers to prevent unhandled errors
-        redis.on('error', (err) => {
-            console.log('⚠️ Redis connection error:', err.message);
-        });
-        
-        redis.on('connect', () => {
-            console.log('✅ Redis connected successfully');
-        });
-        
-        redis.on('close', () => {
-            console.log('⚠️ Redis connection closed');
-        });
-        
-        redis.on('reconnecting', () => {
-            console.log('🔄 Redis reconnecting...');
-        });
-        
-        // Test connection
-        redis.ping().then(() => {
-            console.log('✅ Redis ping successful');
-        }).catch((err) => {
-            console.log('❌ Redis ping failed:', err.message);
-            redis = null; // Disable if ping fails
-        });
-        
+        // Temporarily disable Redis due to connection loop issues
+        console.log('⚠️ Redis temporarily disabled due to connection loop issues');
+        redis = null;
     } else {
         console.log('⚠️ REDIS_URL not provided, key management disabled');
     }
