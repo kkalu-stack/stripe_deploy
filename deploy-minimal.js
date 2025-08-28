@@ -63,8 +63,8 @@ function handleSubscriptionCreationError(createError, res) {
         // Return free tier status without creating record
         res.json({
             status: 'free',
-            tokens_used: 0,
-            tokens_limit: 50,
+            requests_used_this_month: 0,
+            monthly_request_limit: 10,
             is_unlimited: false,
             current_period_end: null
         });
@@ -72,8 +72,8 @@ function handleSubscriptionCreationError(createError, res) {
         // Other error - fallback to free tier response
         res.json({
             status: 'free',
-            tokens_used: 0,
-            tokens_limit: 50,
+            requests_used_this_month: 0,
+            monthly_request_limit: 10,
             is_unlimited: false,
             current_period_end: null
         });
@@ -418,8 +418,9 @@ app.post('/api/test-create-subscription', async (req, res) => {
             status: 'active',
             current_period_start: new Date().toISOString(),
             current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-            tokens_limit: -1, // Unlimited for Pro
-            tokens_used: 0,
+            monthly_request_limit: -1, // Unlimited for Pro
+            requests_used_this_month: 0,
+            is_unlimited: true,
             updated_at: new Date().toISOString()
         };
         
@@ -747,8 +748,9 @@ app.post('/api/cancel-subscription', async (req, res) => {
                 method: 'PATCH',
                 body: {
                     status: 'free', // Back to free plan (not 'canceled')
-                    tokens_limit: 50, // Back to free tier
-                    tokens_used: 0, // Reset token usage for new month
+                    monthly_request_limit: 10, // Back to free tier
+                    requests_used_this_month: 0, // Reset request usage for new month
+                    is_unlimited: false,
                     updated_at: new Date().toISOString()
                 }
             });
@@ -802,9 +804,9 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 console.log('✅ Found subscription:', subscription);
                 res.json({
                     status: subscription.status,
-                    tokens_used: subscription.tokens_used || 0,
-                    tokens_limit: subscription.tokens_limit,
-                    is_unlimited: subscription.tokens_limit === -1,
+                    requests_used_this_month: subscription.requests_used_this_month || 0,
+                    monthly_request_limit: subscription.monthly_request_limit || 10,
+                    is_unlimited: subscription.is_unlimited || false,
                     current_period_end: subscription.current_period_end,
                     stripe_subscription_id: subscription.stripe_subscription_id
                 });
@@ -814,8 +816,8 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 // This avoids foreign key constraint issues with test users
                 res.json({
                     status: 'free',
-                    tokens_used: 0,
-                    tokens_limit: 50,
+                    requests_used_this_month: 0,
+                    monthly_request_limit: 10,
                     is_unlimited: false,
                     current_period_end: null
                 });
@@ -825,8 +827,8 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
             // For any query error, just return free tier status
             res.json({
                 status: 'free',
-                tokens_used: 0,
-                tokens_limit: 50,
+                requests_used_this_month: 0,
+                monthly_request_limit: 10,
                 is_unlimited: false,
                 current_period_end: null
             });
@@ -862,30 +864,30 @@ app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
     }
 });
 
-// Update token usage in Supabase
-app.post('/api/update-token-usage', async (req, res) => {
+// Update request usage in Supabase (replaces old token usage)
+app.post('/api/update-request-usage', async (req, res) => {
     try {
-        const { userId, tokensUsed } = req.body;
+        const { userId, requestsUsed } = req.body;
         
-        if (!userId || tokensUsed === undefined) {
-            return res.status(400).json({ error: 'Missing userId or tokensUsed' });
+        if (!userId || requestsUsed === undefined) {
+            return res.status(400).json({ error: 'Missing userId or requestsUsed' });
         }
         
-        // Update token usage in Supabase
+        // Update request usage in Supabase
         await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
             method: 'PATCH',
             body: {
-                tokens_used: tokensUsed,
+                requests_used_this_month: requestsUsed,
                 updated_at: new Date().toISOString()
             }
         });
         
-        console.log('✅ Token usage updated for user:', userId, 'tokens:', tokensUsed);
-        res.json({ success: true, tokensUsed });
+        console.log('✅ Request usage updated for user:', userId, 'requests:', requestsUsed);
+        res.json({ success: true, requestsUsed });
         
     } catch (error) {
-        console.error('Error updating token usage in Supabase:', error);
-        res.status(500).json({ error: 'Failed to update token usage' });
+        console.error('Error updating request usage in Supabase:', error);
+        res.status(500).json({ error: 'Failed to update request usage' });
     }
 });
 
@@ -917,8 +919,9 @@ app.post('/api/create-subscription-record', async (req, res) => {
         const subscriptionData = {
             user_id: userId,
             status: status,
-            tokens_used: 0,
-            tokens_limit: status === 'active' ? -1 : 50,
+            requests_used_this_month: 0,
+            monthly_request_limit: status === 'active' ? -1 : 10,
+            is_unlimited: status === 'active',
             stripe_subscription_id: null,
             stripe_customer_id: null,
             current_period_start: null,
@@ -1226,8 +1229,9 @@ async function handleCheckoutCompleted(session) {
                 status: subscription.status,
                 current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
                 current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                tokens_limit: -1, // Unlimited for Pro
-                tokens_used: 0, // Reset token usage
+                monthly_request_limit: -1, // Unlimited for Pro
+                requests_used_this_month: 0, // Reset request usage
+                is_unlimited: true,
                 updated_at: new Date().toISOString()
             };
             
@@ -1292,7 +1296,8 @@ async function handleSubscriptionCreated(subscription) {
                 stripe_subscription_id: subscription.id,
                 stripe_customer_id: subscription.customer,
                 status: subscription.status,
-                tokens_limit: -1, // Unlimited for Pro
+                monthly_request_limit: -1, // Unlimited for Pro
+                is_unlimited: true,
                 updated_at: new Date().toISOString()
             };
             
@@ -1376,8 +1381,9 @@ async function handleSubscriptionDeleted(subscription) {
             method: 'PATCH',
             body: {
                 status: 'free', // Back to free plan (not 'canceled')
-                tokens_limit: 50, // Back to free tier
-                tokens_used: 0, // Reset token usage for new month
+                monthly_request_limit: 10, // Back to free tier
+                requests_used_this_month: 0, // Reset request usage for new month
+                is_unlimited: false,
                 updated_at: new Date().toISOString()
             }
         });
