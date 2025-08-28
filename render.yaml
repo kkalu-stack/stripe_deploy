@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: trontiq-stripe-api
+    env: node
+    buildCommand: npm install
+    startCommand: node deploy-minimal.js
+    envVars:
+      - key: NODE_ENV
+        value: production
