@@ -1011,7 +1011,9 @@ app.get('/api/user-status/:userId', async (req, res) => {
                 isProUser: isProUser,
                 canChat: isProUser || requestsUsed < monthlyLimit,
                 upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
-                upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited access!`,
+                upgradeMessage: !isProUser && requestsUsed >= monthlyLimit ? 
+                    `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited access!` : 
+                    null,
                 upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
             });
         } else {
