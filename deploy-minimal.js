@@ -989,6 +989,16 @@ app.get('/api/user-status/:userId', async (req, res) => {
         const { userId } = req.params;
         console.log('🔍 Checking user status for:', userId);
         
+        // Production validation - user ID must exist and be valid
+        if (!userId) {
+            console.log('❌ No user ID provided');
+            return res.status(401).json({
+                success: false,
+                error: 'Authentication required',
+                message: 'User must be authenticated to access this endpoint'
+            });
+        }
+        
         const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
         
         if (data && data.length > 0) {
