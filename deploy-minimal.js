@@ -6,6 +6,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const cookieParser = require('cookie-parser');
 // Environment-based API key management (no Redis needed)
 const API_KEYS = [
     process.env.OPENAI_API_KEY_1,
@@ -78,6 +79,32 @@ function handleSubscriptionCreationError(createError, res) {
             current_period_end: null
         });
     }
+}
+
+// Session management
+const sessions = new Map(); // In-memory session store (in production, use Redis)
+
+// Helper function to create session
+function createSession(userId, userData) {
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const session = {
+        userId,
+        userData,
+        createdAt: Date.now(),
+        lastActivity: Date.now()
+    };
+    sessions.set(sessionId, session);
+    return sessionId;
+}
+
+// Helper function to get session
+function getSession(sessionId) {
+    const session = sessions.get(sessionId);
+    if (session) {
+        session.lastActivity = Date.now();
+        return session;
+    }
+    return null;
 }
 
 // Helper function to make Supabase requests
@@ -170,6 +197,7 @@ const SECURITY_CONFIG = {
 
 // Security middleware
 app.use(helmet());
+app.use(cookieParser()); // Add cookie parser for session management
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
 app.use(cors(SECURITY_CONFIG.cors));
 
@@ -983,7 +1011,163 @@ app.get('/upgrade', (req, res) => {
     });
 });
 
-// Check user status and quota
+// Login endpoint to create session
+app.post('/api/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                error: 'Email and password are required'
+            });
+        }
+        
+        // Authenticate with Supabase
+        const authResponse = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_SERVICE_ROLE_KEY
+            },
+            body: JSON.stringify({ email, password })
+        });
+        
+        if (!authResponse.ok) {
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid credentials'
+            });
+        }
+        
+        const authData = await authResponse.json();
+        
+        // Get user data
+        const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            headers: {
+                'Authorization': `Bearer ${authData.access_token}`,
+                'apikey': SUPABASE_SERVICE_ROLE_KEY
+            }
+        });
+        
+        if (!userResponse.ok) {
+            return res.status(401).json({
+                success: false,
+                error: 'Failed to get user data'
+            });
+        }
+        
+        const userData = await userResponse.json();
+        
+        // Create session
+        const sessionId = createSession(userData.id, userData);
+        
+        // Set HttpOnly cookie
+        res.cookie('trontiq_session', sessionId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+        
+        res.json({
+            success: true,
+            isAuthenticated: true,
+            user: {
+                id: userData.id,
+                email: userData.email,
+                display_name: userData.user_metadata?.full_name || 'User'
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Login error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Logout endpoint
+app.post('/api/logout', (req, res) => {
+    const sessionId = req.cookies.trontiq_session;
+    
+    if (sessionId) {
+        sessions.delete(sessionId);
+    }
+    
+    res.clearCookie('trontiq_session');
+    res.json({ success: true });
+});
+
+// Session-based user info endpoint (secure)
+app.get('/api/me', async (req, res) => {
+    try {
+        const sessionId = req.cookies.trontiq_session;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                isAuthenticated: false,
+                error: 'No session found'
+            });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                isAuthenticated: false,
+                error: 'Invalid session'
+            });
+        }
+        
+        // Get user subscription data
+        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
+        
+        if (data && data.length > 0) {
+            const subscription = data[0];
+            const requestsUsed = subscription.requests_used_this_month || 0;
+            const monthlyLimit = subscription.monthly_request_limit || 75;
+            const isUnlimited = subscription.is_unlimited || false;
+            
+            // Check if user is Pro (active or canceled but still in paid period)
+            const isProUser = (subscription.status === 'active' || 
+                              (subscription.status === 'canceled' && subscription.cancel_at_period_end)) && 
+                             isUnlimited;
+            
+            res.json({
+                success: true,
+                isAuthenticated: true,
+                plan: isProUser ? 'pro' : 'free',
+                isProUser: isProUser,
+                requestsUsed: requestsUsed,
+                monthlyLimit: monthlyLimit,
+                canChat: isProUser || requestsUsed < monthlyLimit
+            });
+        } else {
+            res.json({
+                success: true,
+                isAuthenticated: true,
+                plan: 'free',
+                isProUser: false,
+                requestsUsed: 0,
+                monthlyLimit: 75,
+                canChat: true
+            });
+        }
+    } catch (error) {
+        console.error('❌ /me endpoint error:', error);
+        res.status(500).json({
+            success: false,
+            isAuthenticated: false,
+            error: error.message
+        });
+    }
+});
+
+// Check user status and quota (legacy endpoint - will be deprecated)
 app.get('/api/user-status/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -1511,11 +1695,16 @@ async function handleSubscriptionCreated(subscription) {
             
             console.log('📦 Subscription data to update:', updateData);
             
-            // Try to update the subscription record
-            await supabaseRequest('user_subscriptions?user_id=eq.41309d57-a92d-4dda-b970-a17984e2b210', {
-                method: 'PATCH',
-                body: updateData
-            });
+            // Try to update the subscription record - this should be dynamic based on the subscription
+            // For now, we'll use the stripe_subscription_id to find the record
+            if (subscription.id) {
+                await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
+                    method: 'PATCH',
+                    body: updateData
+                });
+            } else {
+                console.log('⚠️ No subscription ID available for update');
+            }
             
             console.log('✅ Subscription updated in Supabase');
             
