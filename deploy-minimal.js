@@ -1035,6 +1035,34 @@ app.get('/api/user-status/:userId', async (req, res) => {
     }
 });
 
+// Manual fix endpoint to update subscription status
+app.post('/api/fix-subscription-status', async (req, res) => {
+    try {
+        const { userId, status } = req.body;
+        console.log('🔧 Manual subscription status fix:', { userId, status });
+        
+        if (!userId || !status) {
+            return res.status(400).json({ error: 'userId and status are required' });
+        }
+        
+        // Update subscription status
+        await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
+            method: 'PATCH',
+            body: {
+                status: status,
+                updated_at: new Date().toISOString()
+            }
+        });
+        
+        console.log('✅ Subscription status manually updated to:', status);
+        res.json({ success: true, message: `Status updated to ${status}` });
+        
+    } catch (error) {
+        console.error('❌ Error fixing subscription status:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Debug endpoint to check user subscription data
 app.get('/api/debug-subscription/:userId', async (req, res) => {
     try {
