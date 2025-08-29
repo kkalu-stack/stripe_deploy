@@ -64,7 +64,7 @@ function handleSubscriptionCreationError(createError, res) {
         res.json({
             status: 'free',
             requests_used_this_month: 0,
-            monthly_request_limit: 10,
+            monthly_request_limit: 75,
             is_unlimited: false,
             current_period_end: null
         });
@@ -73,7 +73,7 @@ function handleSubscriptionCreationError(createError, res) {
         res.json({
             status: 'free',
             requests_used_this_month: 0,
-            monthly_request_limit: 10,
+            monthly_request_limit: 75,
             is_unlimited: false,
             current_period_end: null
         });
@@ -803,7 +803,7 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 res.json({
                     status: subscription.status,
                     requests_used_this_month: subscription.requests_used_this_month || 0,
-                    monthly_request_limit: subscription.monthly_request_limit || 10,
+                    monthly_request_limit: subscription.monthly_request_limit || 75,
                     is_unlimited: subscription.is_unlimited || false,
                     current_period_end: subscription.current_period_end,
                     stripe_subscription_id: subscription.stripe_subscription_id
@@ -815,7 +815,7 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 res.json({
                     status: 'free',
                     requests_used_this_month: 0,
-                    monthly_request_limit: 10,
+                    monthly_request_limit: 75,
                     is_unlimited: false,
                     current_period_end: null
                 });
@@ -826,7 +826,7 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
             res.json({
                 status: 'free',
                 requests_used_this_month: 0,
-                monthly_request_limit: 10,
+                monthly_request_limit: 75,
                 is_unlimited: false,
                 current_period_end: null
             });
@@ -918,7 +918,7 @@ app.post('/api/create-subscription-record', async (req, res) => {
             user_id: userId,
             status: status,
             requests_used_this_month: 0,
-            monthly_request_limit: status === 'active' ? -1 : 10,
+            monthly_request_limit: status === 'active' ? -1 : 75,
             is_unlimited: status === 'active',
             stripe_subscription_id: null,
             stripe_customer_id: null,
