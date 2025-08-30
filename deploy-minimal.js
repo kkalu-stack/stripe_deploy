@@ -879,12 +879,14 @@ app.get('/api/get-user-id', async (req, res) => {
 app.get('/api/me', async (req, res) => {
     try {
         console.log('🔍 [API/ME] Request received with headers:', req.headers);
+        console.log('🔍 [API/ME] Authorization header:', req.headers.authorization);
         
         // Industry standard: Get access token from Authorization header
         const authHeader = req.headers.authorization;
         const accessToken = authHeader?.replace('Bearer ', '');
         
         console.log('🔍 [API/ME] Access token present:', !!accessToken);
+        console.log('🔍 [API/ME] Access token length:', accessToken?.length);
         
         if (!accessToken) {
             console.log('❌ [API/ME] No access token provided');
