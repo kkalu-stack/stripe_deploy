@@ -1267,7 +1267,6 @@ app.get('/api/me', async (req, res) => {
                         full_name: userFullName
                     }
                 },
-                userData: userData, // All trontiq_* data from server storage
                 plan: 'free',
                 isProUser: false,
                 requestsUsed: 0,
@@ -1580,6 +1579,14 @@ app.post('/api/delete-account', async (req, res) => {
             console.log('✅ Privacy audit log records deleted');
         } catch (auditDeleteError) {
             console.error('⚠️ Error deleting audit log records:', auditDeleteError);
+        }
+        
+        // 2.6. Clear server-side user data storage
+        try {
+            userDataStorage.delete(userId);
+            console.log('✅ Server-side user data cleared');
+        } catch (userDataError) {
+            console.error('⚠️ Error clearing server-side user data:', userDataError);
         }
         
         // 3. Delete user from Supabase auth
