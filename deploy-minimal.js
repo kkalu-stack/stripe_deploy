@@ -107,6 +107,25 @@ function getSession(sessionId) {
     return null;
 }
 
+// User data storage (replaces chrome.storage.local for trontiq_* data)
+const userDataStorage = new Map();
+
+// User data storage functions
+function getUserData(userId) {
+    return userDataStorage.get(userId) || {};
+}
+
+function setUserData(userId, data) {
+    const existing = userDataStorage.get(userId) || {};
+    userDataStorage.set(userId, { ...existing, ...data });
+}
+
+function updateUserData(userId, key, value) {
+    const existing = userDataStorage.get(userId) || {};
+    existing[key] = value;
+    userDataStorage.set(userId, existing);
+}
+
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
     const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
@@ -1101,6 +1120,79 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
+// User data storage endpoints (replaces chrome.storage.local)
+app.post('/api/user-data', async (req, res) => {
+    try {
+        const sessionId = req.cookies.trontiq_session;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'No session found'
+            });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid session'
+            });
+        }
+        
+        const { data } = req.body;
+        
+        if (data) {
+            setUserData(session.userId, data);
+            console.log('✅ User data saved:', Object.keys(data));
+        }
+        
+        res.json({ success: true });
+        
+    } catch (error) {
+        console.error('❌ Save user data error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.get('/api/user-data', async (req, res) => {
+    try {
+        const sessionId = req.cookies.trontiq_session;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'No session found'
+            });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid session'
+            });
+        }
+        
+        const userData = getUserData(session.userId);
+        
+        res.json({
+            success: true,
+            data: userData
+        });
+        
+    } catch (error) {
+        console.error('❌ Get user data error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Session-based user info endpoint (secure)
 app.get('/api/me', async (req, res) => {
     try {
@@ -1123,11 +1215,16 @@ app.get('/api/me', async (req, res) => {
             });
         }
         
-        // Get user profile data
-        const userProfile = await supabaseRequest(`user_profiles?user_id=eq.${session.userId}&select=*`);
-        
         // Get user subscription data
         const data = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
+        
+        // Get user data from server storage (replaces chrome.storage.local)
+        const userData = getUserData(session.userId);
+        
+        // Extract user data from session (email and full_name from auth.users)
+        const userEmail = session.userData.email;
+        const userFullName = session.userData.user_metadata?.full_name || 'Not provided';
+        const userDisplayName = userData.trontiq_display_name || session.userData.user_metadata?.full_name || 'User';
         
         if (data && data.length > 0) {
             const subscription = data[0];
@@ -1145,12 +1242,13 @@ app.get('/api/me', async (req, res) => {
                 isAuthenticated: true,
                 user: {
                     id: session.userId,
-                    email: session.userData.email,
-                    display_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User',
+                    email: userEmail,
+                    display_name: userDisplayName,
                     user_metadata: {
-                        full_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User'
+                        full_name: userFullName
                     }
                 },
+                userData: userData, // All trontiq_* data from server storage
                 plan: isProUser ? 'pro' : 'free',
                 isProUser: isProUser,
                 requestsUsed: requestsUsed,
@@ -1163,12 +1261,13 @@ app.get('/api/me', async (req, res) => {
                 isAuthenticated: true,
                 user: {
                     id: session.userId,
-                    email: session.userData.email,
-                    display_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User',
+                    email: userEmail,
+                    display_name: userDisplayName,
                     user_metadata: {
-                        full_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User'
+                        full_name: userFullName
                     }
                 },
+                userData: userData, // All trontiq_* data from server storage
                 plan: 'free',
                 isProUser: false,
                 requestsUsed: 0,
