@@ -5,11 +5,15 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const { createClient } = require('@supabase/supabase-js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Supabase configuration for direct HTTP requests
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Initialize Supabase client
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // Validate required environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -888,21 +892,81 @@ app.get('/api/me', async (req, res) => {
         // In a production environment, you would validate the session token properly
         // and get user data from the validated session
         
-        // For demonstration, we'll create a basic user object
-        // In real implementation, you would:
-        // 1. Validate the session token with Supabase Auth
-        // 2. Extract user data from the validated session
-        const fullName = 'User'; // Would come from validated session
-        const displayName = 'User'; // Would come from validated session
-        const userEmail = 'user@example.com'; // Would come from validated session
+        // We need a way to identify the user to get their data
+        // For now, we'll accept a user ID parameter to get real data
+        const { userId } = req.query;
         
-        // For now, we'll return a generic response since we can't identify the specific user
-        // without proper session validation. In production, you would:
-        // 1. Validate the session token with Supabase Auth
-        // 2. Extract user data from the validated session
-        // 3. Query user_subscriptions with the validated user ID
+        if (userId) {
+            try {
+                // Get user data from auth.users using Supabase client
+                const { data: userData, error: userError } = await supabase
+                    .from('auth.users')
+                    .select('id, email, user_metadata')
+                    .eq('id', userId)
+                    .single();
+                
+                if (userError) {
+                    console.error('❌ Error fetching user data:', userError);
+                } else if (userData) {
+                    const fullName = userData.user_metadata?.full_name || 'Not provided';
+                    const displayName = userData.user_metadata?.display_name || fullName || 'User';
+                    
+                    // Get user subscription data
+                    const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+                    
+                    if (subscriptionData && subscriptionData.length > 0) {
+                        const subscription = subscriptionData[0];
+                        const requestsUsed = subscription.requests_used_this_month || 0;
+                        const monthlyLimit = subscription.monthly_request_limit || 75;
+                        const isUnlimited = subscription.is_unlimited || false;
+                        const isProUser = subscription.status === 'active' && isUnlimited;
+                        
+                        res.json({
+                            success: true,
+                            isAuthenticated: true,
+                            user: {
+                                id: userId,
+                                email: userData.email,
+                                display_name: displayName,
+                                user_metadata: {
+                                    full_name: fullName
+                                }
+                            },
+                            plan: isProUser ? 'pro' : 'free',
+                            isProUser: isProUser,
+                            tokensUsed: requestsUsed,
+                            tokensLimit: monthlyLimit,
+                            canChat: isProUser || requestsUsed < monthlyLimit
+                        });
+                        return;
+                    } else {
+                        // No subscription found - return free user data
+                        res.json({
+                            success: true,
+                            isAuthenticated: true,
+                            user: {
+                                id: userId,
+                                email: userData.email,
+                                display_name: displayName,
+                                user_metadata: {
+                                    full_name: fullName
+                                }
+                            },
+                            plan: 'free',
+                            isProUser: false,
+                            tokensUsed: 0,
+                            tokensLimit: 75,
+                            canChat: true
+                        });
+                        return;
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Error processing user data:', error);
+            }
+        }
         
-                // Return a generic authenticated response
+        // Fallback to generic response if no user ID provided or error occurred
         res.json({
             success: true,
             isAuthenticated: true,
