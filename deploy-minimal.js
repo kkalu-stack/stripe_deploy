@@ -606,9 +606,9 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 console.log('✅ Found subscription:', subscription);
                 res.json({
                     status: subscription.status,
-                    tokens_used: subscription.tokens_used || 0,
-                    tokens_limit: subscription.tokens_limit,
-                    is_unlimited: subscription.tokens_limit === -1,
+                    requests_used_this_month: subscription.requests_used_this_month || 0,
+                    monthly_request_limit: subscription.monthly_request_limit || 75,
+                    is_unlimited: subscription.is_unlimited || false,
                     current_period_end: subscription.current_period_end,
                     stripe_subscription_id: subscription.stripe_subscription_id
                 });
@@ -889,9 +889,9 @@ app.get('/api/me', async (req, res) => {
         
         if (data && data.length > 0) {
             const subscription = data[0];
-            const tokensUsed = subscription.tokens_used || 0;
-            const tokensLimit = subscription.tokens_limit || 50;
-            const isUnlimited = subscription.tokens_limit === -1;
+            const requestsUsed = subscription.requests_used_this_month || 0;
+            const monthlyLimit = subscription.monthly_request_limit || 75;
+            const isUnlimited = subscription.is_unlimited || false;
             
             // Check if user is Pro (active subscription)
             const isProUser = subscription.status === 'active' && isUnlimited;
@@ -909,9 +909,9 @@ app.get('/api/me', async (req, res) => {
                 },
                 plan: isProUser ? 'pro' : 'free',
                 isProUser: isProUser,
-                tokensUsed: tokensUsed,
-                tokensLimit: tokensLimit,
-                canChat: isProUser || tokensUsed < tokensLimit
+                tokensUsed: requestsUsed,
+                tokensLimit: monthlyLimit,
+                canChat: isProUser || requestsUsed < monthlyLimit
             });
         } else {
             res.json({
