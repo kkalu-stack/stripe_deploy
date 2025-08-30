@@ -1555,6 +1555,75 @@ async function handlePaymentFailed(invoice) {
     }
 }
 
+// Resume text endpoints
+app.get('/api/resume', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        // In a real implementation, this would come from a database
+        // For now, return empty resume text
+        res.json({
+            success: true,
+            data: {
+                resume_text: '',
+                saved_date: null
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get resume error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/resume', async (req, res) => {
+    try {
+        const { userId, resume_text } = req.body;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        if (!resume_text) {
+            return res.status(400).json({
+                success: false,
+                error: 'Resume text is required'
+            });
+        }
+        
+        // In a real implementation, this would save to a database
+        console.log('✅ Resume text saved for user:', userId);
+        
+        res.json({
+            success: true,
+            data: {
+                resume_text: resume_text,
+                saved_date: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Save resume error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Trontiq Stripe API server running on port ${PORT}`);
