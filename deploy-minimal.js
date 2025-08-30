@@ -6,6 +6,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
+const cookieParser = require('cookie-parser');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Supabase configuration for direct HTTP requests
@@ -14,6 +15,18 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Initialize Supabase client
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// In-memory session store (in production, use Redis or database)
+const sessions = new Map();
+
+// Session configuration
+const SESSION_CONFIG = {
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'none',
+    path: '/'
+};
 
 // Validate required environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -46,6 +59,53 @@ function handleSubscriptionCreationError(createError, res) {
             current_period_end: null
         });
     }
+}
+
+// Session management functions
+function createSession(userId, userAgent) {
+    const sessionId = 'sid_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const session = {
+        id: sessionId,
+        userId: userId,
+        userAgent: userAgent,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + SESSION_CONFIG.maxAge),
+        lastActivity: new Date()
+    };
+    
+    sessions.set(sessionId, session);
+    console.log('🔐 Session created:', { sessionId, userId });
+    return sessionId;
+}
+
+function getSession(sessionId) {
+    const session = sessions.get(sessionId);
+    if (!session) return null;
+    
+    // Check if session is expired
+    if (new Date() > session.expiresAt) {
+        sessions.delete(sessionId);
+        console.log('🔐 Session expired:', sessionId);
+        return null;
+    }
+    
+    // Update last activity for rolling renewal
+    session.lastActivity = new Date();
+    return session;
+}
+
+function extendSession(sessionId) {
+    const session = sessions.get(sessionId);
+    if (session) {
+        session.expiresAt = new Date(Date.now() + SESSION_CONFIG.maxAge);
+        session.lastActivity = new Date();
+        console.log('🔐 Session extended:', sessionId);
+    }
+}
+
+function deleteSession(sessionId) {
+    sessions.delete(sessionId);
+    console.log('🔐 Session deleted:', sessionId);
 }
 
 // Helper function to make Supabase requests
@@ -209,6 +269,7 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
 // JSON parsing middleware (MUST come after webhook handler)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true })); // Add this for form data
+app.use(cookieParser());
 
 // Add security headers
 app.use((req, res, next) => {
@@ -226,6 +287,92 @@ app.get('/api/health', (req, res) => {
         message: 'Trontiq Stripe API is running',
         environment: process.env.NODE_ENV || 'production'
     });
+});
+
+// Auth exchange endpoint - exchange Supabase token for server session
+app.post('/api/auth/exchange', async (req, res) => {
+    try {
+        const { idToken } = req.body;
+        
+        if (!idToken) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'ID token required' 
+            });
+        }
+        
+        console.log('🔐 Auth exchange request received');
+        
+        // Verify the Supabase ID token
+        const { data: { user }, error } = await supabase.auth.getUser(idToken);
+        
+        if (error || !user) {
+            console.error('❌ Token verification failed:', error);
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Invalid token' 
+            });
+        }
+        
+        console.log('✅ Token verified for user:', user.id);
+        
+        // Create server session
+        const sessionId = createSession(user.id, req.headers['user-agent']);
+        
+        // Set HttpOnly cookie
+        res.cookie('sid', sessionId, SESSION_CONFIG);
+        
+        console.log('✅ Session created and cookie set');
+        
+        res.json({ 
+            success: true, 
+            message: 'Authentication successful' 
+        });
+        
+    } catch (error) {
+        console.error('❌ Auth exchange error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error' 
+        });
+    }
+});
+
+// Auth logout endpoint
+app.post('/api/auth/logout', (req, res) => {
+    try {
+        console.log('🔐 Logout request received');
+        
+        // Get session from cookie
+        const sessionId = req.cookies.sid;
+        
+        if (sessionId) {
+            // Delete session from storage
+            deleteSession(sessionId);
+        }
+        
+        // Clear the session cookie
+        res.clearCookie('sid', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'none',
+            path: '/'
+        });
+        
+        console.log('✅ Logout successful');
+        
+        res.json({ 
+            success: true, 
+            message: 'Logged out successfully' 
+        });
+        
+    } catch (error) {
+        console.error('❌ Logout error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error' 
+        });
+    }
 });
 
 // Simple test endpoint
@@ -878,108 +1025,98 @@ app.get('/api/get-user-id', async (req, res) => {
 // Session-based user info endpoint (secure)
 app.get('/api/me', async (req, res) => {
     try {
-        console.log('🔍 [API/ME] Request received with headers:', req.headers);
-        console.log('🔍 [API/ME] Authorization header:', req.headers.authorization);
+        console.log('🔍 [API/ME] Request received');
         
-        // Industry standard: Get access token from Authorization header
-        const authHeader = req.headers.authorization;
-        const accessToken = authHeader?.replace('Bearer ', '');
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
         
-        console.log('🔍 [API/ME] Access token present:', !!accessToken);
-        console.log('🔍 [API/ME] Access token length:', accessToken?.length);
-        
-        if (!accessToken) {
-            console.log('❌ [API/ME] No access token provided');
+        if (!sessionId) {
+            console.log('❌ [API/ME] No session cookie found');
             return res.status(401).json({
                 success: false,
-                error: 'Access token required'
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
             });
         }
         
-        try {
-            // Validate the JWT token and get user info
-            const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-            
-            if (error) {
-                console.error('❌ [API/ME] Token validation error:', error);
-                return res.status(401).json({
-                    success: false,
-                    error: 'Invalid access token'
-                });
-            }
-            
-            if (!user) {
-                console.error('❌ [API/ME] No user found in token');
-                return res.status(401).json({
-                    success: false,
-                    error: 'User not found'
-                });
-            }
-            
-            console.log('✅ [API/ME] Token validated, user ID:', user.id);
-            
-            // Get user subscription data using the validated user ID
-            const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${user.id}&select=*`);
-            
-            const fullName = user.user_metadata?.full_name || 'Not provided';
-            const displayName = user.user_metadata?.display_name || fullName || 'User';
-            
-            if (subscriptionData && subscriptionData.length > 0) {
-                const subscription = subscriptionData[0];
-                const requestsUsed = subscription.requests_used_this_month || 0;
-                const monthlyLimit = subscription.monthly_request_limit || 75;
-                const isUnlimited = subscription.is_unlimited || false;
-                const isProUser = subscription.status === 'active' && isUnlimited;
-                
-                res.json({
-                    success: true,
-                    isAuthenticated: true,
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        display_name: displayName,
-                        user_metadata: {
-                            full_name: fullName
-                        }
-                    },
-                    plan: isProUser ? 'pro' : 'free',
-                    isProUser: isProUser,
-                    tokensUsed: requestsUsed,
-                    tokensLimit: monthlyLimit,
-                    canChat: isProUser || requestsUsed < monthlyLimit
-                });
-            } else {
-                // No subscription found - return free user data
-                res.json({
-                    success: true,
-                    isAuthenticated: true,
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        display_name: displayName,
-                        user_metadata: {
-                            full_name: fullName
-                        }
-                    },
-                    plan: 'free',
-                    isProUser: false,
-                    tokensUsed: 0,
-                    tokensLimit: 75,
-                    canChat: true
-                });
-            }
-        } catch (error) {
-            console.error('❌ [API/ME] Error processing user data:', error);
-            return res.status(500).json({
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            console.log('❌ [API/ME] Invalid or expired session');
+            return res.status(401).json({
                 success: false,
-                error: 'Internal server error'
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
             });
         }
+        
+        console.log('✅ [API/ME] Session validated, user ID:', session.userId);
+        
+        // Extend session (rolling renewal)
+        extendSession(sessionId);
+        
+        // Get user data from Supabase
+        const userData = await supabaseRequest(`auth/users?select=id,email,user_metadata&id=eq.${session.userId}`);
+        
+        if (!userData || userData.length === 0) {
+            console.error('❌ [API/ME] User not found in database');
+            return res.status(401).json({
+                success: false,
+                error: 'User not found'
+            });
+        }
+        
+        const user = userData[0];
+        const fullName = user.user_metadata?.full_name || 'Not provided';
+        const displayName = user.user_metadata?.display_name || fullName || 'User';
+        
+        // Get user subscription data
+        const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
+        
+        if (subscriptionData && subscriptionData.length > 0) {
+            const subscription = subscriptionData[0];
+            const requestsUsed = subscription.requests_used_this_month || 0;
+            const monthlyLimit = subscription.monthly_request_limit || 75;
+            const isUnlimited = subscription.is_unlimited || false;
+            const isProUser = subscription.status === 'active' && isUnlimited;
+            
+            // Set cache headers
+            res.set('Cache-Control', 'private, max-age=30');
+            
+            res.json({
+                success: true,
+                isAuthenticated: true,
+                plan: isProUser ? 'pro' : 'free',
+                isProUser: isProUser,
+                canChat: isProUser || requestsUsed < monthlyLimit,
+                requestsUsed: requestsUsed,
+                monthlyLimit: monthlyLimit,
+                upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
+                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
+            });
+        } else {
+            // No subscription found - return free user data
+            res.set('Cache-Control', 'private, max-age=30');
+            
+            res.json({
+                success: true,
+                isAuthenticated: true,
+                plan: 'free',
+                isProUser: false,
+                canChat: true,
+                requestsUsed: 0,
+                monthlyLimit: 75,
+                upgradeRequired: false,
+                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
+            });
+        }
+        
     } catch (error) {
         console.error('❌ [API/ME] Endpoint error:', error);
         res.status(500).json({
             success: false,
-            error: error.message
+            error: 'Internal server error'
         });
     }
 });
