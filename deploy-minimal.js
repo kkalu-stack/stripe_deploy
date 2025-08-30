@@ -878,32 +878,43 @@ app.get('/api/get-user-id', async (req, res) => {
 // Session-based user info endpoint (secure)
 app.get('/api/me', async (req, res) => {
     try {
-        // No session token required for now - simplified approach
-        
-        // For now, we'll use a simple approach since we don't have proper session validation
-        // In a production environment, you would validate the session token with Supabase Auth
-        // and extract the user ID from the validated session
-        
-        // Since we're not storing user IDs in local storage anymore, we need a different approach
-        // For now, we'll return a generic response since we can't identify the specific user
-        // without proper session validation
-        
-        // For now, we'll use a simpler approach since auth.users is not accessible via REST API
-        // In a production environment, you would validate the session token properly
-        // and get user data from the validated session
+        console.log('🔍 [API/ME] Request received with query:', req.query);
         
         // We need a way to identify the user to get their data
         // For now, we'll accept a user ID parameter to get real data
         const { userId } = req.query;
         
+        console.log('🔍 [API/ME] User ID from query:', userId);
+        
         if (userId) {
             try {
-                // Get user data from auth.users using Supabase client
-                const { data: userData, error: userError } = await supabase
-                    .from('auth.users')
-                    .select('id, email, user_metadata')
-                    .eq('id', userId)
-                    .single();
+                console.log('🔍 [API/ME] Attempting to fetch user data for ID:', userId);
+                
+                // Get user data using admin API since auth.users is not directly accessible
+                console.log('🔍 [API/ME] Using admin API to fetch user data');
+                const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('🔍 [API/ME] Admin API response status:', userResponse.status);
+                
+                let userData = null;
+                let userError = null;
+                
+                if (userResponse.ok) {
+                    userData = await userResponse.json();
+                    console.log('🔍 [API/ME] Admin API user data:', userData);
+                } else {
+                    userError = `Admin API error: ${userResponse.status}`;
+                    console.error('❌ [API/ME] Admin API error:', userError);
+                }
+                
+                console.log('🔍 [API/ME] Supabase user query result:', { userData, userError });
                 
                 if (userError) {
                     console.error('❌ Error fetching user data:', userError);
@@ -965,6 +976,8 @@ app.get('/api/me', async (req, res) => {
                 console.error('❌ Error processing user data:', error);
             }
         }
+        
+        console.log('🔍 [API/ME] Falling back to generic response - no user ID or error occurred');
         
         // Fallback to generic response if no user ID provided or error occurred
         res.json({
