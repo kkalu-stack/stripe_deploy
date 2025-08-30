@@ -884,11 +884,26 @@ app.get('/api/me', async (req, res) => {
             });
         }
         
-        // Get user subscription data
-        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        // Get user data from Supabase auth.users
+        const userData = await supabaseRequest(`auth/users?id=eq.${userId}&select=id,email,user_metadata`);
         
-        if (data && data.length > 0) {
-            const subscription = data[0];
+        if (!userData || userData.length === 0) {
+            return res.status(404).json({
+                success: false,
+                isAuthenticated: false,
+                error: 'User not found'
+            });
+        }
+        
+        const user = userData[0];
+        const fullName = user.user_metadata?.full_name || 'Not provided';
+        const displayName = user.user_metadata?.display_name || fullName || 'User';
+        
+        // Get user subscription data
+        const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        
+        if (subscriptionData && subscriptionData.length > 0) {
+            const subscription = subscriptionData[0];
             const requestsUsed = subscription.requests_used_this_month || 0;
             const monthlyLimit = subscription.monthly_request_limit || 75;
             const isUnlimited = subscription.is_unlimited || false;
@@ -901,10 +916,10 @@ app.get('/api/me', async (req, res) => {
                 isAuthenticated: true,
                 user: {
                     id: userId,
-                    email: 'user@example.com', // Would come from auth.users in real implementation
-                    display_name: 'User',
+                    email: user.email,
+                    display_name: displayName,
                     user_metadata: {
-                        full_name: 'User'
+                        full_name: fullName
                     }
                 },
                 plan: isProUser ? 'pro' : 'free',
@@ -919,16 +934,16 @@ app.get('/api/me', async (req, res) => {
                 isAuthenticated: true,
                 user: {
                     id: userId,
-                    email: 'user@example.com',
-                    display_name: 'User',
+                    email: user.email,
+                    display_name: displayName,
                     user_metadata: {
-                        full_name: 'User'
+                        full_name: fullName
                     }
                 },
                 plan: 'free',
                 isProUser: false,
                 tokensUsed: 0,
-                tokensLimit: 50,
+                tokensLimit: 75,
                 canChat: true
             });
         }
@@ -954,11 +969,20 @@ app.get('/api/prefs', async (req, res) => {
             });
         }
         
-        // Return default preferences (in real implementation, this would come from database)
+        // Get user data from Supabase auth.users to get display name
+        const userData = await supabaseRequest(`auth/users?id=eq.${userId}&select=id,user_metadata`);
+        
+        let displayName = 'User';
+        if (userData && userData.length > 0) {
+            const user = userData[0];
+            displayName = user.user_metadata?.display_name || user.user_metadata?.full_name || 'User';
+        }
+        
+        // Return user preferences (in real implementation, this would come from a user_preferences table)
         res.json({
             success: true,
             data: {
-                trontiq_display_name: 'User',
+                trontiq_display_name: displayName,
                 trontiq_education_level: 'bachelor',
                 trontiq_language: 'english',
                 trontiq_tone: 'professional'
