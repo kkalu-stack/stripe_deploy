@@ -1124,7 +1124,7 @@ app.get('/api/me', async (req, res) => {
         }
         
         // Get user profile data
-        const userProfile = await supabaseRequest(`profiles?user_id=eq.${session.userId}&select=*`);
+        const userProfile = await supabaseRequest(`user_profiles?user_id=eq.${session.userId}&select=*`);
         
         // Get user subscription data
         const data = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
