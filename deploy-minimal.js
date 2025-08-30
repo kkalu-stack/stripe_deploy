@@ -6,47 +6,10 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const cookieParser = require('cookie-parser');
-// Environment-based API key management (no Redis needed)
-const API_KEYS = [
-    process.env.OPENAI_API_KEY_1,
-    process.env.OPENAI_API_KEY_2,
-    process.env.OPENAI_API_KEY_3,
-    process.env.OPENAI_API_KEY_4,
-    process.env.OPENAI_API_KEY_5,
-    process.env.OPENAI_API_KEY_6,
-    process.env.OPENAI_API_KEY_7,
-    process.env.OPENAI_API_KEY_8,
-    process.env.OPENAI_API_KEY_9,
-    process.env.OPENAI_API_KEY_10
-].filter(key => key); // Remove any undefined keys
-
-let currentKeyIndex = 0;
-
-// Simple round-robin key rotation
-function getNextApiKey() {
-    if (API_KEYS.length === 0) {
-        return process.env.OPENAI_API_KEY; // Fallback to single key
-    }
-    
-    const key = API_KEYS[currentKeyIndex];
-    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-    return key;
-}
-
-console.log(`🚀 Loaded ${API_KEYS.length} API keys from environment variables`);
-if (API_KEYS.length > 0) {
-    console.log(`⚡ Round-robin rotation enabled - ${API_KEYS.length * 60} RPM capacity`);
-} else {
-    console.log('⚠️ No rotation keys found, using fallback single key');
-}
 
 // Supabase configuration for direct HTTP requests
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-// Simple environment-based key management (no Redis needed)
-console.log('⚡ Using environment-based API key rotation (no Redis)');
 
 // Validate required environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -64,8 +27,8 @@ function handleSubscriptionCreationError(createError, res) {
         // Return free tier status without creating record
         res.json({
             status: 'free',
-            requests_used_this_month: 0,
-            monthly_request_limit: 75,
+            tokens_used: 0,
+            tokens_limit: 50,
             is_unlimited: false,
             current_period_end: null
         });
@@ -73,57 +36,12 @@ function handleSubscriptionCreationError(createError, res) {
         // Other error - fallback to free tier response
         res.json({
             status: 'free',
-            requests_used_this_month: 0,
-            monthly_request_limit: 75,
+            tokens_used: 0,
+            tokens_limit: 50,
             is_unlimited: false,
             current_period_end: null
         });
     }
-}
-
-// Session management
-const sessions = new Map(); // In-memory session store (in production, use Redis)
-
-// Helper function to create session
-function createSession(userId, userData) {
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const session = {
-        userId,
-        userData,
-        createdAt: Date.now(),
-        lastActivity: Date.now()
-    };
-    sessions.set(sessionId, session);
-    return sessionId;
-}
-
-// Helper function to get session
-function getSession(sessionId) {
-    const session = sessions.get(sessionId);
-    if (session) {
-        session.lastActivity = Date.now();
-        return session;
-    }
-    return null;
-}
-
-// User data storage (replaces chrome.storage.local for trontiq_* data)
-const userDataStorage = new Map();
-
-// User data storage functions
-function getUserData(userId) {
-    return userDataStorage.get(userId) || {};
-}
-
-function setUserData(userId, data) {
-    const existing = userDataStorage.get(userId) || {};
-    userDataStorage.set(userId, { ...existing, ...data });
-}
-
-function updateUserData(userId, key, value) {
-    const existing = userDataStorage.get(userId) || {};
-    existing[key] = value;
-    userDataStorage.set(userId, existing);
 }
 
 // Helper function to make Supabase requests
@@ -166,13 +84,6 @@ async function supabaseRequest(endpoint, options = {}) {
             throw error;
         }
         
-        // Handle 204 No Content responses (no JSON body)
-        if (response.status === 204) {
-            console.log('✅ Supabase request successful (204 No Content)');
-            return null;
-        }
-        
-        // Only try to parse JSON for responses that have content
         const data = await response.json();
         console.log('✅ Supabase request successful');
         return data;
@@ -216,7 +127,6 @@ const SECURITY_CONFIG = {
 
 // Security middleware
 app.use(helmet());
-app.use(cookieParser()); // Add cookie parser for session management
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
 app.use(cors(SECURITY_CONFIG.cors));
 
@@ -304,28 +214,13 @@ app.use((req, res, next) => {
     next();
 });
 
-// Test endpoint to verify deployment
-app.get('/api/test-deployment', (req, res) => {
-    res.json({ 
-        message: 'NEW CODE DEPLOYED!', 
-        timestamp: new Date().toISOString(),
-        version: '2.0'
-    });
-});
-
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'ok', 
         timestamp: new Date().toISOString(),
         message: 'Trontiq Stripe API is running',
-        environment: process.env.NODE_ENV || 'production',
-        apiKeys: {
-            total: API_KEYS.length,
-            currentIndex: currentKeyIndex,
-            rotationEnabled: API_KEYS.length > 0,
-            rpmCapacity: API_KEYS.length * 60
-        }
+        environment: process.env.NODE_ENV || 'production'
     });
 });
 
@@ -357,29 +252,6 @@ app.get('/api/test-supabase', async (req, res) => {
             message: 'Supabase connection failed',
             error: error.message,
             details: error
-        });
-    }
-});
-
-// Debug endpoint to show current function code
-app.get('/api/debug-functions', (req, res) => {
-    try {
-        // Get the function source code
-        const handleSubscriptionCreatedSource = handleSubscriptionCreated.toString();
-        const handlePaymentSucceededSource = handlePaymentSucceeded.toString();
-        
-        res.json({
-            status: 'ok',
-            message: 'Current function code',
-            handleSubscriptionCreated: handleSubscriptionCreatedSource,
-            handlePaymentSucceeded: handlePaymentSucceededSource,
-            timestamp: new Date().toISOString()
-        });
-    } catch (error) {
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to get function code',
-            error: error.message
         });
     }
 });
@@ -465,9 +337,8 @@ app.post('/api/test-create-subscription', async (req, res) => {
             status: 'active',
             current_period_start: new Date().toISOString(),
             current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-            monthly_request_limit: -1, // Unlimited for Pro
-            requests_used_this_month: 0,
-            is_unlimited: true,
+            tokens_limit: -1, // Unlimited for Pro
+            tokens_used: 0,
             updated_at: new Date().toISOString()
         };
         
@@ -507,105 +378,6 @@ app.post('/api/test-create-subscription', async (req, res) => {
         res.status(500).json({ 
             status: 'error',
             message: 'Test subscription creation failed',
-            error: error.message,
-            details: error
-        });
-    }
-});
-
-// Complete test flow: Stripe → Supabase → Extension
-// Test with curl: curl -X POST https://stripe-deploy.onrender.com/api/test-complete-flow \
-//   -H "Content-Type: application/json" \
-//   -d '{"userId":"YOUR_UUID_HERE","email":"user@example.com"}'
-app.post('/api/test-complete-flow', async (req, res) => {
-    try {
-        const { userId, email, stripeSubscriptionId, stripeCustomerId } = req.body;
-        
-        if (!userId || !email) {
-            return res.status(400).json({ error: 'userId and email are required' });
-        }
-        
-        console.log('🧪 Testing complete flow: Stripe → Supabase → Extension');
-        console.log('👤 User ID:', userId);
-        console.log('📧 Email:', email);
-        console.log('💳 Stripe Subscription ID:', stripeSubscriptionId || 'test_sub_' + Date.now());
-        console.log('👤 Stripe Customer ID:', stripeCustomerId || 'test_cust_' + Date.now());
-        
-        // Step 1: Simulate Stripe webhook event
-        const mockStripeEvent = {
-            type: 'customer.subscription.created',
-            data: {
-                object: {
-                    id: stripeSubscriptionId || 'test_sub_' + Date.now(),
-                    customer: stripeCustomerId || 'test_cust_' + Date.now(),
-                    status: 'active',
-                    current_period_start: Math.floor(Date.now() / 1000),
-                    current_period_end: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000)
-                }
-            }
-        };
-        
-        console.log('📦 Mock Stripe event:', mockStripeEvent);
-        
-        // Step 2: Process the webhook event (same as real webhook)
-        await handleSubscriptionCreated(mockStripeEvent.data.object);
-        
-        // Step 3: Verify the subscription was created in Supabase
-        const verificationResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?user_id=eq.${userId}&select=*`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                'apikey': SUPABASE_SERVICE_ROLE_KEY,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!verificationResponse.ok) {
-            const errorText = await verificationResponse.text();
-            console.error('❌ Failed to verify subscription:', verificationResponse.status, errorText);
-            return res.status(500).json({ 
-                error: 'Failed to verify subscription creation',
-                details: errorText
-            });
-        }
-        
-        const subscriptions = await verificationResponse.json();
-        console.log('✅ Verification - subscriptions found:', subscriptions.length);
-        
-        if (subscriptions.length === 0) {
-            return res.status(500).json({ 
-                error: 'No subscription found after creation',
-                details: 'The webhook processing did not create a subscription record'
-            });
-        }
-        
-        const subscription = subscriptions[0];
-        console.log('✅ Subscription verified:', subscription);
-        
-        res.json({ 
-            status: 'ok',
-            message: 'Complete test flow successful',
-            flow: {
-                step1: 'Mock Stripe event created',
-                step2: 'Webhook processed',
-                step3: 'Subscription verified in Supabase'
-            },
-            subscription: subscription,
-            testData: {
-                userId: userId,
-                email: email,
-                stripeSubscriptionId: subscription.stripe_subscription_id,
-                stripeCustomerId: subscription.stripe_customer_id,
-                status: subscription.status,
-                tokensLimit: subscription.tokens_limit
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Complete test flow failed:', error);
-        res.status(500).json({ 
-            status: 'error',
-            message: 'Complete test flow failed',
             error: error.message,
             details: error
         });
@@ -783,27 +555,12 @@ app.post('/api/cancel-subscription', async (req, res) => {
 
         console.log('Canceling subscription:', subscriptionId);
 
-        // Cancel subscription immediately in Stripe
-        const subscription = await stripe.subscriptions.cancel(subscriptionId);
+        // Cancel subscription directly in Stripe
+        const subscription = await stripe.subscriptions.update(subscriptionId, {
+            cancel_at_period_end: true
+        });
 
-        console.log('✅ Subscription canceled in Stripe:', subscription.id);
-
-        // Manually update Supabase to reflect the cancellation
-        console.log('🔄 Updating Supabase subscription status...');
-        try {
-            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscriptionId}`, {
-                method: 'PATCH',
-                body: {
-                    status: 'canceled', // Mark as canceled but keep Pro access until period end
-                    cancel_at_period_end: true, // Will revert to free at period end
-                    updated_at: new Date().toISOString()
-                }
-            });
-            console.log('✅ Supabase updated successfully - user keeps Pro access until period end');
-        } catch (supabaseError) {
-            console.error('❌ Error updating Supabase:', supabaseError);
-            // Continue anyway - the webhook might handle it
-        }
+        console.log('Subscription canceled successfully');
 
         res.json({
             success: true,
@@ -849,9 +606,9 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 console.log('✅ Found subscription:', subscription);
                 res.json({
                     status: subscription.status,
-                    requests_used_this_month: subscription.requests_used_this_month || 0,
-                    monthly_request_limit: subscription.monthly_request_limit || 75,
-                    is_unlimited: subscription.is_unlimited || false,
+                    tokens_used: subscription.tokens_used || 0,
+                    tokens_limit: subscription.tokens_limit,
+                    is_unlimited: subscription.tokens_limit === -1,
                     current_period_end: subscription.current_period_end,
                     stripe_subscription_id: subscription.stripe_subscription_id
                 });
@@ -861,8 +618,8 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 // This avoids foreign key constraint issues with test users
                 res.json({
                     status: 'free',
-                    requests_used_this_month: 0,
-                    monthly_request_limit: 75,
+                    tokens_used: 0,
+                    tokens_limit: 50,
                     is_unlimited: false,
                     current_period_end: null
                 });
@@ -872,8 +629,8 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
             // For any query error, just return free tier status
             res.json({
                 status: 'free',
-                requests_used_this_month: 0,
-                monthly_request_limit: 75,
+                tokens_used: 0,
+                tokens_limit: 50,
                 is_unlimited: false,
                 current_period_end: null
             });
@@ -909,30 +666,30 @@ app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
     }
 });
 
-// Update request usage in Supabase (replaces old token usage)
-app.post('/api/update-request-usage', async (req, res) => {
+// Update token usage in Supabase
+app.post('/api/update-token-usage', async (req, res) => {
     try {
-        const { userId, requestsUsed } = req.body;
+        const { userId, tokensUsed } = req.body;
         
-        if (!userId || requestsUsed === undefined) {
-            return res.status(400).json({ error: 'Missing userId or requestsUsed' });
+        if (!userId || tokensUsed === undefined) {
+            return res.status(400).json({ error: 'Missing userId or tokensUsed' });
         }
         
-        // Update request usage in Supabase
+        // Update token usage in Supabase
         await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
             method: 'PATCH',
             body: {
-                requests_used_this_month: requestsUsed,
+                tokens_used: tokensUsed,
                 updated_at: new Date().toISOString()
             }
         });
         
-        console.log('✅ Request usage updated for user:', userId, 'requests:', requestsUsed);
-        res.json({ success: true, requestsUsed });
+        console.log('✅ Token usage updated for user:', userId, 'tokens:', tokensUsed);
+        res.json({ success: true, tokensUsed });
         
     } catch (error) {
-        console.error('Error updating request usage in Supabase:', error);
-        res.status(500).json({ error: 'Failed to update request usage' });
+        console.error('Error updating token usage in Supabase:', error);
+        res.status(500).json({ error: 'Failed to update token usage' });
     }
 });
 
@@ -964,9 +721,8 @@ app.post('/api/create-subscription-record', async (req, res) => {
         const subscriptionData = {
             user_id: userId,
             status: status,
-            requests_used_this_month: 0,
-            monthly_request_limit: status === 'active' ? -1 : 75,
-            is_unlimited: status === 'active',
+            tokens_used: 0,
+            tokens_limit: status === 'active' ? -1 : 50,
             stripe_subscription_id: null,
             stripe_customer_id: null,
             current_period_start: null,
@@ -1012,406 +768,6 @@ app.post('/api/create-portal-session', async (req, res) => {
 // Test endpoint
 app.get('/api/test-delete', (req, res) => {
     res.json({ message: 'Delete endpoint test - working!' });
-});
-
-// Upgrade page endpoint
-app.get('/upgrade', (req, res) => {
-    res.json({
-        title: 'Upgrade to Pro',
-        message: 'Get unlimited AI assistance and advanced features',
-        features: [
-            'Unlimited access per month',
-            'Advanced resume and cover letter tools',
-            'Priority support',
-            'Early access to new features'
-        ],
-        price: '$4.99/month',
-        upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
-    });
-});
-
-// Login endpoint to create session
-app.post('/api/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        
-        if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email and password are required'
-            });
-        }
-        
-        // Authenticate with Supabase
-        const authResponse = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_SERVICE_ROLE_KEY
-            },
-            body: JSON.stringify({ email, password })
-        });
-        
-        if (!authResponse.ok) {
-            return res.status(401).json({
-                success: false,
-                error: 'Invalid credentials'
-            });
-        }
-        
-        const authData = await authResponse.json();
-        
-        // Get user data
-        const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-            headers: {
-                'Authorization': `Bearer ${authData.access_token}`,
-                'apikey': SUPABASE_SERVICE_ROLE_KEY
-            }
-        });
-        
-        if (!userResponse.ok) {
-            return res.status(401).json({
-                success: false,
-                error: 'Failed to get user data'
-            });
-        }
-        
-        const userData = await userResponse.json();
-        
-        // Create session
-        const sessionId = createSession(userData.id, userData);
-        
-        // Set HttpOnly cookie
-        res.cookie('trontiq_session', sessionId, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-        });
-        
-        res.json({
-            success: true,
-            isAuthenticated: true,
-            user: {
-                id: userData.id,
-                email: userData.email,
-                display_name: userData.user_metadata?.full_name || 'User'
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Login error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Logout endpoint
-app.post('/api/logout', (req, res) => {
-    const sessionId = req.cookies.trontiq_session;
-    
-    if (sessionId) {
-        sessions.delete(sessionId);
-    }
-    
-    res.clearCookie('trontiq_session');
-    res.json({ success: true });
-});
-
-// User data storage endpoints (replaces chrome.storage.local)
-app.post('/api/user-data', async (req, res) => {
-    try {
-        const sessionId = req.cookies.trontiq_session;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'No session found'
-            });
-        }
-        
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'Invalid session'
-            });
-        }
-        
-        const { data } = req.body;
-        
-        if (data) {
-            setUserData(session.userId, data);
-            console.log('✅ User data saved:', Object.keys(data));
-        }
-        
-        res.json({ success: true });
-        
-    } catch (error) {
-        console.error('❌ Save user data error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-app.get('/api/user-data', async (req, res) => {
-    try {
-        const sessionId = req.cookies.trontiq_session;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'No session found'
-            });
-        }
-        
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'Invalid session'
-            });
-        }
-        
-        const userData = getUserData(session.userId);
-        
-        res.json({
-            success: true,
-            data: userData
-        });
-        
-    } catch (error) {
-        console.error('❌ Get user data error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Session-based user info endpoint (secure)
-app.get('/api/me', async (req, res) => {
-    try {
-        const sessionId = req.cookies.trontiq_session;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                isAuthenticated: false,
-                error: 'No session found'
-            });
-        }
-        
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                isAuthenticated: false,
-                error: 'Invalid session'
-            });
-        }
-        
-        // Get user subscription data
-        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
-        
-        // Get user data from server storage (replaces chrome.storage.local)
-        const userData = getUserData(session.userId);
-        
-        // Extract user data from session (email and full_name from auth.users)
-        const userEmail = session.userData.email;
-        const userFullName = session.userData.user_metadata?.full_name || 'Not provided';
-        const userDisplayName = userData.trontiq_display_name || session.userData.user_metadata?.full_name || 'User';
-        
-        if (data && data.length > 0) {
-            const subscription = data[0];
-            const requestsUsed = subscription.requests_used_this_month || 0;
-            const monthlyLimit = subscription.monthly_request_limit || 75;
-            const isUnlimited = subscription.is_unlimited || false;
-            
-            // Check if user is Pro (active or canceled but still in paid period)
-            const isProUser = (subscription.status === 'active' || 
-                              (subscription.status === 'canceled' && subscription.cancel_at_period_end)) && 
-                             isUnlimited;
-            
-            res.json({
-                success: true,
-                isAuthenticated: true,
-                user: {
-                    id: session.userId,
-                    email: userEmail,
-                    display_name: userDisplayName,
-                    user_metadata: {
-                        full_name: userFullName
-                    }
-                },
-                userData: userData, // All trontiq_* data from server storage
-                plan: isProUser ? 'pro' : 'free',
-                isProUser: isProUser,
-                requestsUsed: requestsUsed,
-                monthlyLimit: monthlyLimit,
-                canChat: isProUser || requestsUsed < monthlyLimit
-            });
-        } else {
-            res.json({
-                success: true,
-                isAuthenticated: true,
-                user: {
-                    id: session.userId,
-                    email: userEmail,
-                    display_name: userDisplayName,
-                    user_metadata: {
-                        full_name: userFullName
-                    }
-                },
-                plan: 'free',
-                isProUser: false,
-                requestsUsed: 0,
-                monthlyLimit: 75,
-                canChat: true
-            });
-        }
-    } catch (error) {
-        console.error('❌ /me endpoint error:', error);
-        res.status(500).json({
-            success: false,
-            isAuthenticated: false,
-            error: error.message
-        });
-    }
-});
-
-// Check user status and quota (legacy endpoint - will be deprecated)
-app.get('/api/user-status/:userId', async (req, res) => {
-    try {
-        const { userId } = req.params;
-        console.log('🔍 Checking user status for:', userId);
-        
-        // Production validation - user ID must exist and be valid
-        if (!userId) {
-            console.log('❌ No user ID provided');
-            return res.status(401).json({
-                success: false,
-                error: 'Authentication required',
-                message: 'User must be authenticated to access this endpoint'
-            });
-        }
-        
-        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
-        
-        if (data && data.length > 0) {
-            const subscription = data[0];
-            const requestsUsed = subscription.requests_used_this_month || 0;
-            const monthlyLimit = subscription.monthly_request_limit || 75;
-            const isUnlimited = subscription.is_unlimited || false;
-            
-            // Check if user is Pro (active or canceled but still in paid period)
-            const isProUser = (subscription.status === 'active' || 
-                              (subscription.status === 'canceled' && subscription.cancel_at_period_end)) && 
-                             isUnlimited;
-            
-            res.json({
-                success: true,
-                status: subscription.status,
-                requestsUsed: requestsUsed,
-                monthlyLimit: monthlyLimit,
-                isUnlimited: isUnlimited,
-                isProUser: isProUser,
-                canChat: isProUser || requestsUsed < monthlyLimit,
-                upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
-                upgradeMessage: !isProUser && requestsUsed >= monthlyLimit ? 
-                    `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for unlimited access!` : 
-                    null,
-                upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
-            });
-        } else {
-            res.json({
-                success: false,
-                message: 'No subscription found',
-                canChat: false,
-                upgradeRequired: true,
-                upgradeMessage: 'Please create an account to start using AI assistance.',
-                upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
-            });
-        }
-    } catch (error) {
-        console.error('❌ User status check error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Manual fix endpoint to update subscription status
-app.post('/api/fix-subscription-status', async (req, res) => {
-    try {
-        const { userId, status } = req.body;
-        console.log('🔧 Manual subscription status fix:', { userId, status });
-        
-        if (!userId || !status) {
-            return res.status(400).json({ error: 'userId and status are required' });
-        }
-        
-        // Update subscription status
-        await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
-            method: 'PATCH',
-            body: {
-                status: status,
-                updated_at: new Date().toISOString()
-            }
-        });
-        
-        console.log('✅ Subscription status manually updated to:', status);
-        res.json({ success: true, message: `Status updated to ${status}` });
-        
-    } catch (error) {
-        console.error('❌ Error fixing subscription status:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Debug endpoint to check user subscription data
-app.get('/api/debug-subscription/:userId', async (req, res) => {
-    try {
-        const { userId } = req.params;
-        console.log('🔍 Debugging subscription for user:', userId);
-        
-        // Get subscription from Supabase
-        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
-        console.log('📊 Raw subscription data:', data);
-        
-        if (data && data.length > 0) {
-            const subscription = data[0];
-            res.json({
-                success: true,
-                subscription: subscription,
-                fields: {
-                    has_requests_used: 'requests_used_this_month' in subscription,
-                    has_monthly_limit: 'monthly_request_limit' in subscription,
-                    has_is_unlimited: 'is_unlimited' in subscription,
-                    requests_used: subscription.requests_used_this_month,
-                    monthly_limit: subscription.monthly_request_limit,
-                    is_unlimited: subscription.is_unlimited
-                }
-            });
-        } else {
-            res.json({
-                success: false,
-                message: 'No subscription found',
-                userId: userId
-            });
-        }
-    } catch (error) {
-        console.error('❌ Debug subscription error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
 });
 
 // Test Supabase auth connection
@@ -1515,6 +871,355 @@ app.get('/api/get-user-id', async (req, res) => {
     }
 });
 
+// Session-based user info endpoint (secure)
+app.get('/api/me', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                isAuthenticated: false,
+                error: 'User ID required'
+            });
+        }
+        
+        // Get user subscription data
+        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        
+        if (data && data.length > 0) {
+            const subscription = data[0];
+            const tokensUsed = subscription.tokens_used || 0;
+            const tokensLimit = subscription.tokens_limit || 50;
+            const isUnlimited = subscription.tokens_limit === -1;
+            
+            // Check if user is Pro (active subscription)
+            const isProUser = subscription.status === 'active' && isUnlimited;
+            
+            res.json({
+                success: true,
+                isAuthenticated: true,
+                user: {
+                    id: userId,
+                    email: 'user@example.com', // Would come from auth.users in real implementation
+                    display_name: 'User',
+                    user_metadata: {
+                        full_name: 'User'
+                    }
+                },
+                plan: isProUser ? 'pro' : 'free',
+                isProUser: isProUser,
+                tokensUsed: tokensUsed,
+                tokensLimit: tokensLimit,
+                canChat: isProUser || tokensUsed < tokensLimit
+            });
+        } else {
+            res.json({
+                success: true,
+                isAuthenticated: true,
+                user: {
+                    id: userId,
+                    email: 'user@example.com',
+                    display_name: 'User',
+                    user_metadata: {
+                        full_name: 'User'
+                    }
+                },
+                plan: 'free',
+                isProUser: false,
+                tokensUsed: 0,
+                tokensLimit: 50,
+                canChat: true
+            });
+        }
+    } catch (error) {
+        console.error('❌ /me endpoint error:', error);
+        res.status(500).json({
+            success: false,
+            isAuthenticated: false,
+            error: error.message
+        });
+    }
+});
+
+// User preferences endpoint
+app.get('/api/prefs', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        // Return default preferences (in real implementation, this would come from database)
+        res.json({
+            success: true,
+            data: {
+                trontiq_display_name: 'User',
+                trontiq_education_level: 'bachelor',
+                trontiq_language: 'english',
+                trontiq_tone: 'professional'
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get prefs error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/prefs', async (req, res) => {
+    try {
+        const { userId, data } = req.body;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        console.log('✅ User preferences saved:', Object.keys(data || {}));
+        
+        res.json({ success: true });
+        
+    } catch (error) {
+        console.error('❌ Save prefs error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Individual preference endpoints
+app.get('/api/prefs/tone', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        // Return user's tone preference (in real implementation, this would come from database)
+        res.json({
+            success: true,
+            data: {
+                tone: 'professional' // Default value
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get tone error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/prefs/tone', async (req, res) => {
+    try {
+        const { userId, tone } = req.body;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        if (!tone) {
+            return res.status(400).json({
+                success: false,
+                error: 'Tone is required'
+            });
+        }
+        
+        console.log('✅ Tone preference saved:', { userId, tone });
+        
+        res.json({ success: true, tone });
+        
+    } catch (error) {
+        console.error('❌ Save tone error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.get('/api/prefs/education', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        // Return user's education level preference
+        res.json({
+            success: true,
+            data: {
+                education: 'bachelor' // Default value
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get education error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/prefs/education', async (req, res) => {
+    try {
+        const { userId, education } = req.body;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        if (!education) {
+            return res.status(400).json({
+                success: false,
+                error: 'Education level is required'
+            });
+        }
+        
+        console.log('✅ Education preference saved:', { userId, education });
+        
+        res.json({ success: true, education });
+        
+    } catch (error) {
+        console.error('❌ Save education error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.get('/api/prefs/language', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        // Return user's language preference
+        res.json({
+            success: true,
+            data: {
+                language: 'english' // Default value
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get language error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/prefs/language', async (req, res) => {
+    try {
+        const { userId, language } = req.body;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        if (!language) {
+            return res.status(400).json({
+                success: false,
+                error: 'Language is required'
+            });
+        }
+        
+        console.log('✅ Language preference saved:', { userId, language });
+        
+        res.json({ success: true, language });
+        
+    } catch (error) {
+        console.error('❌ Save language error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Upgrade endpoint
+app.get('/api/upgrade', (req, res) => {
+    res.json({
+        title: 'Upgrade to Pro',
+        message: 'Get unlimited AI assistance and advanced features',
+        features: [
+            'Unlimited requests per month',
+            'Advanced resume and cover letter tools',
+            'Priority support',
+            'Early access to new features'
+        ],
+        price: '$4.99/month',
+        upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
+    });
+});
+
+// Clear account data endpoint
+app.post('/api/account/clear', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                error: 'User ID required'
+            });
+        }
+        
+        console.log('✅ Account data cleared for user:', userId);
+        
+        res.json({ 
+            success: true, 
+            message: 'Account data cleared successfully' 
+        });
+        
+    } catch (error) {
+        console.error('❌ Clear account error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Delete user account endpoint
 app.post('/api/delete-account', async (req, res) => {
     try {
@@ -1537,23 +1242,11 @@ app.post('/api/delete-account', async (req, res) => {
                 if (subscription.stripe_subscription_id) {
                     console.log('🔄 Canceling Stripe subscription:', subscription.stripe_subscription_id);
                     
-                    // Cancel the subscription in Stripe (at period end)
+                    // Cancel the subscription in Stripe
                     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
                     await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
                     
-                    // Update Supabase to reflect cancellation but keep Pro access until period ends
-                    await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
-                        method: 'PATCH',
-                        body: {
-                            status: 'canceled',
-                            cancel_at_period_end: true,
-                            monthly_request_limit: -1, // Keep unlimited until period ends
-                            is_unlimited: true,
-                            updated_at: new Date().toISOString()
-                        }
-                    });
-                    
-                    console.log('✅ Stripe subscription canceled, user keeps Pro access until period ends');
+                    console.log('✅ Stripe subscription canceled');
                 }
             }
         } catch (stripeError) {
@@ -1579,14 +1272,6 @@ app.post('/api/delete-account', async (req, res) => {
             console.log('✅ Privacy audit log records deleted');
         } catch (auditDeleteError) {
             console.error('⚠️ Error deleting audit log records:', auditDeleteError);
-        }
-        
-        // 2.6. Clear server-side user data storage
-        try {
-            userDataStorage.delete(userId);
-            console.log('✅ Server-side user data cleared');
-        } catch (userDataError) {
-            console.error('⚠️ Error clearing server-side user data:', userDataError);
         }
         
         // 3. Delete user from Supabase auth
@@ -1635,54 +1320,15 @@ app.post('/api/delete-account', async (req, res) => {
     }
 });
 
-// Check for expired subscriptions and move to free tier
-async function checkExpiredSubscriptions() {
-    try {
-        console.log('🔍 Checking for expired subscriptions...');
-        
-        // Get all canceled subscriptions that should have expired
-        const now = new Date().toISOString();
-        const expiredSubscriptions = await supabaseRequest(
-            `user_subscriptions?status=eq.canceled&cancel_at_period_end=eq.true&current_period_end=lt.${now}&select=*`
-        );
-        
-        if (expiredSubscriptions && expiredSubscriptions.length > 0) {
-            console.log(`📅 Found ${expiredSubscriptions.length} expired subscriptions`);
-            
-            for (const subscription of expiredSubscriptions) {
-                console.log(`🔄 Moving user ${subscription.user_id} to free tier (period ended: ${subscription.current_period_end})`);
-                
-                await supabaseRequest(`user_subscriptions?id=eq.${subscription.id}`, {
-                    method: 'PATCH',
-                    body: {
-                        status: 'free',
-                        cancel_at_period_end: false,
-                        monthly_request_limit: 75,
-                        requests_used_this_month: 0,
-                        is_unlimited: false,
-                        updated_at: new Date().toISOString()
-                    }
-                });
-            }
-            
-            console.log('✅ Expired subscriptions processed');
-        } else {
-            console.log('✅ No expired subscriptions found');
-        }
-    } catch (error) {
-        console.error('❌ Error checking expired subscriptions:', error);
-    }
-}
-
-// Run expired subscription check every hour
-setInterval(checkExpiredSubscriptions, 60 * 60 * 1000); // Every hour
-// Also run it on startup
-checkExpiredSubscriptions();
-
 // Error handling middleware
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
     res.status(500).json({ error: 'Internal server error' });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
 });
 
 // Webhook handler functions for Supabase integration
@@ -1738,9 +1384,8 @@ async function handleCheckoutCompleted(session) {
                 status: subscription.status,
                 current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
                 current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                monthly_request_limit: -1, // Unlimited for Pro
-                requests_used_this_month: 0, // Reset request usage
-                is_unlimited: true,
+                tokens_limit: -1, // Unlimited for Pro
+                tokens_used: 0, // Reset token usage
                 updated_at: new Date().toISOString()
             };
             
@@ -1784,61 +1429,45 @@ async function handleSubscriptionCreated(subscription) {
         
         // Get customer details from Stripe
         const customer = await stripe.customers.retrieve(subscription.customer);
-        console.log('👤 Customer details:', { id: customer.id, email: customer.email });
         
-        // For now, let's use a simple approach - update existing subscription record
-        // We'll assume the user already has a subscription record and update it
+        // Find user by email in Supabase (using direct HTTP request)
         try {
-            // Get subscription period from the subscription items
-            const subscriptionItems = subscription.items?.data || [];
-            let currentPeriodStart = null;
-            let currentPeriodEnd = null;
+            const users = await supabaseRequest('auth/users', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+                }
+            });
             
-            if (subscriptionItems.length > 0) {
-                const item = subscriptionItems[0];
-                currentPeriodStart = item.current_period_start;
-                currentPeriodEnd = item.current_period_end;
+            const user = users.find(u => u.email === customer.email);
+            if (!user) {
+                console.log('No user found for email:', customer.email);
+                return;
             }
             
-            // Try to update existing subscription record
-            const updateData = {
-                stripe_subscription_id: subscription.id,
-                stripe_customer_id: subscription.customer,
-                status: subscription.status,
-                monthly_request_limit: -1, // Unlimited for Pro
-                is_unlimited: true,
-                updated_at: new Date().toISOString()
-            };
+            // Insert or update subscription record
+            await supabaseRequest('user_subscriptions', {
+                method: 'POST',
+                body: {
+                    user_id: user.id,
+                    stripe_subscription_id: subscription.id,
+                    stripe_customer_id: subscription.customer,
+                    status: subscription.status,
+                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+                    tokens_limit: -1, // Unlimited for Pro
+                    updated_at: new Date().toISOString()
+                }
+            });
             
-            // Only add period dates if they exist
-            if (currentPeriodStart) {
-                updateData.current_period_start = new Date(currentPeriodStart * 1000).toISOString();
-            }
-            if (currentPeriodEnd) {
-                updateData.current_period_end = new Date(currentPeriodEnd * 1000).toISOString();
-            }
-            
-            console.log('📦 Subscription data to update:', updateData);
-            
-            // Try to update the subscription record - this should be dynamic based on the subscription
-            // For now, we'll use the stripe_subscription_id to find the record
-            if (subscription.id) {
-                await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
-                    method: 'PATCH',
-                    body: updateData
-                });
-            } else {
-                console.log('⚠️ No subscription ID available for update');
-            }
-            
-            console.log('✅ Subscription updated in Supabase');
+            console.log('✅ Subscription saved to Supabase for user:', user.id);
             
         } catch (supabaseError) {
-            console.error('❌ Error updating subscription in Supabase:', supabaseError);
+            console.error('Error saving subscription to Supabase:', supabaseError);
         }
         
     } catch (error) {
-        console.error('❌ Error handling subscription created:', error);
+        console.error('Error handling subscription created:', error);
     }
 }
 
@@ -1846,43 +1475,21 @@ async function handleSubscriptionUpdated(subscription) {
     try {
         console.log('🔄 Handling subscription updated:', subscription.id);
         
-        // Get subscription period from the subscription items
-        const subscriptionItems = subscription.items?.data || [];
-        let currentPeriodStart = null;
-        let currentPeriodEnd = null;
-        
-        if (subscriptionItems.length > 0) {
-            const item = subscriptionItems[0];
-            currentPeriodStart = item.current_period_start;
-            currentPeriodEnd = item.current_period_end;
-        }
-        
-        // Prepare update data
-        const updateData = {
-            status: subscription.status,
-            updated_at: new Date().toISOString()
-        };
-        
-        // Only add period dates if they exist
-        if (currentPeriodStart) {
-            updateData.current_period_start = new Date(currentPeriodStart * 1000).toISOString();
-        }
-        if (currentPeriodEnd) {
-            updateData.current_period_end = new Date(currentPeriodEnd * 1000).toISOString();
-        }
-        
-        console.log('📦 Update data:', updateData);
-        
         // Update subscription record using PATCH request
         await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
             method: 'PATCH',
-            body: updateData
+            body: {
+                status: subscription.status,
+                current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+                current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+                updated_at: new Date().toISOString()
+            }
         });
         
         console.log('✅ Subscription updated in Supabase');
         
     } catch (error) {
-        console.error('❌ Error updating subscription in Supabase:', error);
+        console.error('Error updating subscription in Supabase:', error);
     }
 }
 
@@ -1890,40 +1497,17 @@ async function handleSubscriptionDeleted(subscription) {
     try {
         console.log('🔄 Handling subscription deleted:', subscription.id);
         
-        // Check if subscription was cancelled but still in paid period
-        const now = new Date();
-        const periodEnd = subscription.current_period_end ? new Date(subscription.current_period_end) : null;
+        // Update subscription status to canceled
+        await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
+            method: 'PATCH',
+            body: {
+                status: 'canceled',
+                tokens_limit: 50, // Back to free tier
+                updated_at: new Date().toISOString()
+            }
+        });
         
-        if (periodEnd && now < periodEnd) {
-            // Subscription cancelled but still in paid period - keep Pro access until period ends
-            console.log('📅 Subscription cancelled but still in paid period until:', periodEnd);
-            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
-                method: 'PATCH',
-                body: {
-                    status: 'canceled',
-                    cancel_at_period_end: true,
-                    monthly_request_limit: -1, // Keep unlimited
-                    is_unlimited: true,
-                    updated_at: new Date().toISOString()
-                }
-            });
-            console.log('✅ User keeps Pro access until period ends');
-        } else {
-            // Period has ended or no period data - move to free plan
-            console.log('📅 Subscription period ended, moving to free plan');
-            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
-                method: 'PATCH',
-                body: {
-                    status: 'free',
-                    cancel_at_period_end: false,
-                    monthly_request_limit: 75, // Free tier gets 75 requests
-                    requests_used_this_month: 0, // Reset request usage for new month
-                    is_unlimited: false,
-                    updated_at: new Date().toISOString()
-                }
-            });
-            console.log('✅ User moved to free plan');
-        }
+        console.log('✅ Subscription marked as canceled in Supabase');
         
     } catch (error) {
         console.error('Error updating deleted subscription in Supabase:', error);
@@ -1933,32 +1517,19 @@ async function handleSubscriptionDeleted(subscription) {
 async function handlePaymentSucceeded(invoice) {
     try {
         console.log('🔄 Handling payment succeeded for invoice:', invoice.id);
-        console.log('🔍 DEBUG: This is the NEW handlePaymentSucceeded function!');
         
         // If this is a subscription invoice, update the subscription
         if (invoice.subscription) {
-            console.log('📦 Invoice is for subscription:', invoice.subscription);
-            
-            // Get the subscription details from Stripe
-            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
-            console.log('📦 Retrieved subscription:', { id: subscription.id, status: subscription.status });
-            
-            // Update the subscription record directly using the subscription ID
-            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
-                method: 'PATCH',
-                body: {
-                    status: subscription.status,
-                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                    updated_at: new Date().toISOString()
-                }
+            await handleSubscriptionUpdated({
+                id: invoice.subscription,
+                status: 'active',
+                current_period_start: invoice.period_start,
+                current_period_end: invoice.period_end
             });
-            
-            console.log('✅ Subscription updated for payment success');
         }
         
     } catch (error) {
-        console.error('❌ Error handling payment succeeded:', error);
+        console.error('Error handling payment succeeded:', error);
     }
 }
 
@@ -1984,168 +1555,6 @@ async function handlePaymentFailed(invoice) {
     }
 }
 
-// AI Proxy function with key pool
-async function callAI(payload) {
-    // If Redis is not available, this function won't be called
-    // The fallback is handled in the /api/generate endpoint
-    
-    const maxWaitMs = 5000;
-    const pollMs = 100;
-    const t0 = Date.now();
-    
-    // Wait for an available key
-    while (Date.now() - t0 < maxWaitMs) {
-        const meta = await keyPool.acquire();
-        if (meta) {
-            console.log(`🔑 Using key: ${meta.alias} (RPM: ${meta.rpm})`);
-            
-            const res = await fetch(process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${meta.key}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload),
-                timeout: Number(process.env.REQUEST_TIMEOUT_MS || 60000)
-            });
-
-            if (res.ok) {
-                return res.json();
-            }
-
-            const text = await res.text();
-            throw new Error(`Provider error ${res.status}: ${text}`);
-        }
-        
-        // Wait before trying again
-        await new Promise(resolve => setTimeout(resolve, pollMs));
-    }
-    
-    throw new Error('All API keys are at RPM right now. Please try again in a few seconds.');
-}
-
-// Environment-based key management (no admin endpoints needed)
-// Keys are managed via environment variables: OPENAI_API_KEY_1 through OPENAI_API_KEY_10
-
-// AI generation endpoint
-app.post('/api/generate', async (req, res) => {
-    try {
-        // Check user's request quota
-        const userEmail = req.headers['x-user-email']; // Chrome extension will send this
-        const userId = req.headers['x-user-id']; // Alternative: user ID
-        if (userEmail || userId) {
-            try {
-                // Get user's subscription status from Supabase
-                const queryParam = userId ? `user_id=eq.${userId}` : `user_email=eq.${encodeURIComponent(userEmail)}`;
-                const userResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?${queryParam}`, {
-                    headers: {
-                        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                        'apikey': SUPABASE_SERVICE_ROLE_KEY,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (userResponse.ok) {
-                    const subscriptions = await userResponse.json();
-                    if (subscriptions && subscriptions.length > 0) {
-                        const subscription = subscriptions[0];
-                        
-                        // Check if user has unlimited requests (Pro users - active or canceled but still in paid period)
-                        const isProUser = (subscription.status === 'active' || 
-                                          (subscription.status === 'canceled' && subscription.cancel_at_period_end)) && 
-                                         subscription.is_unlimited;
-                        
-                        if (isProUser) {
-                            console.log(`✅ Pro user ${userEmail} - unlimited requests (status: ${subscription.status})`);
-                        } else {
-                            // Free tier: check monthly request limit
-                            const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-                            const requestsThisMonth = subscription.requests_used_this_month || 0;
-                            const monthlyLimit = 75; // Free tier gets 75 requests per month
-                            
-                            if (requestsThisMonth >= monthlyLimit) {
-                                return res.status(429).json({ 
-                                    error: 'Monthly request limit reached. Upgrade to Pro for unlimited requests.',
-                                    limit: monthlyLimit,
-                                    used: requestsThisMonth,
-                                    upgradeRequired: true,
-                                    upgradeMessage: `You've used all ${monthlyLimit} free requests this month. Upgrade to Pro for Unlimited Access!`,
-                                    upgradeUrl: 'https://stripe-deploy.onrender.com/upgrade'
-                                });
-                            }
-                            
-                            // Increment request count
-                            console.log(`📊 Updating request count for user ${userEmail}: ${requestsThisMonth} → ${requestsThisMonth + 1}`);
-                            
-                            const updateResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions?id=eq.${subscription.id}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    requests_used_this_month: requestsThisMonth + 1,
-                                    updated_at: new Date().toISOString()
-                                })
-                            });
-                            
-                            if (!updateResponse.ok) {
-                                const errorText = await updateResponse.text();
-                                console.error(`❌ Failed to update request count: ${updateResponse.status} - ${errorText}`);
-                            } else {
-                                console.log(`✅ Request count updated successfully: ${requestsThisMonth + 1}/${monthlyLimit}`);
-                            }
-                        }
-                    }
-                }
-            } catch (quotaError) {
-                console.log('⚠️ Could not check user quota:', quotaError.message);
-                // Continue without quota check if there's an error
-            }
-        }
-        
-        const payload = {
-            model: req.body.model || 'gpt-4o-mini',
-            messages: req.body.messages,
-            max_tokens: req.body.max_tokens || 2000  // Increased from 1000
-        };
-        
-        console.log('🤖 Calling AI with payload:', { model: payload.model, max_tokens: payload.max_tokens });
-        
-        // Use environment-based key rotation (no Redis needed)
-        const apiKey = getNextApiKey();
-        
-        if (!apiKey) {
-            throw new Error('No OpenAI API keys configured. Please add OPENAI_API_KEY or OPENAI_API_KEY_1 through OPENAI_API_KEY_10 to environment variables.');
-        }
-        
-        console.log(`🔑 Using API key ${currentKeyIndex}/${API_KEYS.length} (round-robin rotation)`);
-        
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-        }
-        
-        const data = await response.json();
-        return res.json(data);
-    } catch (error) {
-        console.error('❌ AI generation failed:', error);
-        const msg = String(error.message || error);
-        const code = /RPM limit/i.test(msg) || /keys are at RPM/i.test(msg) ? 503 : 400;
-        res.status(code).json({ error: msg, retryAfterSeconds: 30 });
-    }
-});
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Trontiq Stripe API server running on port ${PORT}`);
@@ -2154,9 +1563,5 @@ app.listen(PORT, () => {
     console.log(`🔗 Supabase integration: Active`);
 });
 
-// 404 handler - must be at the very end
-app.use('*', (req, res) => {
-    res.status(404).json({ error: 'Endpoint not found' });
-});
-
 module.exports = app;
+ 
