@@ -1123,6 +1123,9 @@ app.get('/api/me', async (req, res) => {
             });
         }
         
+        // Get user profile data
+        const userProfile = await supabaseRequest(`profiles?user_id=eq.${session.userId}&select=*`);
+        
         // Get user subscription data
         const data = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
         
@@ -1140,6 +1143,14 @@ app.get('/api/me', async (req, res) => {
             res.json({
                 success: true,
                 isAuthenticated: true,
+                user: {
+                    id: session.userId,
+                    email: session.userData.email,
+                    display_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User',
+                    user_metadata: {
+                        full_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User'
+                    }
+                },
                 plan: isProUser ? 'pro' : 'free',
                 isProUser: isProUser,
                 requestsUsed: requestsUsed,
@@ -1150,6 +1161,14 @@ app.get('/api/me', async (req, res) => {
             res.json({
                 success: true,
                 isAuthenticated: true,
+                user: {
+                    id: session.userId,
+                    email: session.userData.email,
+                    display_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User',
+                    user_metadata: {
+                        full_name: userProfile && userProfile.length > 0 ? userProfile[0].display_name : session.userData.user_metadata?.full_name || 'User'
+                    }
+                },
                 plan: 'free',
                 isProUser: false,
                 requestsUsed: 0,
