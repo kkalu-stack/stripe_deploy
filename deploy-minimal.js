@@ -874,15 +874,20 @@ app.get('/api/get-user-id', async (req, res) => {
 // Session-based user info endpoint (secure)
 app.get('/api/me', async (req, res) => {
     try {
-        const { userId } = req.query;
+        const { sessionToken } = req.query;
         
-        if (!userId) {
+        if (!sessionToken) {
             return res.status(401).json({
                 success: false,
                 isAuthenticated: false,
-                error: 'User ID required'
+                error: 'Session token required'
             });
         }
+        
+        // In a real implementation, you would validate the session token
+        // For now, we'll use a simple approach - the token should be a valid user ID
+        // but this should be replaced with proper JWT or session validation
+        const userId = sessionToken;
         
         // Get user data from Supabase auth.users
         const userData = await supabaseRequest(`auth/users?id=eq.${userId}&select=id,email,user_metadata`);
