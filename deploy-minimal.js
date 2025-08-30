@@ -878,130 +878,105 @@ app.get('/api/get-user-id', async (req, res) => {
 // Session-based user info endpoint (secure)
 app.get('/api/me', async (req, res) => {
     try {
-        console.log('🔍 [API/ME] Request received with query:', req.query);
+        console.log('🔍 [API/ME] Request received with headers:', req.headers);
         
-        // We need a way to identify the user to get their data
-        // For now, we'll accept a user ID parameter to get real data
-        const { userId } = req.query;
+        // Industry standard: Get access token from Authorization header
+        const authHeader = req.headers.authorization;
+        const accessToken = authHeader?.replace('Bearer ', '');
         
-        console.log('🔍 [API/ME] User ID from query:', userId);
+        console.log('🔍 [API/ME] Access token present:', !!accessToken);
         
-        if (userId) {
-            try {
-                console.log('🔍 [API/ME] Attempting to fetch user data for ID:', userId);
-                
-                // Get user data using admin API since auth.users is not directly accessible
-                console.log('🔍 [API/ME] Using admin API to fetch user data');
-                const userResponse = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-                    method: 'GET',
-                    headers: {
-                        'apikey': SUPABASE_SERVICE_ROLE_KEY,
-                        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                console.log('🔍 [API/ME] Admin API response status:', userResponse.status);
-                
-                let userData = null;
-                let userError = null;
-                
-                if (userResponse.ok) {
-                    userData = await userResponse.json();
-                    console.log('🔍 [API/ME] Admin API user data:', userData);
-                } else {
-                    userError = `Admin API error: ${userResponse.status}`;
-                    console.error('❌ [API/ME] Admin API error:', userError);
-                }
-                
-                console.log('🔍 [API/ME] Supabase user query result:', { userData, userError });
-                
-                if (userError) {
-                    console.error('❌ Error fetching user data:', userError);
-                } else if (userData) {
-                    const fullName = userData.user_metadata?.full_name || 'Not provided';
-                    const displayName = userData.user_metadata?.display_name || fullName || 'User';
-                    
-                    // Get user subscription data
-                    const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
-                    
-                    if (subscriptionData && subscriptionData.length > 0) {
-                        const subscription = subscriptionData[0];
-                        const requestsUsed = subscription.requests_used_this_month || 0;
-                        const monthlyLimit = subscription.monthly_request_limit || 75;
-                        const isUnlimited = subscription.is_unlimited || false;
-                        const isProUser = subscription.status === 'active' && isUnlimited;
-                        
-                        res.json({
-                            success: true,
-                            isAuthenticated: true,
-                            user: {
-                                id: userId,
-                                email: userData.email,
-                                display_name: displayName,
-                                user_metadata: {
-                                    full_name: fullName
-                                }
-                            },
-                            plan: isProUser ? 'pro' : 'free',
-                            isProUser: isProUser,
-                            tokensUsed: requestsUsed,
-                            tokensLimit: monthlyLimit,
-                            canChat: isProUser || requestsUsed < monthlyLimit
-                        });
-                        return;
-                    } else {
-                        // No subscription found - return free user data
-                        res.json({
-                            success: true,
-                            isAuthenticated: true,
-                            user: {
-                                id: userId,
-                                email: userData.email,
-                                display_name: displayName,
-                                user_metadata: {
-                                    full_name: fullName
-                                }
-                            },
-                            plan: 'free',
-                            isProUser: false,
-                            tokensUsed: 0,
-                            tokensLimit: 75,
-                            canChat: true
-                        });
-                        return;
-                    }
-                }
-            } catch (error) {
-                console.error('❌ Error processing user data:', error);
-            }
+        if (!accessToken) {
+            console.log('❌ [API/ME] No access token provided');
+            return res.status(401).json({
+                success: false,
+                error: 'Access token required'
+            });
         }
         
-        console.log('🔍 [API/ME] Falling back to generic response - no user ID or error occurred');
-        
-        // Fallback to generic response if no user ID provided or error occurred
-        res.json({
-            success: true,
-            isAuthenticated: true,
-            user: {
-                id: 'authenticated',
-                email: 'user@example.com',
-                display_name: 'User',
-                user_metadata: {
-                    full_name: 'User'
-                }
-            },
-            plan: 'free',
-            isProUser: false,
-            tokensUsed: 0,
-            tokensLimit: 75,
-            canChat: true
-        });
+        try {
+            // Validate the JWT token and get user info
+            const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+            
+            if (error) {
+                console.error('❌ [API/ME] Token validation error:', error);
+                return res.status(401).json({
+                    success: false,
+                    error: 'Invalid access token'
+                });
+            }
+            
+            if (!user) {
+                console.error('❌ [API/ME] No user found in token');
+                return res.status(401).json({
+                    success: false,
+                    error: 'User not found'
+                });
+            }
+            
+            console.log('✅ [API/ME] Token validated, user ID:', user.id);
+            
+            // Get user subscription data using the validated user ID
+            const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${user.id}&select=*`);
+            
+            const fullName = user.user_metadata?.full_name || 'Not provided';
+            const displayName = user.user_metadata?.display_name || fullName || 'User';
+            
+            if (subscriptionData && subscriptionData.length > 0) {
+                const subscription = subscriptionData[0];
+                const requestsUsed = subscription.requests_used_this_month || 0;
+                const monthlyLimit = subscription.monthly_request_limit || 75;
+                const isUnlimited = subscription.is_unlimited || false;
+                const isProUser = subscription.status === 'active' && isUnlimited;
+                
+                res.json({
+                    success: true,
+                    isAuthenticated: true,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        display_name: displayName,
+                        user_metadata: {
+                            full_name: fullName
+                        }
+                    },
+                    plan: isProUser ? 'pro' : 'free',
+                    isProUser: isProUser,
+                    tokensUsed: requestsUsed,
+                    tokensLimit: monthlyLimit,
+                    canChat: isProUser || requestsUsed < monthlyLimit
+                });
+            } else {
+                // No subscription found - return free user data
+                res.json({
+                    success: true,
+                    isAuthenticated: true,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        display_name: displayName,
+                        user_metadata: {
+                            full_name: fullName
+                        }
+                    },
+                    plan: 'free',
+                    isProUser: false,
+                    tokensUsed: 0,
+                    tokensLimit: 75,
+                    canChat: true
+                });
+            }
+        } catch (error) {
+            console.error('❌ [API/ME] Error processing user data:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
+        }
     } catch (error) {
-        console.error('❌ /me endpoint error:', error);
+        console.error('❌ [API/ME] Endpoint error:', error);
         res.status(500).json({
             success: false,
-            isAuthenticated: false,
             error: error.message
         });
     }
