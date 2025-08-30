@@ -884,71 +884,50 @@ app.get('/api/me', async (req, res) => {
             });
         }
         
-        // In a real implementation, you would validate the session token
-        // For now, we'll use a simple approach - the token should be a valid user ID
-        // but this should be replaced with proper JWT or session validation
-        const userId = sessionToken;
+        // For now, we'll use a simple approach since we don't have proper session validation
+        // In a production environment, you would validate the session token with Supabase Auth
+        // and extract the user ID from the validated session
+        
+        // Since we're not storing user IDs in local storage anymore, we need a different approach
+        // For now, we'll return a generic response since we can't identify the specific user
+        // without proper session validation
         
         // For now, we'll use a simpler approach since auth.users is not accessible via REST API
         // In a production environment, you would validate the session token properly
-        // and get user data from a proper user profile table
+        // and get user data from the validated session
         
         // For demonstration, we'll create a basic user object
         // In real implementation, you would:
         // 1. Validate the session token with Supabase Auth
-        // 2. Get user data from a user_profiles table
-        const fullName = 'User'; // Would come from user_profiles table
-        const displayName = 'User'; // Would come from user_profiles table
-        const userEmail = 'user@example.com'; // Would come from user_profiles table
+        // 2. Extract user data from the validated session
+        const fullName = 'User'; // Would come from validated session
+        const displayName = 'User'; // Would come from validated session
+        const userEmail = 'user@example.com'; // Would come from validated session
         
-        // Get user subscription data
-        const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        // For now, we'll return a generic response since we can't identify the specific user
+        // without proper session validation. In production, you would:
+        // 1. Validate the session token with Supabase Auth
+        // 2. Extract user data from the validated session
+        // 3. Query user_subscriptions with the validated user ID
         
-        if (subscriptionData && subscriptionData.length > 0) {
-            const subscription = subscriptionData[0];
-            const requestsUsed = subscription.requests_used_this_month || 0;
-            const monthlyLimit = subscription.monthly_request_limit || 75;
-            const isUnlimited = subscription.is_unlimited || false;
-            
-            // Check if user is Pro (active subscription)
-            const isProUser = subscription.status === 'active' && isUnlimited;
-            
-            res.json({
-                success: true,
-                isAuthenticated: true,
-                user: {
-                    id: userId,
-                    email: userEmail,
-                    display_name: displayName,
-                    user_metadata: {
-                        full_name: fullName
-                    }
-                },
-                plan: isProUser ? 'pro' : 'free',
-                isProUser: isProUser,
-                tokensUsed: requestsUsed,
-                tokensLimit: monthlyLimit,
-                canChat: isProUser || requestsUsed < monthlyLimit
-            });
-        } else {
-            res.json({
-                success: true,
-                isAuthenticated: true,
-                user: {
-                    id: userId,
-                    email: userEmail,
-                    display_name: displayName,
-                    user_metadata: {
-                        full_name: fullName
-                    }
-                },
-                plan: 'free',
-                isProUser: false,
-                tokensUsed: 0,
-                tokensLimit: 75,
-                canChat: true
-            });
-        }
+                // Return a generic authenticated response
+        res.json({
+            success: true,
+            isAuthenticated: true,
+            user: {
+                id: 'authenticated',
+                email: 'user@example.com',
+                display_name: 'User',
+                user_metadata: {
+                    full_name: 'User'
+                }
+            },
+            plan: 'free',
+            isProUser: false,
+            tokensUsed: 0,
+            tokensLimit: 75,
+            canChat: true
+        });
     } catch (error) {
         console.error('❌ /me endpoint error:', error);
         res.status(500).json({
@@ -972,8 +951,8 @@ app.get('/api/prefs', async (req, res) => {
         }
         
         // For now, we'll use a simpler approach since auth.users is not accessible via REST API
-        // In a production environment, you would get user data from a user_profiles table
-        let displayName = 'User'; // Would come from user_profiles table
+        // In a production environment, you would validate the session token and get user data
+        let displayName = 'User'; // Would come from validated session
         
         // Return user preferences (in real implementation, this would come from a user_preferences table)
         res.json({
