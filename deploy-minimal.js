@@ -873,6 +873,123 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
 
         console.log('✅ [CANCEL_SUBSCRIPTION] Subscription canceled successfully');
 
+        // Update Supabase to track cancellation
+        try {
+            console.log('🔄 [CANCEL_SUBSCRIPTION] Updating Supabase with cancellation date...');
+            await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}`, {
+                method: 'PATCH',
+                body: {
+                    cancelled_at: new Date().toISOString(),
+                    cancel_at_period_end: true,
+                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
+                }
+            });
+            console.log('✅ [CANCEL_SUBSCRIPTION] Supabase updated with cancellation date');
+        } catch (supabaseError) {
+            console.error('⚠️ [CANCEL_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
+            // Don't fail the cancellation if Supabase update fails
+        }
+
+        res.json({
+            success: true,
+            subscription: {
+                id: subscription.id,
+                status: subscription.status,
+                cancel_at_period_end: subscription.cancel_at_period_end,
+                cancelled_at: new Date().toISOString(),
+                current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
+            }
+        });
+    } catch (error) {
+        console.error('❌ [CANCEL_SUBSCRIPTION] Error canceling subscription:', error);
+        res.status(500).json({ error: 'Failed to cancel subscription', details: error.message });
+    }
+});
+
+// Reactivate cancelled subscription
+app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const { subscriptionId } = req.body;
+
+        if (!subscriptionId) {
+            return res.status(400).json({ error: 'Subscription ID is required' });
+        }
+
+        console.log('🔍 [REACTIVATE_SUBSCRIPTION] Request received for subscription:', subscriptionId);
+
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            console.log('❌ [REACTIVATE_SUBSCRIPTION] No session cookie found');
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            console.log('❌ [REACTIVATE_SUBSCRIPTION] Invalid or expired session');
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        console.log('✅ [REACTIVATE_SUBSCRIPTION] Session validated, user ID:', session.userId);
+
+        // Verify that the user owns this subscription
+        try {
+            const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}&select=*`);
+            
+            if (!subscriptionData || subscriptionData.length === 0) {
+                console.log('❌ [REACTIVATE_SUBSCRIPTION] User does not own this subscription');
+                return res.status(403).json({
+                    success: false,
+                    error: 'FORBIDDEN',
+                    reason: 'User does not own this subscription'
+                });
+            }
+            
+            console.log('✅ [REACTIVATE_SUBSCRIPTION] Subscription ownership verified');
+        } catch (verificationError) {
+            console.error('❌ [REACTIVATE_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
+            return res.status(500).json({
+                success: false,
+                error: 'VERIFICATION_FAILED',
+                reason: 'Failed to verify subscription ownership'
+            });
+        }
+
+        // Reactivate subscription in Stripe
+        console.log('🔄 [REACTIVATE_SUBSCRIPTION] Reactivating subscription in Stripe...');
+        const subscription = await stripe.subscriptions.update(subscriptionId, {
+            cancel_at_period_end: false
+        });
+
+        console.log('✅ [REACTIVATE_SUBSCRIPTION] Subscription reactivated successfully');
+
+        // Update Supabase to clear cancellation
+        try {
+            console.log('🔄 [REACTIVATE_SUBSCRIPTION] Updating Supabase to clear cancellation...');
+            await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}`, {
+                method: 'PATCH',
+                body: {
+                    cancelled_at: null,
+                    cancel_at_period_end: false
+                }
+            });
+            console.log('✅ [REACTIVATE_SUBSCRIPTION] Supabase updated to clear cancellation');
+        } catch (supabaseError) {
+            console.error('⚠️ [REACTIVATE_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
+            // Don't fail the reactivation if Supabase update fails
+        }
+
         res.json({
             success: true,
             subscription: {
@@ -882,8 +999,8 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
             }
         });
     } catch (error) {
-        console.error('❌ [CANCEL_SUBSCRIPTION] Error canceling subscription:', error);
-        res.status(500).json({ error: 'Failed to cancel subscription', details: error.message });
+        console.error('❌ [REACTIVATE_SUBSCRIPTION] Error reactivating subscription:', error);
+        res.status(500).json({ error: 'Failed to reactivate subscription', details: error.message });
     }
 });
 
@@ -915,8 +1032,37 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
             if (data && data.length > 0) {
                 const subscription = data[0];
                 console.log('✅ Found subscription:', subscription);
+                
+                // Determine subscription status with cancellation logic
+                let displayStatus = subscription.status;
+                let isCancelled = false;
+                let canReactivate = false;
+                
+                // Check if subscription is cancelled
+                if (subscription.cancelled_at && subscription.cancel_at_period_end) {
+                    const cancelledAt = new Date(subscription.cancelled_at);
+                    const currentPeriodEnd = new Date(subscription.current_period_end);
+                    const now = new Date();
+                    
+                    if (now < currentPeriodEnd) {
+                        // Still within paid period - show as "cancelled" but with access
+                        displayStatus = 'cancelled_with_access';
+                        isCancelled = true;
+                        canReactivate = true;
+                    } else {
+                        // Past billing period - show as "cancelled"
+                        displayStatus = 'cancelled';
+                        isCancelled = true;
+                        canReactivate = true;
+                    }
+                }
+                
                 res.json({
-                    status: subscription.status,
+                    status: displayStatus,
+                    isCancelled: isCancelled,
+                    canReactivate: canReactivate,
+                    cancelled_at: subscription.cancelled_at,
+                    cancel_at_period_end: subscription.cancel_at_period_end,
                     requests_used_this_month: subscription.requests_used_this_month || 0,
                     monthly_request_limit: subscription.monthly_request_limit || 75,
                     is_unlimited: subscription.is_unlimited || false,
