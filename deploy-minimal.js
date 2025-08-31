@@ -1409,7 +1409,36 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             const requestsUsed = subscription.requests_used_this_month || 0;
             const monthlyLimit = subscription.monthly_request_limit || 75;
             const isUnlimited = subscription.is_unlimited || false;
-            const isProUser = subscription.status === 'active' && isUnlimited;
+            
+            // Determine subscription status with cancellation logic (same as subscription-status endpoint)
+            let displayStatus = subscription.status;
+            let isCancelled = false;
+            let canReactivate = false;
+            let isProUser = false;
+            
+            // Check if subscription is cancelled
+            if (subscription.cancelled_at && subscription.cancel_at_period_end) {
+                const cancelledAt = new Date(subscription.cancelled_at);
+                const currentPeriodEnd = new Date(subscription.current_period_end);
+                const now = new Date();
+                
+                if (now < currentPeriodEnd) {
+                    // Still within paid period - show as "cancelled" but with access
+                    displayStatus = 'cancelled_with_access';
+                    isCancelled = true;
+                    canReactivate = true;
+                    isProUser = true; // Still has Pro access
+                } else {
+                    // Past billing period - show as "cancelled"
+                    displayStatus = 'cancelled';
+                    isCancelled = true;
+                    canReactivate = true;
+                    isProUser = false; // No longer has Pro access
+                }
+            } else {
+                // Not cancelled - check if active and unlimited
+                isProUser = subscription.status === 'active' && isUnlimited;
+            }
             
             // Set cache headers
             res.set('Cache-Control', 'private, max-age=30');
@@ -1426,6 +1455,13 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
                 // Add subscription information for cancellation
                 stripe_subscription_id: subscription.stripe_subscription_id,
+                // Add cancellation information
+                subscriptionStatus: displayStatus,
+                isCancelled: isCancelled,
+                canReactivate: canReactivate,
+                cancelled_at: subscription.cancelled_at,
+                cancel_at_period_end: subscription.cancel_at_period_end,
+                current_period_end: subscription.current_period_end,
                 // Add user personal information
                 user: {
                     id: session.userId, // Add user ID for subscription operations
