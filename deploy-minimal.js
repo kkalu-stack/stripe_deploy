@@ -754,19 +754,73 @@ app.post('/api/verify-payment', async (req, res) => {
     }
 });
 
-// Cancel subscription (no user data storage)
-app.post('/api/cancel-subscription', async (req, res) => {
+// Cancel subscription (session-based authentication)
+app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const { subscriptionId } = req.body;
 
-        console.log('Canceling subscription:', subscriptionId);
+        if (!subscriptionId) {
+            return res.status(400).json({ error: 'Subscription ID is required' });
+        }
+
+        console.log('🔍 [CANCEL_SUBSCRIPTION] Request received for subscription:', subscriptionId);
+
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            console.log('❌ [CANCEL_SUBSCRIPTION] No session cookie found');
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            console.log('❌ [CANCEL_SUBSCRIPTION] Invalid or expired session');
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        console.log('✅ [CANCEL_SUBSCRIPTION] Session validated, user ID:', session.userId);
+
+        // Verify that the user owns this subscription
+        try {
+            const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}&select=*`);
+            
+            if (!subscriptionData || subscriptionData.length === 0) {
+                console.log('❌ [CANCEL_SUBSCRIPTION] User does not own this subscription');
+                return res.status(403).json({
+                    success: false,
+                    error: 'FORBIDDEN',
+                    reason: 'User does not own this subscription'
+                });
+            }
+            
+            console.log('✅ [CANCEL_SUBSCRIPTION] Subscription ownership verified');
+        } catch (verificationError) {
+            console.error('❌ [CANCEL_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
+            return res.status(500).json({
+                success: false,
+                error: 'VERIFICATION_FAILED',
+                reason: 'Failed to verify subscription ownership'
+            });
+        }
 
         // Cancel subscription directly in Stripe
+        console.log('🔄 [CANCEL_SUBSCRIPTION] Canceling subscription in Stripe...');
         const subscription = await stripe.subscriptions.update(subscriptionId, {
             cancel_at_period_end: true
         });
 
-        console.log('Subscription canceled successfully');
+        console.log('✅ [CANCEL_SUBSCRIPTION] Subscription canceled successfully');
 
         res.json({
             success: true,
@@ -777,7 +831,7 @@ app.post('/api/cancel-subscription', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error canceling subscription:', error);
+        console.error('❌ [CANCEL_SUBSCRIPTION] Error canceling subscription:', error);
         res.status(500).json({ error: 'Failed to cancel subscription', details: error.message });
     }
 });
@@ -1173,8 +1227,11 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 monthlyLimit: monthlyLimit,
                 upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
                 upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
+                // Add subscription information for cancellation
+                stripe_subscription_id: subscription.stripe_subscription_id,
                 // Add user personal information
                 user: {
+                    id: session.userId, // Add user ID for subscription operations
                     email: user.email,
                     display_name: displayName,
                     full_name: fullName,
@@ -1197,6 +1254,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
                 // Add user personal information
                 user: {
+                    id: session.userId, // Add user ID for subscription operations
                     email: user.email,
                     display_name: displayName,
                     full_name: fullName,
