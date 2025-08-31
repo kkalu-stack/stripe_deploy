@@ -1402,6 +1402,93 @@ app.post('/api/prefs/language', async (req, res) => {
     }
 });
 
+// Display name preference endpoint
+app.get('/api/prefs/display_name', async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        // Get user data from Supabase Admin API
+        const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+            method: 'GET',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!userResponse.ok) {
+            return res.status(401).json({ success: false, error: 'User not found' });
+        }
+        
+        const user = await userResponse.json();
+        const displayName = user.user_metadata?.display_name || 'User';
+        
+        res.json({ success: true, display_name: displayName });
+        
+    } catch (error) {
+        console.error('❌ Get display name error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/prefs/display_name', async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const { display_name } = req.body;
+        
+        if (!display_name) {
+            return res.status(400).json({
+                success: false,
+                error: 'Display name is required'
+            });
+        }
+        
+        // Update user metadata in Supabase Admin API
+        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+            method: 'PUT',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_metadata: { display_name: display_name }
+            })
+        });
+        
+        if (!updateResponse.ok) {
+            console.error('❌ Failed to update user metadata:', updateResponse.status);
+            return res.status(500).json({ success: false, error: 'Failed to update display name' });
+        }
+        
+        console.log('✅ Display name updated:', { userId: session.userId, display_name });
+        
+        res.json({ success: true, display_name });
+        
+    } catch (error) {
+        console.error('❌ Save display name error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Upgrade endpoint
 app.get('/api/upgrade', (req, res) => {
     res.json({
