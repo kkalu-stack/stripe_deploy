@@ -1057,6 +1057,7 @@ app.get('/api/me', async (req, res) => {
         extendSession(sessionId);
         
         // Get user data from Supabase Admin API (auth/users is not accessible via REST API)
+        let user, fullName, displayName;
         try {
             const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
                 method: 'GET',
@@ -1075,9 +1076,9 @@ app.get('/api/me', async (req, res) => {
                 });
             }
             
-            const user = await userResponse.json();
-            const fullName = user.user_metadata?.full_name || 'Not provided';
-            const displayName = user.user_metadata?.display_name || fullName || 'User';
+            user = await userResponse.json();
+            fullName = user.user_metadata?.full_name || 'Not provided';
+            displayName = user.user_metadata?.display_name || fullName || 'User';
             
         } catch (adminApiError) {
             console.error('❌ [API/ME] Admin API error:', adminApiError);
