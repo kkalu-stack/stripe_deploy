@@ -1633,6 +1633,115 @@ app.post('/api/delete-account', async (req, res) => {
     }
 });
 
+// Resume text endpoints
+app.get('/api/resume', async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        // Get user data from Supabase Admin API
+        const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+            method: 'GET',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!userResponse.ok) {
+            return res.status(401).json({ success: false, error: 'User not found' });
+        }
+        
+        const user = await userResponse.json();
+        const resumeText = user.user_metadata?.resume_text || '';
+        const savedDate = user.user_metadata?.resume_saved_date || null;
+        
+        res.json({
+            success: true,
+            data: {
+                resume_text: resumeText,
+                saved_date: savedDate
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get resume error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/resume', async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const { resume_text } = req.body;
+        
+        if (!resume_text) {
+            return res.status(400).json({
+                success: false,
+                error: 'Resume text is required'
+            });
+        }
+        
+        // Update user metadata in Supabase Admin API
+        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+            method: 'PUT',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_metadata: {
+                    resume_text: resume_text,
+                    resume_saved_date: new Date().toISOString()
+                }
+            })
+        });
+        
+        if (!updateResponse.ok) {
+            console.error('❌ Failed to update user metadata:', updateResponse.status);
+            return res.status(500).json({ success: false, error: 'Failed to save resume' });
+        }
+        
+        console.log('✅ Resume text saved for user:', session.userId);
+        
+        res.json({
+            success: true,
+            data: {
+                resume_text: resume_text,
+                saved_date: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Save resume error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
     console.error('Unhandled error:', error);
@@ -1867,115 +1976,6 @@ async function handlePaymentFailed(invoice) {
         console.error('Error updating failed payment in Supabase:', error);
     }
 }
-
-// Resume text endpoints
-app.get('/api/resume', async (req, res) => {
-    try {
-        const sessionId = req.cookies.sid;
-        if (!sessionId) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
-        }
-        
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
-        }
-        
-        // Get user data from Supabase Admin API
-        const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
-            method: 'GET',
-            headers: {
-                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!userResponse.ok) {
-            return res.status(401).json({ success: false, error: 'User not found' });
-        }
-        
-        const user = await userResponse.json();
-        const resumeText = user.user_metadata?.resume_text || '';
-        const savedDate = user.user_metadata?.resume_saved_date || null;
-        
-        res.json({
-            success: true,
-            data: {
-                resume_text: resumeText,
-                saved_date: savedDate
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Get resume error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-app.post('/api/resume', async (req, res) => {
-    try {
-        const sessionId = req.cookies.sid;
-        if (!sessionId) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
-        }
-        
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
-        }
-        
-        const { resume_text } = req.body;
-        
-        if (!resume_text) {
-            return res.status(400).json({
-                success: false,
-                error: 'Resume text is required'
-            });
-        }
-        
-        // Update user metadata in Supabase Admin API
-        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
-            method: 'PUT',
-            headers: {
-                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                user_metadata: {
-                    resume_text: resume_text,
-                    resume_saved_date: new Date().toISOString()
-                }
-            })
-        });
-        
-        if (!updateResponse.ok) {
-            console.error('❌ Failed to update user metadata:', updateResponse.status);
-            return res.status(500).json({ success: false, error: 'Failed to save resume' });
-        }
-        
-        console.log('✅ Resume text saved for user:', session.userId);
-        
-        res.json({
-            success: true,
-            data: {
-                resume_text: resume_text,
-                saved_date: new Date().toISOString()
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Save resume error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
