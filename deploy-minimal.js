@@ -1416,7 +1416,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             let canReactivate = false;
             let isProUser = false;
             
-            // Check if subscription is cancelled
+            // Check if subscription is cancelled FIRST (this takes priority over status)
             if (subscription.cancelled_at && subscription.cancel_at_period_end) {
                 const cancelledAt = new Date(subscription.cancelled_at);
                 const currentPeriodEnd = new Date(subscription.current_period_end);
@@ -1427,7 +1427,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     displayStatus = 'cancelled_with_access';
                     isCancelled = true;
                     canReactivate = true;
-                    isProUser = true; // Still has Pro access
+                    isProUser = true; // Still has Pro access for features
                 } else {
                     // Past billing period - show as "cancelled"
                     displayStatus = 'cancelled';
