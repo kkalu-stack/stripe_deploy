@@ -1056,23 +1056,46 @@ app.get('/api/me', async (req, res) => {
         // Extend session (rolling renewal)
         extendSession(sessionId);
         
-        // Get user data from Supabase
-        const userData = await supabaseRequest(`auth/users?select=id,email,user_metadata&id=eq.${session.userId}`);
-        
-        if (!userData || userData.length === 0) {
-            console.error('❌ [API/ME] User not found in database');
+        // Get user data from Supabase Admin API (auth/users is not accessible via REST API)
+        try {
+            const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+                method: 'GET',
+                headers: {
+                    'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!userResponse.ok) {
+                console.error('❌ [API/ME] Failed to fetch user from Admin API:', userResponse.status);
+                return res.status(401).json({
+                    success: false,
+                    error: 'User not found'
+                });
+            }
+            
+            const user = await userResponse.json();
+            const fullName = user.user_metadata?.full_name || 'Not provided';
+            const displayName = user.user_metadata?.display_name || fullName || 'User';
+            
+        } catch (adminApiError) {
+            console.error('❌ [API/ME] Admin API error:', adminApiError);
             return res.status(401).json({
                 success: false,
                 error: 'User not found'
             });
         }
         
-        const user = userData[0];
-        const fullName = user.user_metadata?.full_name || 'Not provided';
-        const displayName = user.user_metadata?.display_name || fullName || 'User';
-        
         // Get user subscription data
-        const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
+        let subscriptionData;
+        try {
+            subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
+        } catch (subscriptionError) {
+            console.error('❌ [API/ME] Subscription fetch error:', subscriptionError);
+            // Continue with default free user data
+            subscriptionData = null;
+        }
         
         if (subscriptionData && subscriptionData.length > 0) {
             const subscription = subscriptionData[0];
@@ -1114,9 +1137,12 @@ app.get('/api/me', async (req, res) => {
         
     } catch (error) {
         console.error('❌ [API/ME] Endpoint error:', error);
-        res.status(500).json({
+        
+        // Return 503 for internal errors, not 500
+        res.status(503).json({
             success: false,
-            error: 'Internal server error'
+            error: 'TEMP_UNAVAILABLE',
+            code: 'TEMP_UNAVAILABLE'
         });
     }
 });
