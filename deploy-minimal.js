@@ -28,6 +28,56 @@ const SESSION_CONFIG = {
     path: '/'
 };
 
+// OpenAI API Key Rotation System (10 keys)
+const openaiApiKeys = [
+    process.env.OPENAI_API_KEY_1,
+    process.env.OPENAI_API_KEY_2,
+    process.env.OPENAI_API_KEY_3,
+    process.env.OPENAI_API_KEY_4,
+    process.env.OPENAI_API_KEY_5,
+    process.env.OPENAI_API_KEY_6,
+    process.env.OPENAI_API_KEY_7,
+    process.env.OPENAI_API_KEY_8,
+    process.env.OPENAI_API_KEY_9,
+    process.env.OPENAI_API_KEY_10
+].filter(key => key && key.trim() !== ''); // Filter out empty keys
+
+console.log(`🔑 Loaded ${openaiApiKeys.length} OpenAI API keys`);
+
+// Key rotation system
+let currentKeyIndex = 0;
+let keyUsageCount = new Array(openaiApiKeys.length).fill(0);
+
+function getNextApiKey() {
+    if (openaiApiKeys.length === 0) {
+        console.error('❌ No OpenAI API keys configured');
+        return null;
+    }
+    
+    // Find the key with the lowest usage count
+    let minUsage = Math.min(...keyUsageCount);
+    let availableKeys = keyUsageCount.map((usage, index) => ({ usage, index }))
+        .filter(key => key.usage === minUsage);
+    
+    // Select a random key from those with minimum usage
+    const selectedKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+    currentKeyIndex = selectedKey.index;
+    
+    // Increment usage count
+    keyUsageCount[currentKeyIndex]++;
+    
+    console.log(`🔑 Using API key ${currentKeyIndex + 1} (usage: ${keyUsageCount[currentKeyIndex]})`);
+    return openaiApiKeys[currentKeyIndex];
+}
+
+function markKeyAsFailed(keyIndex) {
+    if (keyIndex >= 0 && keyIndex < keyUsageCount.length) {
+        // Add a penalty to this key's usage count
+        keyUsageCount[keyIndex] += 10;
+        console.log(`⚠️ Marked key ${keyIndex + 1} as failed, increased penalty`);
+    }
+}
+
 // Validate required environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.error('❌ Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
@@ -169,17 +219,17 @@ const SECURITY_CONFIG = {
         legacyHeaders: false,
     },
     cors: {
-        origin: [
-            'chrome-extension://*',
-            'moz-extension://*',
-            'http://localhost:*',
-            'https://localhost:*',
-            'https://www.google.com',
-            'https://*.google.com'
-        ],
+        origin: function (origin, callback) {
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin) return callback(null, true);
+            
+            // Allow all origins for browser extension compatibility
+            // This is necessary because the extension works on any website
+            callback(null, true);
+        },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-user-email', 'x-user-id'],
         exposedHeaders: ['X-Total-Count']
     },
     headers: {
@@ -195,6 +245,9 @@ const SECURITY_CONFIG = {
 app.use(helmet());
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
 app.use(cors(SECURITY_CONFIG.cors));
+
+// Additional CORS headers for preflight requests
+app.options('*', cors(SECURITY_CONFIG.cors));
 
 // Webhook handler for Stripe events (MUST come before JSON parsing middleware)
 app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -1025,7 +1078,7 @@ app.get('/api/get-user-id', async (req, res) => {
 });
 
 // Session-based user info endpoint (secure)
-app.get('/api/me', async (req, res) => {
+app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         console.log('🔍 [API/ME] Request received');
         
@@ -1403,7 +1456,7 @@ app.post('/api/prefs/language', async (req, res) => {
 });
 
 // Display name preference endpoint
-app.get('/api/prefs/display_name', async (req, res) => {
+app.get('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const sessionId = req.cookies.sid;
         if (!sessionId) {
@@ -1440,7 +1493,7 @@ app.get('/api/prefs/display_name', async (req, res) => {
     }
 });
 
-app.post('/api/prefs/display_name', async (req, res) => {
+app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const sessionId = req.cookies.sid;
         if (!sessionId) {
@@ -1634,7 +1687,7 @@ app.post('/api/delete-account', async (req, res) => {
 });
 
 // Resume text endpoints
-app.get('/api/resume', async (req, res) => {
+app.get('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const sessionId = req.cookies.sid;
         if (!sessionId) {
@@ -1681,7 +1734,7 @@ app.get('/api/resume', async (req, res) => {
     }
 });
 
-app.post('/api/resume', async (req, res) => {
+app.post('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const sessionId = req.cookies.sid;
         if (!sessionId) {
@@ -1735,6 +1788,159 @@ app.post('/api/resume', async (req, res) => {
         
     } catch (error) {
         console.error('❌ Save resume error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Helper function to check user subscription status
+async function checkUserSubscriptionStatus(userId) {
+    try {
+        console.log('🔍 Checking subscription status for user:', userId);
+        
+        // Get subscription from Supabase
+        const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        
+        if (data && data.length > 0) {
+            const subscription = data[0];
+            const isProUser = subscription.status === 'active' && subscription.is_unlimited;
+            const requestsUsed = subscription.requests_used_this_month || 0;
+            const monthlyLimit = subscription.monthly_request_limit || 75;
+            
+            if (!isProUser && requestsUsed >= monthlyLimit) {
+                return {
+                    upgradeRequired: true,
+                    upgradeMessage: 'You have reached your monthly limit. Upgrade to Pro for unlimited access.',
+                    upgradeUrl: '/upgrade'
+                };
+            }
+        }
+        
+        return { upgradeRequired: false };
+    } catch (error) {
+        console.error('❌ Error checking subscription status:', error);
+        // Default to allowing access if there's an error
+        return { upgradeRequired: false };
+    }
+}
+
+// Helper function to update token usage
+async function updateTokenUsage(userId, tokensUsed) {
+    try {
+        console.log('📊 Updating token usage for user:', userId, 'tokens:', tokensUsed);
+        
+        // Update token usage in Supabase
+        const response = await supabaseRequest('user_subscriptions', {
+            method: 'PATCH',
+            body: JSON.stringify({
+                requests_used_this_month: tokensUsed
+            }),
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }, `user_id=eq.${userId}`);
+        
+        console.log('✅ Token usage updated successfully');
+        return response;
+    } catch (error) {
+        console.error('❌ Error updating token usage:', error);
+        // Don't fail the request if token usage update fails
+        return null;
+    }
+}
+
+// OpenAI API proxy endpoint
+app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const { model, messages, max_tokens, temperature } = req.body;
+        
+        if (!model || !messages) {
+            return res.status(400).json({
+                success: false,
+                error: 'Model and messages are required'
+            });
+        }
+        
+        // Check user subscription status
+        const userStatus = await checkUserSubscriptionStatus(session.userId);
+        if (userStatus.upgradeRequired) {
+            return res.status(402).json({
+                success: false,
+                upgradeRequired: true,
+                upgradeMessage: userStatus.upgradeMessage,
+                upgradeUrl: userStatus.upgradeUrl
+            });
+        }
+        
+        // Get API key from the 10-key rotation system
+        const apiKey = getNextApiKey();
+        if (!apiKey) {
+            console.error('❌ No API keys available');
+            return res.status(500).json({
+                success: false,
+                error: 'No API keys available'
+            });
+        }
+        
+        // Call OpenAI API with rotated key
+        const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: messages,
+                max_tokens: max_tokens || 3000,
+                temperature: temperature || 0.7
+            })
+        });
+        
+        if (!openaiResponse.ok) {
+            const errorData = await openaiResponse.text();
+            console.error('❌ OpenAI API error:', openaiResponse.status, errorData);
+            
+            // Mark the current key as failed if it's a rate limit or authentication error
+            if (openaiResponse.status === 429 || openaiResponse.status === 401) {
+                markKeyAsFailed(currentKeyIndex);
+            }
+            
+            return res.status(openaiResponse.status).json({
+                success: false,
+                error: `OpenAI API error: ${openaiResponse.status} - ${errorData}`
+            });
+        }
+        
+        const data = await openaiResponse.json();
+        
+        // Update token usage
+        if (data.usage) {
+            await updateTokenUsage(session.userId, data.usage.total_tokens);
+        }
+        
+        console.log('✅ OpenAI API call successful for user:', session.userId);
+        
+        res.json({
+            success: true,
+            choices: data.choices,
+            usage: data.usage
+        });
+        
+    } catch (error) {
+        console.error('❌ Generate API error:', error);
         res.status(500).json({
             success: false,
             error: error.message
