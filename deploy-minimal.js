@@ -141,6 +141,14 @@ function getSession(sessionId) {
     
     // Update last activity for rolling renewal
     session.lastActivity = new Date();
+    
+    // Extend session if it's close to expiring (within 1 hour)
+    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
+    if (session.expiresAt < oneHourFromNow) {
+        extendSession(sessionId);
+        console.log('🔐 Session auto-extended:', sessionId);
+    }
+    
     return session;
 }
 
@@ -342,6 +350,49 @@ app.get('/api/health', (req, res) => {
         message: 'Trontiq Stripe API is running',
         environment: process.env.NODE_ENV || 'production'
     });
+});
+
+// Session health check endpoint
+app.get('/api/session-health', cors(SECURITY_CONFIG.cors), (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'NO_SESSION',
+                message: 'No session cookie found'
+            });
+        }
+        
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'SESSION_EXPIRED',
+                message: 'Session not found or expired'
+            });
+        }
+        
+        res.json({ 
+            success: true, 
+            session: {
+                userId: session.userId,
+                expiresAt: session.expiresAt,
+                lastActivity: session.lastActivity,
+                isValid: true
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Session health check error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'INTERNAL_ERROR',
+            message: 'Internal server error'
+        });
+    }
 });
 
 // Auth exchange endpoint - exchange Supabase token for server session
