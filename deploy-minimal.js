@@ -1116,7 +1116,14 @@ app.get('/api/me', async (req, res) => {
                 requestsUsed: requestsUsed,
                 monthlyLimit: monthlyLimit,
                 upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
-                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
+                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
+                // Add user personal information
+                user: {
+                    email: user.email,
+                    display_name: displayName,
+                    full_name: fullName,
+                    user_metadata: user.user_metadata
+                }
             });
         } else {
             // No subscription found - return free user data
@@ -1131,7 +1138,14 @@ app.get('/api/me', async (req, res) => {
                 requestsUsed: 0,
                 monthlyLimit: 75,
                 upgradeRequired: false,
-                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
+                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
+                // Add user personal information
+                user: {
+                    email: user.email,
+                    display_name: displayName,
+                    full_name: fullName,
+                    user_metadata: user.user_metadata
+                }
             });
         }
         
