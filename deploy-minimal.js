@@ -1485,10 +1485,21 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             let isProUser = false;
             
             // Check if subscription is cancelled FIRST (this takes priority over status)
+            console.log('🔍 [CANCELLATION_DEBUG] Checking cancellation logic...');
+            console.log('🔍 [CANCELLATION_DEBUG] cancelled_at:', subscription.cancelled_at);
+            console.log('🔍 [CANCELLATION_DEBUG] cancel_at_period_end:', subscription.cancel_at_period_end);
+            console.log('🔍 [CANCELLATION_DEBUG] current_period_end:', subscription.current_period_end);
+            
             if (subscription.cancelled_at && subscription.cancel_at_period_end) {
                 const cancelledAt = new Date(subscription.cancelled_at);
                 const currentPeriodEnd = new Date(subscription.current_period_end);
                 const now = new Date();
+                
+                console.log('🔍 [CANCELLATION_DEBUG] Parsed dates:');
+                console.log('🔍 [CANCELLATION_DEBUG] cancelledAt:', cancelledAt.toISOString());
+                console.log('🔍 [CANCELLATION_DEBUG] currentPeriodEnd:', currentPeriodEnd.toISOString());
+                console.log('🔍 [CANCELLATION_DEBUG] now:', now.toISOString());
+                console.log('🔍 [CANCELLATION_DEBUG] now < currentPeriodEnd:', now < currentPeriodEnd);
                 
                 if (now < currentPeriodEnd) {
                     // Still within paid period - show as "cancelled" but with access
@@ -1496,16 +1507,19 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     isCancelled = true;
                     canReactivate = true;
                     isProUser = true; // Still has Pro access for features
+                    console.log('✅ [CANCELLATION_DEBUG] Set to cancelled_with_access - still within billing period');
                 } else {
                     // Past billing period - show as "cancelled"
                     displayStatus = 'cancelled';
                     isCancelled = true;
                     canReactivate = true;
                     isProUser = false; // No longer has Pro access
+                    console.log('✅ [CANCELLATION_DEBUG] Set to cancelled - past billing period');
                 }
             } else {
                 // Not cancelled - check if active and unlimited
                 isProUser = subscription.status === 'active' && isUnlimited;
+                console.log('✅ [CANCELLATION_DEBUG] Not cancelled, isProUser:', isProUser);
             }
             
             // Debug: Log the final response data
@@ -1544,8 +1558,12 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 isProUser: isProUser,
                 subscriptionStatus: responseData.subscriptionStatus,
                 cancelled_at: responseData.cancelled_at,
-                cancel_at_period_end: responseData.cancel_at_period_end
+                cancel_at_period_end: responseData.cancel_at_period_end,
+                plan: responseData.plan,
+                canChat: responseData.canChat
             });
+            
+            console.log('🔍 [RESPONSE_DEBUG] Full responseData object:', JSON.stringify(responseData, null, 2));
             
             // Set cache headers
             res.set('Cache-Control', 'private, max-age=30');
