@@ -166,33 +166,8 @@ function deleteSession(sessionId) {
     console.log('🔐 Session deleted:', sessionId);
 }
 
-// Create user preferences table if it doesn't exist
-async function ensurePreferencesTable() {
-    try {
-        const createTableSQL = `
-            CREATE TABLE IF NOT EXISTS user_preferences (
-                user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-                tone TEXT NOT NULL DEFAULT 'professional',
-                education TEXT NOT NULL DEFAULT 'bachelor',
-                language TEXT NOT NULL DEFAULT 'english',
-                display_name TEXT,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-        `;
-        
-        await supabaseRequest('rpc/exec_sql', {
-            method: 'POST',
-            body: { sql: createTableSQL }
-        });
-        
-        console.log('✅ User preferences table ensured');
-    } catch (error) {
-        console.log('⚠️ Preferences table creation failed (may already exist):', error.message);
-    }
-}
-
-// Initialize preferences table on server start
-ensurePreferencesTable();
+// User preferences table should be created manually in Supabase
+console.log('✅ User preferences table should be created manually in Supabase SQL Editor');
 
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
