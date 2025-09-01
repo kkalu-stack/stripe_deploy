@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Trontiq</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #2c3e50;
+            margin-top: 25px;
+        }
+        .last-updated {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border-left: 4px solid #3498db;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        .data-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+            margin: 20px 0;
+        }
+        .contact-info {
+            background: #d4edda;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Privacy Policy</h1>
+        
+        <div class="last-updated">
+            <strong>Last Updated:</strong> December 2024<br>
+            <strong>Effective Date:</strong> December 2024
+        </div>
+
+        <h2>Introduction</h2>
+        <p>Trontiq ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our Chrome browser extension.</p>
+
+        <h2>Information We Collect</h2>
+        
+        <h3>Personal Information</h3>
+        <ul>
+            <li><strong>Account Information:</strong> Email address, display name, and full name when you create an account</li>
+            <li><strong>Resume Data:</strong> Resume text and extracted profile information (stored securely on our servers)</li>
+            <li><strong>Subscription Information:</strong> Payment details and subscription status (processed securely via Stripe)</li>
+        </ul>
+
+        <h3>Usage Data</h3>
+        <ul>
+            <li><strong>Extension Usage:</strong> Authentication state, UI preferences, and language settings</li>
+            <li><strong>Performance Data:</strong> Subscription cache data (expires after 15 minutes)</li>
+            <li><strong>Technical Data:</strong> Browser type, extension version, and error logs</li>
+        </ul>
+
+        <h2>How We Store Your Data</h2>
+        
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Data Type</th>
+                    <th>Storage Location</th>
+                    <th>Security Level</th>
+                    <th>Retention Period</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Session Tokens</td>
+                    <td>HttpOnly Cookies</td>
+                    <td>High (Not accessible to JavaScript)</td>
+                    <td>Until logout or session expiry</td>
+                </tr>
+                <tr>
+                    <td>Authentication State</td>
+                    <td>Chrome Storage Local</td>
+                    <td>Medium (Extension context only)</td>
+                    <td>Until logout</td>
+                </tr>
+                <tr>
+                    <td>User Profile & Resume</td>
+                    <td>Secure Server (Supabase)</td>
+                    <td>High (Encrypted at rest)</td>
+                    <td>Until account deletion</td>
+                </tr>
+                <tr>
+                    <td>Subscription Cache</td>
+                    <td>Chrome Storage Local</td>
+                    <td>Medium (Extension context only)</td>
+                    <td>15 minutes (auto-expires)</td>
+                </tr>
+                <tr>
+                    <td>Payment Information</td>
+                    <td>Stripe (PCI compliant)</td>
+                    <td>High (Industry standard)</td>
+                    <td>As required by law</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>How We Use Your Information</h2>
+        <ul>
+            <li><strong>Account Management:</strong> To create and manage your account</li>
+            <li><strong>Service Provision:</strong> To provide AI-powered job application assistance</li>
+            <li><strong>Cross-Device Sync:</strong> To sync your profile across different devices</li>
+            <li><strong>Performance Optimization:</strong> To cache data for faster response times</li>
+            <li><strong>Customer Support:</strong> To provide technical support and resolve issues</li>
+        </ul>
+
+        <div class="highlight">
+            <strong>Important:</strong> We do not sell, rent, or share your personal information with third parties for marketing purposes. Your data is used solely for providing our service.
+        </div>
+
+        <h2>Data Security</h2>
+        <ul>
+            <li><strong>Encryption:</strong> All data is encrypted in transit using HTTPS</li>
+            <li><strong>Secure Storage:</strong> Sensitive data is stored on secure servers with encryption at rest</li>
+            <li><strong>Session Management:</strong> JWT tokens are stored in HttpOnly cookies to prevent XSS attacks</li>
+            <li><strong>Minimal Permissions:</strong> Extension requests only essential permissions</li>
+            <li><strong>Regular Updates:</strong> We regularly update security measures</li>
+        </ul>
+
+        <h2>Your Rights and Controls</h2>
+        <ul>
+            <li><strong>Access:</strong> You can view your data in the extension's Profile tab</li>
+            <li><strong>Update:</strong> You can modify your profile information at any time</li>
+            <li><strong>Delete:</strong> You can delete your account and all associated data</li>
+            <li><strong>Export:</strong> You can request a copy of your data</li>
+            <li><strong>Opt-out:</strong> You can sign out and clear local data</li>
+        </ul>
+
+        <h2>Data Retention</h2>
+        <ul>
+            <li><strong>Account Data:</strong> Retained until you delete your account</li>
+            <li><strong>Cache Data:</strong> Automatically expires after 15 minutes</li>
+            <li><strong>Session Data:</strong> Cleared when you sign out</li>
+            <li><strong>Payment Data:</strong> Retained as required by law and payment processors</li>
+        </ul>
+
+        <h2>Third-Party Services</h2>
+        <ul>
+            <li><strong>Supabase:</strong> Database and authentication services</li>
+            <li><strong>Stripe:</strong> Payment processing (PCI compliant)</li>
+            <li><strong>OpenAI:</strong> AI services for job application assistance</li>
+        </ul>
+
+        <h2>Children's Privacy</h2>
+        <p>Our service is not intended for children under 13. We do not knowingly collect personal information from children under 13.</p>
+
+        <h2>Changes to This Policy</h2>
+        <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last Updated" date.</p>
+
+        <h2>Contact Us</h2>
+        <div class="contact-info">
+            <p>If you have any questions about this Privacy Policy or our data practices, please contact us:</p>
+            <ul>
+                <li><strong>Email:</strong> privacy@trontiq.com</li>
+                <li><strong>Website:</strong> <a href="https://trontiq.com">https://trontiq.com</a></li>
+            </ul>
+        </div>
+
+        <p><em>This Privacy Policy is effective as of the date listed above and applies to all users of the Trontiq Chrome extension.</em></p>
+    </div>
+</body>
+</html>
