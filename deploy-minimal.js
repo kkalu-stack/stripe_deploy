@@ -1436,17 +1436,23 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             fullName = user.user_metadata?.full_name || 'Not provided';
             
             // Get display name from user_preferences table (prioritize over user_metadata)
-            let displayName;
             try {
+                console.log('🔍 [API/ME] Fetching display_name from user_preferences for user:', session.userId);
                 const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}&select=display_name`);
+                console.log('🔍 [API/ME] Preferences response:', preferences);
+                
                 if (preferences && preferences.length > 0 && preferences[0].display_name) {
                     displayName = preferences[0].display_name;
+                    console.log('✅ [API/ME] Using display_name from preferences:', displayName);
                 } else {
                     // Fallback to user_metadata if no preference found
                     displayName = user.user_metadata?.display_name || fullName || 'User';
+                    console.log('⚠️ [API/ME] No preferences found, using fallback:', displayName);
                 }
             } catch (prefError) {
+                console.error('❌ [API/ME] Error fetching preferences:', prefError);
                 displayName = user.user_metadata?.display_name || fullName || 'User';
+                console.log('⚠️ [API/ME] Using fallback due to error:', displayName);
             }
             
         } catch (adminApiError) {
