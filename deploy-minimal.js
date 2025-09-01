@@ -1440,10 +1440,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 isProUser = subscription.status === 'active' && isUnlimited;
             }
             
-            // Set cache headers
-            res.set('Cache-Control', 'private, max-age=30');
-            
-            res.json({
+            // Debug: Log the final response data
+            const responseData = {
                 success: true,
                 isAuthenticated: true,
                 plan: isProUser ? 'pro' : 'free',
@@ -1470,7 +1468,21 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     full_name: fullName,
                     user_metadata: user.user_metadata
                 }
+            };
+            
+            console.log('🔍 Debug - Final API response data:', {
+                displayStatus: displayStatus,
+                isCancelled: isCancelled,
+                isProUser: isProUser,
+                subscriptionStatus: responseData.subscriptionStatus,
+                cancelled_at: responseData.cancelled_at,
+                cancel_at_period_end: responseData.cancel_at_period_end
             });
+            
+            // Set cache headers
+            res.set('Cache-Control', 'private, max-age=30');
+            
+            res.json(responseData);
         } else {
             // No subscription found - return free user data
             res.set('Cache-Control', 'private, max-age=30');
