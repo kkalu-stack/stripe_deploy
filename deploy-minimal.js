@@ -1385,13 +1385,10 @@ app.get('/api/get-user-id', async (req, res) => {
 // Session-based user info endpoint (secure)
 app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        console.log('🔍 [API/ME] Request received');
-        
         // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
         
         if (!sessionId) {
-            console.log('❌ [API/ME] No session cookie found');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1403,7 +1400,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         const session = getSession(sessionId);
         
         if (!session) {
-            console.log('❌ [API/ME] Invalid or expired session');
+            // Simplified logging - only mention session issues briefly
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1411,7 +1408,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        console.log('✅ [API/ME] Session validated, user ID:', session.userId);
+        // Session validated - no need to log every successful session
         
         // Extend session (rolling renewal)
         extendSession(sessionId);
@@ -1429,7 +1426,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
             
             if (!userResponse.ok) {
-                console.error('❌ [API/ME] Failed to fetch user from Admin API:', userResponse.status);
                 return res.status(401).json({
                     success: false,
                     error: 'User not found'
@@ -1450,12 +1446,10 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     displayName = user.user_metadata?.display_name || fullName || 'User';
                 }
             } catch (prefError) {
-                console.log('⚠️ Could not fetch display name from preferences, using user_metadata');
                 displayName = user.user_metadata?.display_name || fullName || 'User';
             }
             
         } catch (adminApiError) {
-            console.error('❌ [API/ME] Admin API error:', adminApiError);
             return res.status(401).json({
                 success: false,
                 error: 'User not found'
@@ -1467,7 +1461,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         try {
             subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
         } catch (subscriptionError) {
-            console.error('❌ [API/ME] Subscription fetch error:', subscriptionError);
             // Continue with default free user data
             subscriptionData = null;
         }
