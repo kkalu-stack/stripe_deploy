@@ -1541,9 +1541,7 @@ app.get('/api/prefs', async (req, res) => {
             success: true,
             data: {
                 trontiq_display_name: displayName,
-                trontiq_education_level: 'bachelor',
-                trontiq_language: 'english',
-                trontiq_tone: 'professional'
+                        // User preferences are now server-side only - no local storage defaults
             }
         });
         
