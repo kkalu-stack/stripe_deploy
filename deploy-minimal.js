@@ -1636,97 +1636,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     }
 });
 
-// PATCH /api/me - Update user preferences (consolidated endpoint)
-app.patch('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        // Get session from HttpOnly cookie
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
-        }
-        
-        // Get session from storage
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
-        }
-        
-        const { tone, education, language, display_name } = req.body;
-        
-        // Build update object with only provided fields
-        const updateData = { user_id: session.userId, updated_at: new Date().toISOString() };
-        if (tone !== undefined) updateData.tone = tone;
-        if (education !== undefined) updateData.education = education;
-        if (language !== undefined) updateData.language = language;
-        if (display_name !== undefined) updateData.display_name = display_name;
-        
-        console.log('🔍 [API/ME PATCH] Updating preferences for user:', session.userId, 'with data:', updateData);
-        
-        // Check if user preferences exist
-        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (existingPrefs && existingPrefs.length > 0) {
-            // Update existing preferences using POST with upsert
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                headers: {
-                    'Prefer': 'resolution=merge-duplicates'
-                },
-                body: updateData
-            });
-            console.log('✅ [API/ME PATCH] Updated existing preferences');
-        } else {
-            // Create new preferences
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                body: updateData
-            });
-            console.log('✅ [API/ME PATCH] Created new preferences');
-        }
-        
-        // Get updated preferences
-        const updatedPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (updatedPrefs && updatedPrefs.length > 0) {
-            const prefs = updatedPrefs[0];
-            console.log('✅ [API/ME PATCH] Preferences updated successfully:', { userId: session.userId, updates: req.body });
-            
-            res.json({
-                success: true,
-                message: 'Preferences updated successfully',
-                data: {
-                    tone: prefs.tone,
-                    education: prefs.education,
-                    language: prefs.language,
-                    display_name: prefs.display_name,
-                    updated_at: prefs.updated_at
-                }
-            });
-        } else {
-            res.status(500).json({ 
-                success: false, 
-                error: 'Failed to retrieve updated preferences' 
-            });
-        }
-    } catch (error) {
-        console.error('❌ [API/ME PATCH] Error updating preferences:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            details: 'Check server logs for more information'
-        });
-    }
-});
+// PATCH /api/me endpoint removed - using separate /api/preferences for better performance and scalability
 
 // User preferences endpoint
 app.get('/api/prefs', async (req, res) => {
@@ -1787,11 +1697,134 @@ app.post('/api/prefs', async (req, res) => {
 });
 
 // Unified preferences API (GET/PATCH) - Server Authority Pattern
-// REMOVED: /api/preferences GET endpoint - now consolidated into /api/me
-// All user preferences are now returned from the single /api/me endpoint
+// GET /api/preferences - Lightweight preferences endpoint (optimized for performance)
+app.get('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
+        }
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
+        }
+        
+        // Get user preferences from database (lightweight query)
+        const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (preferences && preferences.length > 0) {
+            const prefs = preferences[0];
+            res.json({
+                success: true,
+                data: {
+                    tone: prefs.tone,
+                    education: prefs.education,
+                    language: prefs.language,
+                    display_name: prefs.display_name,
+                    updated_at: prefs.updated_at
+                }
+            });
+        } else {
+            // Return default preferences without creating them in database
+            res.json({
+                success: true,
+                data: {
+                    tone: 'professional',
+                    education: 'bachelor',
+                    language: 'english',
+                    display_name: null,
+                    updated_at: new Date().toISOString()
+                }
+            });
+        }
+    } catch (error) {
+        console.error('❌ Get preferences error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: 'Check server logs for more information'
+        });
+    }
+});
 
-// REMOVED: PATCH /api/preferences endpoint - now consolidated into /api/me
-// All user data operations (read and update) now go through the single /api/me endpoint
+// PATCH /api/preferences - Update user preferences (optimized endpoint)
+app.patch('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
+        }
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
+        }
+        
+        const { tone, education, language, display_name } = req.body;
+        
+        // Build update object with only provided fields
+        const updateData = { user_id: session.userId, updated_at: new Date().toISOString() };
+        if (tone !== undefined) updateData.tone = tone;
+        if (education !== undefined) updateData.education = education;
+        if (language !== undefined) updateData.language = language;
+        if (display_name !== undefined) updateData.display_name = display_name;
+        
+        console.log('🔍 [PATCH /api/preferences] Updating preferences for user:', session.userId, 'with data:', updateData);
+        
+        // Check if user preferences exist
+        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (existingPrefs && existingPrefs.length > 0) {
+            // Update existing preferences using POST with upsert
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                headers: {
+                    'Prefer': 'resolution=merge-duplicates'
+                },
+                body: updateData
+            });
+            console.log('✅ [PATCH /api/preferences] Updated existing preferences');
+        } else {
+            // Create new preferences
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                body: updateData
+            });
+            console.log('✅ [PATCH /api/preferences] Created new preferences');
+        }
+        
+        // Get updated preferences
+        const updatedPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (updatedPrefs && updatedPrefs.length > 0) {
+            const prefs = updatedPrefs[0];
+            console.log('✅ [PATCH /api/preferences] Preferences updated successfully:', { userId: session.userId, updates: req.body });
+            
+            res.json({
+                success: true,
+                message: 'Preferences updated successfully',
+                data: {
+                    tone: prefs.tone,
+                    education: prefs.education,
+                    language: prefs.language,
+                    display_name: prefs.display_name,
+                    updated_at: prefs.updated_at
+                }
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                error: 'Failed to retrieve updated preferences' 
+            });
+        }
+    } catch (error) {
+        console.error('❌ [PATCH /api/preferences] Error updating preferences:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: 'Check server logs for more information'
+        });
+    }
+});
 
 // Legacy individual preference endpoints removed - use /api/preferences instead
 
