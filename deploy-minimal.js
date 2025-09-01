@@ -1435,24 +1435,39 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             user = await userResponse.json();
             fullName = user.user_metadata?.full_name || 'Not provided';
             
-            // Get display name from user_preferences table (prioritize over user_metadata)
+            // Get ALL user preferences from user_preferences table (single source of truth)
+            let userPreferences = null;
             try {
-                console.log('🔍 [API/ME] Fetching display_name from user_preferences for user:', session.userId);
-                const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}&select=display_name`);
+                console.log('🔍 [API/ME] Fetching ALL preferences from user_preferences for user:', session.userId);
+                const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
                 console.log('🔍 [API/ME] Preferences response:', preferences);
                 
-                if (preferences && preferences.length > 0 && preferences[0].display_name) {
-                    displayName = preferences[0].display_name;
+                if (preferences && preferences.length > 0) {
+                    userPreferences = preferences[0];
+                    displayName = userPreferences.display_name || user.user_metadata?.display_name || fullName || 'User';
                     console.log('✅ [API/ME] Using display_name from preferences:', displayName);
                 } else {
-                    // Fallback to user_metadata if no preference found
-                    displayName = user.user_metadata?.display_name || fullName || 'User';
-                    console.log('⚠️ [API/ME] No preferences found, using fallback:', displayName);
+                    // No preferences found - create default preferences
+                    userPreferences = {
+                        tone: 'professional',
+                        education: 'bachelor',
+                        language: 'english',
+                        display_name: user.user_metadata?.display_name || fullName || 'User'
+                    };
+                    displayName = userPreferences.display_name;
+                    console.log('⚠️ [API/ME] No preferences found, using defaults:', userPreferences);
                 }
             } catch (prefError) {
                 console.error('❌ [API/ME] Error fetching preferences:', prefError);
-                displayName = user.user_metadata?.display_name || fullName || 'User';
-                console.log('⚠️ [API/ME] Using fallback due to error:', displayName);
+                // Fallback to user_metadata if no preference found
+                userPreferences = {
+                    tone: 'professional',
+                    education: 'bachelor',
+                    language: 'english',
+                    display_name: user.user_metadata?.display_name || fullName || 'User'
+                };
+                displayName = userPreferences.display_name;
+                console.log('⚠️ [API/ME] Using fallback due to error:', userPreferences);
             }
             
         } catch (adminApiError) {
@@ -1548,6 +1563,14 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata
+                },
+                // Add user preferences (single source of truth)
+                preferences: {
+                    tone: userPreferences.tone || 'professional',
+                    education: userPreferences.education || 'bachelor',
+                    language: userPreferences.language || 'english',
+                    display_name: displayName,
+                    updated_at: userPreferences.updated_at || new Date().toISOString()
                 }
             };
             
@@ -1589,6 +1612,14 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata
+                },
+                // Add user preferences (single source of truth)
+                preferences: {
+                    tone: userPreferences.tone || 'professional',
+                    education: userPreferences.education || 'bachelor',
+                    language: userPreferences.language || 'english',
+                    display_name: displayName,
+                    updated_at: userPreferences.updated_at || new Date().toISOString()
                 }
             });
         }
@@ -1601,6 +1632,98 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             success: false,
             error: 'TEMP_UNAVAILABLE',
             code: 'TEMP_UNAVAILABLE'
+        });
+    }
+});
+
+// PATCH /api/me - Update user preferences (consolidated endpoint)
+app.patch('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        const { tone, education, language, display_name } = req.body;
+        
+        // Build update object with only provided fields
+        const updateData = { user_id: session.userId, updated_at: new Date().toISOString() };
+        if (tone !== undefined) updateData.tone = tone;
+        if (education !== undefined) updateData.education = education;
+        if (language !== undefined) updateData.language = language;
+        if (display_name !== undefined) updateData.display_name = display_name;
+        
+        console.log('🔍 [API/ME PATCH] Updating preferences for user:', session.userId, 'with data:', updateData);
+        
+        // Check if user preferences exist
+        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (existingPrefs && existingPrefs.length > 0) {
+            // Update existing preferences using POST with upsert
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                headers: {
+                    'Prefer': 'resolution=merge-duplicates'
+                },
+                body: updateData
+            });
+            console.log('✅ [API/ME PATCH] Updated existing preferences');
+        } else {
+            // Create new preferences
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                body: updateData
+            });
+            console.log('✅ [API/ME PATCH] Created new preferences');
+        }
+        
+        // Get updated preferences
+        const updatedPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (updatedPrefs && updatedPrefs.length > 0) {
+            const prefs = updatedPrefs[0];
+            console.log('✅ [API/ME PATCH] Preferences updated successfully:', { userId: session.userId, updates: req.body });
+            
+            res.json({
+                success: true,
+                message: 'Preferences updated successfully',
+                data: {
+                    tone: prefs.tone,
+                    education: prefs.education,
+                    language: prefs.language,
+                    display_name: prefs.display_name,
+                    updated_at: prefs.updated_at
+                }
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                error: 'Failed to retrieve updated preferences' 
+            });
+        }
+    } catch (error) {
+        console.error('❌ [API/ME PATCH] Error updating preferences:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: 'Check server logs for more information'
         });
     }
 });
@@ -1664,133 +1787,11 @@ app.post('/api/prefs', async (req, res) => {
 });
 
 // Unified preferences API (GET/PATCH) - Server Authority Pattern
-app.get('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        const sessionId = req.cookies.sid;
-        if (!sessionId) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
-        }
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
-        }
-        
-        // Get user preferences from database
-        const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (preferences && preferences.length > 0) {
-            const prefs = preferences[0];
-            res.json({
-                success: true,
-                data: {
-                    tone: prefs.tone,
-                    education: prefs.education,
-                    language: prefs.language,
-                    display_name: prefs.display_name,
-                    updated_at: prefs.updated_at
-                }
-            });
-        } else {
-            // Return default preferences without creating them in database
-            res.json({
-                success: true,
-                data: {
-                    tone: 'professional',
-                    education: 'bachelor',
-                    language: 'english',
-                    display_name: null,
-                    updated_at: new Date().toISOString()
-                }
-            });
-        }
-    } catch (error) {
-        console.error('❌ Get preferences error:', error);
-        console.error('❌ Error details:', {
-            message: error.message,
-            stack: error.stack,
-            userId: session?.userId
-        });
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            details: 'Check server logs for more information'
-        });
-    }
-});
+// REMOVED: /api/preferences GET endpoint - now consolidated into /api/me
+// All user preferences are now returned from the single /api/me endpoint
 
-app.patch('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        const sessionId = req.cookies.sid;
-        if (!sessionId) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
-        }
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
-        }
-        
-        const { tone, education, language, display_name } = req.body;
-        
-        // Build update object with only provided fields
-        const updateData = { user_id: session.userId, updated_at: new Date().toISOString() };
-        if (tone !== undefined) updateData.tone = tone;
-        if (education !== undefined) updateData.education = education;
-        if (language !== undefined) updateData.language = language;
-        if (display_name !== undefined) updateData.display_name = display_name;
-        
-        // Check if user preferences exist
-        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (existingPrefs && existingPrefs.length > 0) {
-            // Update existing preferences using POST with upsert
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                headers: {
-                    'Prefer': 'resolution=merge-duplicates'
-                },
-                body: updateData
-            });
-        } else {
-            // Create new preferences
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                body: updateData
-            });
-        }
-        
-        // Get updated preferences
-        const updatedPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (updatedPrefs && updatedPrefs.length > 0) {
-            const prefs = updatedPrefs[0];
-            console.log('✅ Preferences updated:', { userId: session.userId, updates: req.body });
-            res.json({
-                success: true,
-                data: {
-                    tone: prefs.tone,
-                    education: prefs.education,
-                    language: prefs.language,
-                    display_name: prefs.display_name,
-                    updated_at: prefs.updated_at
-                }
-            });
-        } else {
-            res.status(500).json({ success: false, error: 'Failed to retrieve updated preferences' });
-        }
-    } catch (error) {
-        console.error('❌ Update preferences error:', error);
-        console.error('❌ Error details:', {
-            message: error.message,
-            stack: error.stack,
-            userId: session?.userId
-        });
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            details: 'Check server logs for more information'
-        });
-    }
-});
+// REMOVED: PATCH /api/preferences endpoint - now consolidated into /api/me
+// All user data operations (read and update) now go through the single /api/me endpoint
 
 // Legacy individual preference endpoints removed - use /api/preferences instead
 
