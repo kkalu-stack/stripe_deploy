@@ -252,6 +252,9 @@ const SECURITY_CONFIG = {
     }
 };
 
+// Trust proxy for Render.com (fixes rate limiting issues)
+app.set('trust proxy', true);
+
 // Security middleware
 app.use(helmet());
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
@@ -336,6 +339,45 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true })); // Add this for form data
 app.use(cookieParser());
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// Dynamic configuration endpoint
+app.get('/api/config', (req, res) => {
+  res.json({
+    success: true,
+    dynamicConfig: {
+      features: {
+        resumeGeneration: true,
+        coverLetterGeneration: true,
+        profileExtraction: true
+      },
+      limits: {
+        freeTierTokens: 50,
+        proTierTokens: 1000
+      },
+      experiments: {
+        newUI: false,
+        advancedFeatures: true
+      }
+    },
+    blocklist: {
+      domains: [],
+      features: []
+    },
+    experiments: {
+      enabled: false,
+      features: []
+    }
+  });
+});
 
 // Add security headers
 app.use((req, res, next) => {
