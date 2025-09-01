@@ -252,11 +252,12 @@ const SECURITY_CONFIG = {
     }
 };
 
-// Trust proxy for Render.com (fixes rate limiting issues)
-app.set('trust proxy', true);
-
 // Security middleware
 app.use(helmet());
+
+// Fix trust proxy for Render.com (like Grammarly's pattern)
+app.set('trust proxy', true);
+
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
 app.use(cors(SECURITY_CONFIG.cors));
 
@@ -340,45 +341,6 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true })); // Add this for form data
 app.use(cookieParser());
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
-
-// Dynamic configuration endpoint
-app.get('/api/config', (req, res) => {
-  res.json({
-    success: true,
-    dynamicConfig: {
-      features: {
-        resumeGeneration: true,
-        coverLetterGeneration: true,
-        profileExtraction: true
-      },
-      limits: {
-        freeTierTokens: 50,
-        proTierTokens: 1000
-      },
-      experiments: {
-        newUI: false,
-        advancedFeatures: true
-      }
-    },
-    blocklist: {
-      domains: [],
-      features: []
-    },
-    experiments: {
-      enabled: false,
-      features: []
-    }
-  });
-});
-
 // Add security headers
 app.use((req, res, next) => {
     Object.entries(SECURITY_CONFIG.headers).forEach(([key, value]) => {
@@ -395,6 +357,53 @@ app.get('/api/health', (req, res) => {
         message: 'Trontiq Stripe API is running',
         environment: process.env.NODE_ENV || 'production'
     });
+});
+
+// === GRAMMARLY-STYLE CONFIG ENDPOINT ===
+// Dynamic config for experiments and feature flags (like Grammarly's pattern)
+app.get('/api/config', (req, res) => {
+    try {
+        // Return dynamic configuration
+        const config = {
+            features: {
+                resumeAnalysis: true,
+                coverLetterGeneration: true,
+                jobMatching: true,
+                aiAssistance: true
+            },
+            experiments: {
+                enhancedUI: true,
+                smartSuggestions: true,
+                advancedAnalytics: false
+            },
+            limits: {
+                maxResumeLength: 10000,
+                maxJobDescriptionLength: 5000,
+                maxChatHistory: 50
+            },
+            blocklist: {
+                domains: ['gmail.com', 'outlook.com'], // Disable on email compose
+                patterns: ['compose', 'draft', 'new message']
+            },
+            cache: {
+                preferences: 15 * 60 * 1000, // 15 minutes
+                subscription: 5 * 60 * 1000,  // 5 minutes
+                config: 5 * 60 * 1000         // 5 minutes
+            }
+        };
+        
+        res.json({
+            success: true,
+            data: config,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('❌ Config endpoint error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to load configuration'
+        });
+    }
 });
 
 // Session health check endpoint
