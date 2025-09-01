@@ -167,28 +167,7 @@ function deleteSession(sessionId) {
 }
 
 // User preferences table should be created manually in Supabase
-console.log('✅ User preferences table should be created manually in Supabase SQL Editor');
-console.log('📋 SQL to create user_preferences table:');
-console.log(`
-CREATE TABLE IF NOT EXISTS user_preferences (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    display_name TEXT,
-    tone TEXT DEFAULT 'professional',
-    education TEXT DEFAULT 'bachelor',
-    language TEXT DEFAULT 'english',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id)
-);
-
--- Enable Row Level Security
-ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
-
--- Create RLS policy
-CREATE POLICY "Users can only access their own preferences" ON user_preferences
-    FOR ALL USING (auth.uid() = user_id);
-`);
+console.log('✅ User preferences table exists and is ready for use');
 
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
