@@ -1623,28 +1623,15 @@ app.get('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 }
             });
         } else {
-            // Create default preferences
-            const defaultPrefs = {
-                user_id: session.userId,
-                tone: 'professional',
-                education: 'bachelor',
-                language: 'english',
-                updated_at: new Date().toISOString()
-            };
-            
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                body: defaultPrefs
-            });
-            
+            // Return default preferences without creating them in database
             res.json({
                 success: true,
                 data: {
-                    tone: defaultPrefs.tone,
-                    education: defaultPrefs.education,
-                    language: defaultPrefs.language,
+                    tone: 'professional',
+                    education: 'bachelor',
+                    language: 'english',
                     display_name: null,
-                    updated_at: defaultPrefs.updated_at
+                    updated_at: new Date().toISOString()
                 }
             });
         }
@@ -1674,11 +1661,22 @@ app.patch('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
         if (language !== undefined) updateData.language = language;
         if (display_name !== undefined) updateData.display_name = display_name;
         
-        // Upsert user preferences
-        await supabaseRequest('user_preferences', {
-            method: 'POST',
-            body: updateData
-        });
+        // Check if user preferences exist
+        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (existingPrefs && existingPrefs.length > 0) {
+            // Update existing preferences
+            await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`, {
+                method: 'PATCH',
+                body: updateData
+            });
+        } else {
+            // Create new preferences
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                body: updateData
+            });
+        }
         
         // Get updated preferences
         const updatedPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
@@ -1787,10 +1785,30 @@ app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res)
             updated_at: new Date().toISOString()
         };
         
-        await supabaseRequest('user_preferences', {
-            method: 'POST',
-            body: updateData
-        });
+        // Check if user preferences exist
+        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (existingPrefs && existingPrefs.length > 0) {
+            // Update existing preferences
+            await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`, {
+                method: 'PATCH',
+                body: updateData
+            });
+        } else {
+            // Create new preferences with defaults
+            const newPrefs = {
+                user_id: session.userId,
+                display_name: display_name,
+                tone: 'professional',
+                education: 'bachelor',
+                language: 'english',
+                updated_at: new Date().toISOString()
+            };
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                body: newPrefs
+            });
+        }
         
         console.log('✅ Display name updated in user_preferences:', { userId: session.userId, display_name });
         
