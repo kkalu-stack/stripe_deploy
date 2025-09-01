@@ -1387,7 +1387,21 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             
             user = await userResponse.json();
             fullName = user.user_metadata?.full_name || 'Not provided';
-            displayName = user.user_metadata?.display_name || fullName || 'User';
+            
+            // Get display name from user_preferences table (prioritize over user_metadata)
+            let displayName;
+            try {
+                const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}&select=display_name`);
+                if (preferences && preferences.length > 0 && preferences[0].display_name) {
+                    displayName = preferences[0].display_name;
+                } else {
+                    // Fallback to user_metadata if no preference found
+                    displayName = user.user_metadata?.display_name || fullName || 'User';
+                }
+            } catch (prefError) {
+                console.log('⚠️ Could not fetch display name from preferences, using user_metadata');
+                displayName = user.user_metadata?.display_name || fullName || 'User';
+            }
             
         } catch (adminApiError) {
             console.error('❌ [API/ME] Admin API error:', adminApiError);
@@ -1721,7 +1735,21 @@ app.get('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res) 
         }
         
         const user = await userResponse.json();
-        const displayName = user.user_metadata?.display_name || 'User';
+        
+        // Get display name from user_preferences table (prioritize over user_metadata)
+        let displayName;
+        try {
+            const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}&select=display_name`);
+            if (preferences && preferences.length > 0 && preferences[0].display_name) {
+                displayName = preferences[0].display_name;
+            } else {
+                // Fallback to user_metadata if no preference found
+                displayName = user.user_metadata?.display_name || 'User';
+            }
+        } catch (prefError) {
+            console.log('⚠️ Could not fetch display name from preferences, using user_metadata');
+            displayName = user.user_metadata?.display_name || 'User';
+        }
         
         res.json({ success: true, display_name: displayName });
         
