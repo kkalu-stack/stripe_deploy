@@ -1581,14 +1581,27 @@ app.post('/api/prefs', async (req, res) => {
 });
 
 // Individual preference endpoints
-app.get('/api/prefs/tone', async (req, res) => {
+app.get('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { userId } = req.query;
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
         
-        if (!userId) {
+        if (!sessionId) {
             return res.status(401).json({
                 success: false,
-                error: 'User ID required'
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
             });
         }
         
@@ -1609,16 +1622,31 @@ app.get('/api/prefs/tone', async (req, res) => {
     }
 });
 
-app.post('/api/prefs/tone', async (req, res) => {
+app.post('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { userId, tone } = req.body;
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
         
-        if (!userId) {
+        if (!sessionId) {
             return res.status(401).json({
                 success: false,
-                error: 'User ID required'
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
             });
         }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        const { tone } = req.body;
         
         if (!tone) {
             return res.status(400).json({
@@ -1627,7 +1655,7 @@ app.post('/api/prefs/tone', async (req, res) => {
             });
         }
         
-        console.log('✅ Tone preference saved:', { userId, tone });
+        console.log('✅ Tone preference saved:', { userId: session.userId, tone });
         
         res.json({ success: true, tone });
         
@@ -1640,14 +1668,27 @@ app.post('/api/prefs/tone', async (req, res) => {
     }
 });
 
-app.get('/api/prefs/education', async (req, res) => {
+app.get('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { userId } = req.query;
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
         
-        if (!userId) {
+        if (!sessionId) {
             return res.status(401).json({
                 success: false,
-                error: 'User ID required'
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
             });
         }
         
@@ -1668,16 +1709,31 @@ app.get('/api/prefs/education', async (req, res) => {
     }
 });
 
-app.post('/api/prefs/education', async (req, res) => {
+app.post('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { userId, education } = req.body;
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
         
-        if (!userId) {
+        if (!sessionId) {
             return res.status(401).json({
                 success: false,
-                error: 'User ID required'
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
             });
         }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        const { education } = req.body;
         
         if (!education) {
             return res.status(400).json({
@@ -1686,7 +1742,7 @@ app.post('/api/prefs/education', async (req, res) => {
             });
         }
         
-        console.log('✅ Education preference saved:', { userId, education });
+        console.log('✅ Education preference saved:', { userId: session.userId, education });
         
         res.json({ success: true, education });
         
@@ -1699,14 +1755,27 @@ app.post('/api/prefs/education', async (req, res) => {
     }
 });
 
-app.get('/api/prefs/language', async (req, res) => {
+app.get('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { userId } = req.query;
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
         
-        if (!userId) {
+        if (!sessionId) {
             return res.status(401).json({
                 success: false,
-                error: 'User ID required'
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
             });
         }
         
@@ -1727,16 +1796,31 @@ app.get('/api/prefs/language', async (req, res) => {
     }
 });
 
-app.post('/api/prefs/language', async (req, res) => {
+app.post('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { userId, language } = req.body;
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
         
-        if (!userId) {
+        if (!sessionId) {
             return res.status(401).json({
                 success: false,
-                error: 'User ID required'
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
             });
         }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        const { language } = req.body;
         
         if (!language) {
             return res.status(400).json({
@@ -1745,7 +1829,7 @@ app.post('/api/prefs/language', async (req, res) => {
             });
         }
         
-        console.log('✅ Language preference saved:', { userId, language });
+        console.log('✅ Language preference saved:', { userId: session.userId, language });
         
         res.json({ success: true, language });
         
