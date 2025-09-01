@@ -1780,25 +1780,19 @@ app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res)
             });
         }
         
-        // Update user metadata in Supabase Admin API
-        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
-            method: 'PUT',
-            headers: {
-                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                user_metadata: { display_name: display_name }
-            })
+        // Update display name in user_preferences table (server authority)
+        const updateData = {
+            user_id: session.userId,
+            display_name: display_name,
+            updated_at: new Date().toISOString()
+        };
+        
+        await supabaseRequest('user_preferences', {
+            method: 'POST',
+            body: updateData
         });
         
-        if (!updateResponse.ok) {
-            console.error('❌ Failed to update user metadata:', updateResponse.status);
-            return res.status(500).json({ success: false, error: 'Failed to update display name' });
-        }
-        
-        console.log('✅ Display name updated:', { userId: session.userId, display_name });
+        console.log('✅ Display name updated in user_preferences:', { userId: session.userId, display_name });
         
         res.json({ success: true, display_name });
         
