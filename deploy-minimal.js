@@ -166,6 +166,34 @@ function deleteSession(sessionId) {
     console.log('🔐 Session deleted:', sessionId);
 }
 
+// Create user preferences table if it doesn't exist
+async function ensurePreferencesTable() {
+    try {
+        const createTableSQL = `
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+                tone TEXT NOT NULL DEFAULT 'professional',
+                education TEXT NOT NULL DEFAULT 'bachelor',
+                language TEXT NOT NULL DEFAULT 'english',
+                display_name TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        `;
+        
+        await supabaseRequest('rpc/exec_sql', {
+            method: 'POST',
+            body: { sql: createTableSQL }
+        });
+        
+        console.log('✅ User preferences table ensured');
+    } catch (error) {
+        console.log('⚠️ Preferences table creation failed (may already exist):', error.message);
+    }
+}
+
+// Initialize preferences table on server start
+ensurePreferencesTable();
+
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
     const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
@@ -1578,267 +1606,117 @@ app.post('/api/prefs', async (req, res) => {
     }
 });
 
-// Individual preference endpoints
-app.get('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
+// Unified preferences API (GET/PATCH) - Server Authority Pattern
+app.get('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
-        
         if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
         }
-        
-        // Get session from storage
         const session = getSession(sessionId);
-        
         if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
         }
         
-        // Return user's tone preference (in real implementation, this would come from database)
-        res.json({
-            success: true,
-            data: {
-                tone: 'professional' // Default value
-            }
-        });
+        // Get user preferences from database
+        const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
         
+        if (preferences && preferences.length > 0) {
+            const prefs = preferences[0];
+            res.json({
+                success: true,
+                data: {
+                    tone: prefs.tone,
+                    education: prefs.education,
+                    language: prefs.language,
+                    display_name: prefs.display_name,
+                    updated_at: prefs.updated_at
+                }
+            });
+        } else {
+            // Create default preferences
+            const defaultPrefs = {
+                user_id: session.userId,
+                tone: 'professional',
+                education: 'bachelor',
+                language: 'english',
+                updated_at: new Date().toISOString()
+            };
+            
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                body: defaultPrefs
+            });
+            
+            res.json({
+                success: true,
+                data: {
+                    tone: defaultPrefs.tone,
+                    education: defaultPrefs.education,
+                    language: defaultPrefs.language,
+                    display_name: null,
+                    updated_at: defaultPrefs.updated_at
+                }
+            });
+        }
     } catch (error) {
-        console.error('❌ Get tone error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        console.error('❌ Get preferences error:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-app.post('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
+app.patch('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
-        
         if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
         }
-        
-        // Get session from storage
         const session = getSession(sessionId);
-        
         if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
         }
         
-        const { tone } = req.body;
+        const { tone, education, language, display_name } = req.body;
         
-        if (!tone) {
-            return res.status(400).json({
-                success: false,
-                error: 'Tone is required'
-            });
-        }
+        // Build update object with only provided fields
+        const updateData = { user_id: session.userId, updated_at: new Date().toISOString() };
+        if (tone !== undefined) updateData.tone = tone;
+        if (education !== undefined) updateData.education = education;
+        if (language !== undefined) updateData.language = language;
+        if (display_name !== undefined) updateData.display_name = display_name;
         
-        console.log('✅ Tone preference saved:', { userId: session.userId, tone });
-        
-        res.json({ success: true, tone });
-        
-    } catch (error) {
-        console.error('❌ Save tone error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
+        // Upsert user preferences
+        await supabaseRequest('user_preferences', {
+            method: 'POST',
+            body: updateData
         });
+        
+        // Get updated preferences
+        const updatedPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
+        
+        if (updatedPrefs && updatedPrefs.length > 0) {
+            const prefs = updatedPrefs[0];
+            console.log('✅ Preferences updated:', { userId: session.userId, updates: req.body });
+            res.json({
+                success: true,
+                data: {
+                    tone: prefs.tone,
+                    education: prefs.education,
+                    language: prefs.language,
+                    display_name: prefs.display_name,
+                    updated_at: prefs.updated_at
+                }
+            });
+        } else {
+            res.status(500).json({ success: false, error: 'Failed to retrieve updated preferences' });
+        }
+    } catch (error) {
+        console.error('❌ Update preferences error:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-app.get('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        // Get session from HttpOnly cookie
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
-        }
-        
-        // Get session from storage
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
-        }
-        
-        // Return user's education level preference
-        res.json({
-            success: true,
-            data: {
-                education: 'bachelor' // Default value
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Get education error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-app.post('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        // Get session from HttpOnly cookie
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
-        }
-        
-        // Get session from storage
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
-        }
-        
-        const { education } = req.body;
-        
-        if (!education) {
-            return res.status(400).json({
-                success: false,
-                error: 'Education level is required'
-            });
-        }
-        
-        console.log('✅ Education preference saved:', { userId: session.userId, education });
-        
-        res.json({ success: true, education });
-        
-    } catch (error) {
-        console.error('❌ Save education error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-app.get('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        // Get session from HttpOnly cookie
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
-        }
-        
-        // Get session from storage
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
-        }
-        
-        // Return user's language preference
-        res.json({
-            success: true,
-            data: {
-                language: 'english' // Default value
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Get language error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-app.post('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        // Get session from HttpOnly cookie
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
-        }
-        
-        // Get session from storage
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
-        }
-        
-        const { language } = req.body;
-        
-        if (!language) {
-            return res.status(400).json({
-                success: false,
-                error: 'Language is required'
-            });
-        }
-        
-        console.log('✅ Language preference saved:', { userId: session.userId, language });
-        
-        res.json({ success: true, language });
-        
-    } catch (error) {
-        console.error('❌ Save language error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+// Legacy individual preference endpoints removed - use /api/preferences instead
 
 // Display name preference endpoint
 app.get('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res) => {
