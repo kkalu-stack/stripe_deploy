@@ -168,6 +168,27 @@ function deleteSession(sessionId) {
 
 // User preferences table should be created manually in Supabase
 console.log('✅ User preferences table should be created manually in Supabase SQL Editor');
+console.log('📋 SQL to create user_preferences table:');
+console.log(`
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    display_name TEXT,
+    tone TEXT DEFAULT 'professional',
+    education TEXT DEFAULT 'bachelor',
+    language TEXT DEFAULT 'english',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id)
+);
+
+-- Enable Row Level Security
+ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
+
+-- Create RLS policy
+CREATE POLICY "Users can only access their own preferences" ON user_preferences
+    FOR ALL USING (auth.uid() = user_id);
+`);
 
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
@@ -1637,7 +1658,16 @@ app.get('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
         }
     } catch (error) {
         console.error('❌ Get preferences error:', error);
-        res.status(500).json({ success: false, error: error.message });
+        console.error('❌ Error details:', {
+            message: error.message,
+            stack: error.stack,
+            userId: session?.userId
+        });
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: 'Check server logs for more information'
+        });
     }
 });
 
@@ -1665,9 +1695,12 @@ app.patch('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
         const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
         
         if (existingPrefs && existingPrefs.length > 0) {
-            // Update existing preferences
-            await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`, {
-                method: 'PATCH',
+            // Update existing preferences using POST with upsert
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                headers: {
+                    'Prefer': 'resolution=merge-duplicates'
+                },
                 body: updateData
             });
         } else {
@@ -1699,7 +1732,16 @@ app.patch('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
         }
     } catch (error) {
         console.error('❌ Update preferences error:', error);
-        res.status(500).json({ success: false, error: error.message });
+        console.error('❌ Error details:', {
+            message: error.message,
+            stack: error.stack,
+            userId: session?.userId
+        });
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: 'Check server logs for more information'
+        });
     }
 });
 
@@ -1789,9 +1831,12 @@ app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res)
         const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
         
         if (existingPrefs && existingPrefs.length > 0) {
-            // Update existing preferences
-            await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`, {
-                method: 'PATCH',
+            // Update existing preferences using POST with upsert
+            await supabaseRequest('user_preferences', {
+                method: 'POST',
+                headers: {
+                    'Prefer': 'resolution=merge-duplicates'
+                },
                 body: updateData
             });
         } else {
