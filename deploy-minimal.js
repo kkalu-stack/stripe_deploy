@@ -1328,7 +1328,7 @@ app.get('/api/get-user-id', async (req, res) => {
     }
 });
 
-// Session-based user info endpoint (secure)
+// Session-based user info endpoint (secure) - GET for reading, POST for writing
 app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         console.log('🔍 [API/ME] Request received');
@@ -1520,73 +1520,16 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     }
 });
 
-// User preferences endpoint
-app.get('/api/prefs', async (req, res) => {
+// POST method for updating user preferences and profile data
+app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { userId } = req.query;
+        console.log('🔍 [API/ME POST] Update request received');
         
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                error: 'User ID required'
-            });
-        }
-        
-        // For now, we'll use a simpler approach since auth.users is not accessible via REST API
-        // In a production environment, you would validate the session token and get user data
-        let displayName = 'User'; // Would come from validated session
-        
-        // Return user preferences (in real implementation, this would come from a user_preferences table)
-        res.json({
-            success: true,
-            data: {
-                trontiq_display_name: displayName,
-                trontiq_education_level: 'bachelor',
-                trontiq_language: 'english',
-                trontiq_tone: 'professional'
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Get prefs error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-app.post('/api/prefs', async (req, res) => {
-    try {
-        const { userId, data } = req.body;
-        
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                error: 'User ID required'
-            });
-        }
-        
-        console.log('✅ User preferences saved:', Object.keys(data || {}));
-        
-        res.json({ success: true });
-        
-    } catch (error) {
-        console.error('❌ Save prefs error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Individual preference endpoints
-app.get('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
         // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
         
         if (!sessionId) {
+            console.log('❌ [API/ME POST] No session cookie found');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1598,6 +1541,7 @@ app.get('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
         const session = getSession(sessionId);
         
         if (!session) {
+            console.log('❌ [API/ME POST] Invalid or expired session');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1605,109 +1549,81 @@ app.get('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        // Return user's tone preference (in real implementation, this would come from database)
-        res.json({
-            success: true,
-            data: {
-                tone: 'professional' // Default value
+        console.log('✅ [API/ME POST] Session validated, user ID:', session.userId);
+        
+        // Extend session (rolling renewal)
+        extendSession(sessionId);
+        
+        const { tone, educationLevel, language, display_name } = req.body;
+        
+        // Update user metadata in Supabase Auth Admin API
+        try {
+            const updateData = {};
+            
+            if (tone !== undefined) updateData.trontiq_tone = tone;
+            if (educationLevel !== undefined) updateData.trontiq_education_level = educationLevel;
+            if (language !== undefined) updateData.trontiq_language = language;
+            if (display_name !== undefined) updateData.display_name = display_name;
+            
+            if (Object.keys(updateData).length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No valid fields to update'
+                });
             }
-        });
+            
+            console.log('🔄 [API/ME POST] Updating user metadata:', updateData);
+            
+            const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+                method: 'PUT',
+                headers: {
+                    'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    user_metadata: updateData
+                })
+            });
+            
+            if (!userResponse.ok) {
+                console.error('❌ [API/ME POST] Failed to update user metadata:', userResponse.status);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to update user data'
+                });
+            }
+            
+            console.log('✅ [API/ME POST] User metadata updated successfully');
+            
+            res.json({
+                success: true,
+                message: 'User preferences updated successfully'
+            });
+            
+        } catch (updateError) {
+            console.error('❌ [API/ME POST] Update error:', updateError);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update user data'
+            });
+        }
         
     } catch (error) {
-        console.error('❌ Get tone error:', error);
-        res.status(500).json({
+        console.error('❌ [API/ME POST] Endpoint error:', error);
+        res.status(503).json({
             success: false,
-            error: error.message
+            error: 'TEMP_UNAVAILABLE',
+            code: 'TEMP_UNAVAILABLE'
         });
     }
 });
 
-app.post('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        // Get session from HttpOnly cookie
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
-        }
-        
-        // Get session from storage
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
-        }
-        
-        const { tone } = req.body;
-        
-        if (!tone) {
-            return res.status(400).json({
-                success: false,
-                error: 'Tone is required'
-            });
-        }
-        
-        console.log('✅ Tone preference saved:', { userId: session.userId, tone });
-        
-        res.json({ success: true, tone });
-        
-    } catch (error) {
-        console.error('❌ Save tone error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+// Removed old preference endpoints - now consolidated to /api/me
 
-app.get('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        // Get session from HttpOnly cookie
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'No session cookie'
-            });
-        }
-        
-        // Get session from storage
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Invalid or expired session'
-            });
-        }
-        
-        // Return user's education level preference
-        res.json({
-            success: true,
-            data: {
-                education: 'bachelor' // Default value
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Get education error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+// Removed tone preference endpoints - now consolidated to /api/me
+
+// Removed education GET endpoint - now consolidated to /api/me
 
 app.post('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
