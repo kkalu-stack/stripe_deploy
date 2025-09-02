@@ -24,17 +24,8 @@ const SESSION_CONFIG = {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax', // Changed from 'none' to 'lax' for better compatibility
-    path: '/',
-    domain: process.env.NODE_ENV === 'production' ? '.onrender.com' : undefined // Set domain for production
-};
-
-// Enhanced session validation settings
-const SESSION_VALIDATION = {
-    maxConsecutiveFailures: 3, // Allow 3 consecutive failures before clearing session
-    healthCheckInterval: 5 * 60 * 1000, // 5 minutes
-    rollingRenewalThreshold: 60 * 60 * 1000, // 1 hour before expiry
-    maxIdleTime: 30 * 60 * 1000 // 30 minutes of inactivity
+    sameSite: 'none',
+    path: '/'
 };
 
 // OpenAI API Key Rotation System (10 keys)
@@ -133,13 +124,7 @@ function createSession(userId, userAgent) {
     };
     
     sessions.set(sessionId, session);
-    console.log('🔐 [CREATE_SESSION] Session created:', { 
-        sessionId, 
-        userId, 
-        totalSessions: sessions.size,
-        expiresAt: session.expiresAt,
-        maxAge: SESSION_CONFIG.maxAge
-    });
+    console.log('🔐 Session created:', { sessionId, userId });
     return sessionId;
 }
 
@@ -154,19 +139,12 @@ function getSession(sessionId) {
         return null;
     }
     
-    // Check for excessive idle time
-    const idleTime = Date.now() - session.lastActivity.getTime();
-    if (idleTime > SESSION_VALIDATION.maxIdleTime) {
-        sessions.delete(sessionId);
-        console.log('🔐 Session expired due to inactivity:', sessionId, 'idle time:', Math.round(idleTime / 1000 / 60), 'minutes');
-        return null;
-    }
-    
     // Update last activity for rolling renewal
     session.lastActivity = new Date();
     
-    // Extend session if it's close to expiring (within threshold)
-    if (session.expiresAt < new Date(Date.now() + SESSION_VALIDATION.rollingRenewalThreshold)) {
+    // Extend session if it's close to expiring (within 1 hour)
+    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
+    if (session.expiresAt < oneHourFromNow) {
         extendSession(sessionId);
         console.log('🔐 Session auto-extended:', sessionId);
     }
@@ -501,28 +479,14 @@ app.post('/api/auth/exchange', async (req, res) => {
         // Create server session
         const sessionId = createSession(user.id, req.headers['user-agent']);
         
-        console.log('🔍 [AUTH_EXCHANGE] Session created:', {
-            sessionId: sessionId,
-            userId: user.id,
-            totalSessions: sessions.size
-        });
-        
         // Set HttpOnly cookie
         res.cookie('sid', sessionId, SESSION_CONFIG);
         
-        console.log('🔍 [AUTH_EXCHANGE] Cookie config:', SESSION_CONFIG);
-        console.log('🔍 [AUTH_EXCHANGE] Response headers will include Set-Cookie for sid');
         console.log('✅ Session created and cookie set');
         
-        // Return session info for debugging
         res.json({ 
             success: true, 
-            message: 'Authentication successful',
-            debug: {
-                sessionId: sessionId,
-                cookieSet: true,
-                cookieConfig: SESSION_CONFIG
-            }
+            message: 'Authentication successful' 
         });
         
     } catch (error) {
@@ -574,79 +538,6 @@ app.post('/api/auth/logout', (req, res) => {
 // Simple test endpoint
 app.get('/api/simple-test', (req, res) => {
     res.json({ message: 'Simple test endpoint working!' });
-});
-
-// Test cookie functionality
-app.get('/api/test-cookie', (req, res) => {
-    try {
-        console.log('🧪 [TEST_COOKIE] Request received');
-        console.log('🧪 [TEST_COOKIE] All cookies:', req.cookies);
-        
-        // Set a test cookie
-        const testValue = 'test_' + Date.now();
-        res.cookie('test_cookie', testValue, {
-            maxAge: 60 * 1000, // 1 minute
-            httpOnly: false, // Make it readable by JavaScript for testing
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/'
-        });
-        
-        console.log('🧪 [TEST_COOKIE] Test cookie set:', testValue);
-        
-        res.json({
-            success: true,
-            message: 'Test cookie set',
-            testCookie: testValue,
-            allCookies: req.cookies
-        });
-        
-    } catch (error) {
-        console.error('❌ Test cookie error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Debug endpoint to check cookies and sessions
-app.get('/api/debug/sessions', (req, res) => {
-    try {
-        console.log('🔍 [DEBUG_SESSIONS] Request received');
-        console.log('🔍 [DEBUG_SESSIONS] All cookies:', req.cookies);
-        console.log('🔍 [DEBUG_SESSIONS] Session cookie (sid):', req.cookies.sid);
-        console.log('🔍 [DEBUG_SESSIONS] Total sessions in memory:', sessions.size);
-        console.log('🔍 [DEBUG_SESSIONS] Session keys:', Array.from(sessions.keys()));
-        
-        const sessionId = req.cookies.sid;
-        let session = null;
-        
-        if (sessionId) {
-            session = getSession(sessionId);
-            console.log('🔍 [DEBUG_SESSIONS] Session lookup result:', session ? 'found' : 'not found');
-        }
-        
-        res.json({
-            success: true,
-            debug: {
-                cookies: req.cookies,
-                sessionId: sessionId,
-                sessionFound: !!session,
-                session: session,
-                totalSessions: sessions.size,
-                sessionKeys: Array.from(sessions.keys()),
-                sessionConfig: SESSION_CONFIG
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Debug sessions error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
 });
 
 // Test Supabase connection
@@ -1519,7 +1410,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         
         // Session validated - no need to log every successful session
         
-        // Enhanced session validation: Check for excessive idle time and extend if needed
+        // Extend session (rolling renewal)
         extendSession(sessionId);
         
         // Get user data from Supabase Admin API (auth/users is not accessible via REST API)
@@ -1740,79 +1631,12 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         res.status(503).json({
             success: false,
             error: 'TEMP_UNAVAILABLE',
-            code: 'TEMP_UNAVAILABLE',
-            reason: 'Server temporarily unavailable, please try again'
+            code: 'TEMP_UNAVAILABLE'
         });
     }
 });
 
 // PATCH /api/me endpoint removed - using separate /api/preferences for better performance and scalability
-
-// Session health check endpoint for frontend-backend synchronization
-app.get('/api/session/health', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    try {
-        console.log('🔍 [SESSION_HEALTH] Request received');
-        console.log('🔍 [SESSION_HEALTH] All cookies:', req.cookies);
-        console.log('🔍 [SESSION_HEALTH] Session cookie (sid):', req.cookies.sid);
-        
-        const sessionId = req.cookies.sid;
-        
-        if (!sessionId) {
-            console.log('❌ [SESSION_HEALTH] No session cookie found');
-            return res.status(401).json({
-                success: false,
-                error: 'NO_SESSION',
-                reason: 'No session cookie found',
-                debug: {
-                    allCookies: Object.keys(req.cookies || {}),
-                    hasSidCookie: !!req.cookies.sid
-                }
-            });
-        }
-        
-        console.log('🔍 [SESSION_HEALTH] Looking for session:', sessionId);
-        const session = getSession(sessionId);
-        
-        if (!session) {
-            console.log('❌ [SESSION_HEALTH] Session not found or expired:', sessionId);
-            return res.status(401).json({
-                success: false,
-                error: 'SESSION_EXPIRED',
-                reason: 'Session not found or expired',
-                debug: {
-                    sessionId: sessionId,
-                    totalSessions: sessions.size,
-                    sessionKeys: Array.from(sessions.keys())
-                }
-            });
-        }
-        
-        console.log('✅ [SESSION_HEALTH] Session found and valid:', sessionId);
-        
-        // Return session health information
-        res.json({
-            success: true,
-            session: {
-                id: session.id,
-                userId: session.userId,
-                createdAt: session.createdAt,
-                expiresAt: session.expiresAt,
-                lastActivity: session.lastActivity,
-                isActive: true,
-                timeRemaining: Math.max(0, session.expiresAt.getTime() - Date.now()),
-                idleTime: Date.now() - session.lastActivity.getTime()
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Session health check error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'INTERNAL_ERROR',
-            reason: 'Failed to check session health'
-        });
-    }
-});
 
 // User preferences endpoint
 app.get('/api/prefs', async (req, res) => {
