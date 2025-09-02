@@ -28,6 +28,14 @@ const SESSION_CONFIG = {
     path: '/'
 };
 
+// Enhanced session validation settings
+const SESSION_VALIDATION = {
+    maxConsecutiveFailures: 3, // Allow 3 consecutive failures before clearing session
+    healthCheckInterval: 5 * 60 * 1000, // 5 minutes
+    rollingRenewalThreshold: 60 * 60 * 1000, // 1 hour before expiry
+    maxIdleTime: 30 * 60 * 1000 // 30 minutes of inactivity
+};
+
 // OpenAI API Key Rotation System (10 keys)
 const openaiApiKeys = [
     process.env.OPENAI_API_KEY_1,
@@ -139,12 +147,19 @@ function getSession(sessionId) {
         return null;
     }
     
+    // Check for excessive idle time
+    const idleTime = Date.now() - session.lastActivity.getTime();
+    if (idleTime > SESSION_VALIDATION.maxIdleTime) {
+        sessions.delete(sessionId);
+        console.log('🔐 Session expired due to inactivity:', sessionId, 'idle time:', Math.round(idleTime / 1000 / 60), 'minutes');
+        return null;
+    }
+    
     // Update last activity for rolling renewal
     session.lastActivity = new Date();
     
-    // Extend session if it's close to expiring (within 1 hour)
-    const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
-    if (session.expiresAt < oneHourFromNow) {
+    // Extend session if it's close to expiring (within threshold)
+    if (session.expiresAt < new Date(Date.now() + SESSION_VALIDATION.rollingRenewalThreshold)) {
         extendSession(sessionId);
         console.log('🔐 Session auto-extended:', sessionId);
     }
@@ -1410,7 +1425,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         
         // Session validated - no need to log every successful session
         
-        // Extend session (rolling renewal)
+        // Enhanced session validation: Check for excessive idle time and extend if needed
         extendSession(sessionId);
         
         // Get user data from Supabase Admin API (auth/users is not accessible via REST API)
@@ -1631,12 +1646,61 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         res.status(503).json({
             success: false,
             error: 'TEMP_UNAVAILABLE',
-            code: 'TEMP_UNAVAILABLE'
+            code: 'TEMP_UNAVAILABLE',
+            reason: 'Server temporarily unavailable, please try again'
         });
     }
 });
 
 // PATCH /api/me endpoint removed - using separate /api/preferences for better performance and scalability
+
+// Session health check endpoint for frontend-backend synchronization
+app.get('/api/session/health', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'NO_SESSION',
+                reason: 'No session cookie found'
+            });
+        }
+        
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Session not found or expired'
+            });
+        }
+        
+        // Return session health information
+        res.json({
+            success: true,
+            session: {
+                id: session.id,
+                userId: session.userId,
+                createdAt: session.createdAt,
+                expiresAt: session.expiresAt,
+                lastActivity: session.lastActivity,
+                isActive: true,
+                timeRemaining: Math.max(0, session.expiresAt.getTime() - Date.now()),
+                idleTime: Date.now() - session.lastActivity.getTime()
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Session health check error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'INTERNAL_ERROR',
+            reason: 'Failed to check session health'
+        });
+    }
+});
 
 // User preferences endpoint
 app.get('/api/prefs', async (req, res) => {
