@@ -166,9 +166,6 @@ function deleteSession(sessionId) {
     console.log('🔐 Session deleted:', sessionId);
 }
 
-// User preferences table should be created manually in Supabase
-console.log('✅ User preferences table exists and is ready for use');
-
 // Helper function to make Supabase requests
 async function supabaseRequest(endpoint, options = {}) {
     const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
@@ -254,10 +251,6 @@ const SECURITY_CONFIG = {
 
 // Security middleware
 app.use(helmet());
-
-// Fix trust proxy for Render.com (like Grammarly's pattern)
-app.set('trust proxy', true);
-
 app.use(rateLimit(SECURITY_CONFIG.rateLimit));
 app.use(cors(SECURITY_CONFIG.cors));
 
@@ -357,53 +350,6 @@ app.get('/api/health', (req, res) => {
         message: 'Trontiq Stripe API is running',
         environment: process.env.NODE_ENV || 'production'
     });
-});
-
-// === GRAMMARLY-STYLE CONFIG ENDPOINT ===
-// Dynamic config for experiments and feature flags (like Grammarly's pattern)
-app.get('/api/config', (req, res) => {
-    try {
-        // Return dynamic configuration
-        const config = {
-            features: {
-                resumeAnalysis: true,
-                coverLetterGeneration: true,
-                jobMatching: true,
-                aiAssistance: true
-            },
-            experiments: {
-                enhancedUI: true,
-                smartSuggestions: true,
-                advancedAnalytics: false
-            },
-            limits: {
-                maxResumeLength: 10000,
-                maxJobDescriptionLength: 5000,
-                maxChatHistory: 50
-            },
-            blocklist: {
-                domains: ['gmail.com', 'outlook.com'], // Disable on email compose
-                patterns: ['compose', 'draft', 'new message']
-            },
-            cache: {
-                preferences: 15 * 60 * 1000, // 15 minutes
-                subscription: 5 * 60 * 1000,  // 5 minutes
-                config: 5 * 60 * 1000         // 5 minutes
-            }
-        };
-        
-        res.json({
-            success: true,
-            data: config,
-            timestamp: new Date().toISOString()
-        });
-    } catch (error) {
-        console.error('❌ Config endpoint error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to load configuration'
-        });
-    }
 });
 
 // Session health check endpoint
@@ -1385,10 +1331,13 @@ app.get('/api/get-user-id', async (req, res) => {
 // Session-based user info endpoint (secure)
 app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
+        console.log('🔍 [API/ME] Request received');
+        
         // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
         
         if (!sessionId) {
+            console.log('❌ [API/ME] No session cookie found');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1400,7 +1349,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         const session = getSession(sessionId);
         
         if (!session) {
-            // Simplified logging - only mention session issues briefly
+            console.log('❌ [API/ME] Invalid or expired session');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1408,7 +1357,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        // Session validated - no need to log every successful session
+        console.log('✅ [API/ME] Session validated, user ID:', session.userId);
         
         // Extend session (rolling renewal)
         extendSession(sessionId);
@@ -1426,6 +1375,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
             
             if (!userResponse.ok) {
+                console.error('❌ [API/ME] Failed to fetch user from Admin API:', userResponse.status);
                 return res.status(401).json({
                     success: false,
                     error: 'User not found'
@@ -1434,43 +1384,10 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             
             user = await userResponse.json();
             fullName = user.user_metadata?.full_name || 'Not provided';
-            
-            // Get ALL user preferences from user_preferences table (single source of truth)
-            let userPreferences = null;
-            try {
-                console.log('🔍 [API/ME] Fetching ALL preferences from user_preferences for user:', session.userId);
-                const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-                console.log('🔍 [API/ME] Preferences response:', preferences);
-                
-                if (preferences && preferences.length > 0) {
-                    userPreferences = preferences[0];
-                    displayName = userPreferences.display_name || user.user_metadata?.display_name || fullName || 'User';
-                    console.log('✅ [API/ME] Using display_name from preferences:', displayName);
-                } else {
-                    // No preferences found - create default preferences
-                    userPreferences = {
-                        tone: 'professional',
-                        education: 'bachelor',
-                        language: 'english',
-                        display_name: user.user_metadata?.display_name || fullName || 'User'
-                    };
-                    displayName = userPreferences.display_name;
-                    console.log('⚠️ [API/ME] No preferences found, using defaults:', userPreferences);
-                }
-            } catch (prefError) {
-                console.error('❌ [API/ME] Error fetching preferences:', prefError);
-                // Fallback to user_metadata if no preference found
-                userPreferences = {
-                    tone: 'professional',
-                    education: 'bachelor',
-                    language: 'english',
-                    display_name: user.user_metadata?.display_name || fullName || 'User'
-                };
-                displayName = userPreferences.display_name;
-                console.log('⚠️ [API/ME] Using fallback due to error:', userPreferences);
-            }
+            displayName = user.user_metadata?.display_name || fullName || 'User';
             
         } catch (adminApiError) {
+            console.error('❌ [API/ME] Admin API error:', adminApiError);
             return res.status(401).json({
                 success: false,
                 error: 'User not found'
@@ -1482,6 +1399,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         try {
             subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
         } catch (subscriptionError) {
+            console.error('❌ [API/ME] Subscription fetch error:', subscriptionError);
             // Continue with default free user data
             subscriptionData = null;
         }
@@ -1499,21 +1417,10 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             let isProUser = false;
             
             // Check if subscription is cancelled FIRST (this takes priority over status)
-            console.log('🔍 [CANCELLATION_DEBUG] Checking cancellation logic...');
-            console.log('🔍 [CANCELLATION_DEBUG] cancelled_at:', subscription.cancelled_at);
-            console.log('🔍 [CANCELLATION_DEBUG] cancel_at_period_end:', subscription.cancel_at_period_end);
-            console.log('🔍 [CANCELLATION_DEBUG] current_period_end:', subscription.current_period_end);
-            
             if (subscription.cancelled_at && subscription.cancel_at_period_end) {
                 const cancelledAt = new Date(subscription.cancelled_at);
                 const currentPeriodEnd = new Date(subscription.current_period_end);
                 const now = new Date();
-                
-                console.log('🔍 [CANCELLATION_DEBUG] Parsed dates:');
-                console.log('🔍 [CANCELLATION_DEBUG] cancelledAt:', cancelledAt.toISOString());
-                console.log('🔍 [CANCELLATION_DEBUG] currentPeriodEnd:', currentPeriodEnd.toISOString());
-                console.log('🔍 [CANCELLATION_DEBUG] now:', now.toISOString());
-                console.log('🔍 [CANCELLATION_DEBUG] now < currentPeriodEnd:', now < currentPeriodEnd);
                 
                 if (now < currentPeriodEnd) {
                     // Still within paid period - show as "cancelled" but with access
@@ -1521,19 +1428,16 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     isCancelled = true;
                     canReactivate = true;
                     isProUser = true; // Still has Pro access for features
-                    console.log('✅ [CANCELLATION_DEBUG] Set to cancelled_with_access - still within billing period');
                 } else {
                     // Past billing period - show as "cancelled"
                     displayStatus = 'cancelled';
                     isCancelled = true;
                     canReactivate = true;
                     isProUser = false; // No longer has Pro access
-                    console.log('✅ [CANCELLATION_DEBUG] Set to cancelled - past billing period');
                 }
             } else {
                 // Not cancelled - check if active and unlimited
                 isProUser = subscription.status === 'active' && isUnlimited;
-                console.log('✅ [CANCELLATION_DEBUG] Not cancelled, isProUser:', isProUser);
             }
             
             // Debug: Log the final response data
@@ -1563,14 +1467,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata
-                },
-                // Add user preferences (single source of truth)
-                preferences: {
-                    tone: userPreferences.tone || 'professional',
-                    education: userPreferences.education || 'bachelor',
-                    language: userPreferences.language || 'english',
-                    display_name: displayName,
-                    updated_at: userPreferences.updated_at || new Date().toISOString()
                 }
             };
             
@@ -1580,12 +1476,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 isProUser: isProUser,
                 subscriptionStatus: responseData.subscriptionStatus,
                 cancelled_at: responseData.cancelled_at,
-                cancel_at_period_end: responseData.cancel_at_period_end,
-                plan: responseData.plan,
-                canChat: responseData.canChat
+                cancel_at_period_end: responseData.cancel_at_period_end
             });
-            
-            console.log('🔍 [RESPONSE_DEBUG] Full responseData object:', JSON.stringify(responseData, null, 2));
             
             // Set cache headers
             res.set('Cache-Control', 'private, max-age=30');
@@ -1612,14 +1504,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata
-                },
-                // Add user preferences (single source of truth)
-                preferences: {
-                    tone: userPreferences.tone || 'professional',
-                    education: userPreferences.education || 'bachelor',
-                    language: userPreferences.language || 'english',
-                    display_name: displayName,
-                    updated_at: userPreferences.updated_at || new Date().toISOString()
                 }
             });
         }
@@ -1635,8 +1519,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         });
     }
 });
-
-// PATCH /api/me endpoint removed - using separate /api/preferences for better performance and scalability
 
 // User preferences endpoint
 app.get('/api/prefs', async (req, res) => {
@@ -1659,7 +1541,9 @@ app.get('/api/prefs', async (req, res) => {
             success: true,
             data: {
                 trontiq_display_name: displayName,
-                        // User preferences are now server-side only - no local storage defaults
+                trontiq_education_level: 'bachelor',
+                trontiq_language: 'english',
+                trontiq_tone: 'professional'
             }
         });
         
@@ -1696,137 +1580,267 @@ app.post('/api/prefs', async (req, res) => {
     }
 });
 
-// Unified preferences API (GET/PATCH) - Server Authority Pattern
-// GET /api/preferences - Lightweight preferences endpoint (optimized for performance)
-app.get('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
+// Individual preference endpoints
+app.get('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
+        // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
+        
         if (!sessionId) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
         }
+        
+        // Get session from storage
         const session = getSession(sessionId);
+        
         if (!session) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
-        }
-        
-        // Get user preferences from database (lightweight query)
-        const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (preferences && preferences.length > 0) {
-            const prefs = preferences[0];
-            res.json({
-                success: true,
-                data: {
-                    tone: prefs.tone,
-                    education: prefs.education,
-                    language: prefs.language,
-                    display_name: prefs.display_name,
-                    updated_at: prefs.updated_at
-                }
-            });
-        } else {
-            // Return default preferences without creating them in database
-            res.json({
-                success: true,
-                data: {
-                    tone: 'professional',
-                    education: 'bachelor',
-                    language: 'english',
-                    display_name: null,
-                    updated_at: new Date().toISOString()
-                }
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
             });
         }
+        
+        // Return user's tone preference (in real implementation, this would come from database)
+        res.json({
+            success: true,
+            data: {
+                tone: 'professional' // Default value
+            }
+        });
+        
     } catch (error) {
-        console.error('❌ Get preferences error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            details: 'Check server logs for more information'
+        console.error('❌ Get tone error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });
 
-// PATCH /api/preferences - Update user preferences (optimized endpoint)
-app.patch('/api/preferences', cors(SECURITY_CONFIG.cors), async (req, res) => {
+app.post('/api/prefs/tone', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
+        // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
+        
         if (!sessionId) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'No session cookie' });
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
         }
+        
+        // Get session from storage
         const session = getSession(sessionId);
+        
         if (!session) {
-            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED', reason: 'Invalid or expired session' });
-        }
-        
-        const { tone, education, language, display_name } = req.body;
-        
-        // Build update object with only provided fields
-        const updateData = { user_id: session.userId, updated_at: new Date().toISOString() };
-        if (tone !== undefined) updateData.tone = tone;
-        if (education !== undefined) updateData.education = education;
-        if (language !== undefined) updateData.language = language;
-        if (display_name !== undefined) updateData.display_name = display_name;
-        
-        console.log('🔍 [PATCH /api/preferences] Updating preferences for user:', session.userId, 'with data:', updateData);
-        
-        // Check if user preferences exist
-        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (existingPrefs && existingPrefs.length > 0) {
-            // Update existing preferences using POST with upsert
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                headers: {
-                    'Prefer': 'resolution=merge-duplicates'
-                },
-                body: updateData
-            });
-            console.log('✅ [PATCH /api/preferences] Updated existing preferences');
-        } else {
-            // Create new preferences
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                body: updateData
-            });
-            console.log('✅ [PATCH /api/preferences] Created new preferences');
-        }
-        
-        // Get updated preferences
-        const updatedPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (updatedPrefs && updatedPrefs.length > 0) {
-            const prefs = updatedPrefs[0];
-            console.log('✅ [PATCH /api/preferences] Preferences updated successfully:', { userId: session.userId, updates: req.body });
-            
-            res.json({
-                success: true,
-                message: 'Preferences updated successfully',
-                data: {
-                    tone: prefs.tone,
-                    education: prefs.education,
-                    language: prefs.language,
-                    display_name: prefs.display_name,
-                    updated_at: prefs.updated_at
-                }
-            });
-        } else {
-            res.status(500).json({ 
-                success: false, 
-                error: 'Failed to retrieve updated preferences' 
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
             });
         }
+        
+        const { tone } = req.body;
+        
+        if (!tone) {
+            return res.status(400).json({
+                success: false,
+                error: 'Tone is required'
+            });
+        }
+        
+        console.log('✅ Tone preference saved:', { userId: session.userId, tone });
+        
+        res.json({ success: true, tone });
+        
     } catch (error) {
-        console.error('❌ [PATCH /api/preferences] Error updating preferences:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message,
-            details: 'Check server logs for more information'
+        console.error('❌ Save tone error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });
 
-// Legacy individual preference endpoints removed - use /api/preferences instead
+app.get('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        // Return user's education level preference
+        res.json({
+            success: true,
+            data: {
+                education: 'bachelor' // Default value
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get education error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        const { education } = req.body;
+        
+        if (!education) {
+            return res.status(400).json({
+                success: false,
+                error: 'Education level is required'
+            });
+        }
+        
+        console.log('✅ Education preference saved:', { userId: session.userId, education });
+        
+        res.json({ success: true, education });
+        
+    } catch (error) {
+        console.error('❌ Save education error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.get('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        // Return user's language preference
+        res.json({
+            success: true,
+            data: {
+                language: 'english' // Default value
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Get language error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+        const { language } = req.body;
+        
+        if (!language) {
+            return res.status(400).json({
+                success: false,
+                error: 'Language is required'
+            });
+        }
+        
+        console.log('✅ Language preference saved:', { userId: session.userId, language });
+        
+        res.json({ success: true, language });
+        
+    } catch (error) {
+        console.error('❌ Save language error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 
 // Display name preference endpoint
 app.get('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res) => {
@@ -1856,21 +1870,7 @@ app.get('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res) 
         }
         
         const user = await userResponse.json();
-        
-        // Get display name from user_preferences table (prioritize over user_metadata)
-        let displayName;
-        try {
-            const preferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}&select=display_name`);
-            if (preferences && preferences.length > 0 && preferences[0].display_name) {
-                displayName = preferences[0].display_name;
-            } else {
-                // Fallback to user_metadata if no preference found
-                displayName = user.user_metadata?.display_name || 'User';
-            }
-        } catch (prefError) {
-            console.log('⚠️ Could not fetch display name from preferences, using user_metadata');
-            displayName = user.user_metadata?.display_name || 'User';
-        }
+        const displayName = user.user_metadata?.display_name || 'User';
         
         res.json({ success: true, display_name: displayName });
         
@@ -1901,42 +1901,25 @@ app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res)
             });
         }
         
-        // Update display name in user_preferences table (server authority)
-        const updateData = {
-            user_id: session.userId,
-            display_name: display_name,
-            updated_at: new Date().toISOString()
-        };
+        // Update user metadata in Supabase Admin API
+        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+            method: 'PUT',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_metadata: { display_name: display_name }
+            })
+        });
         
-        // Check if user preferences exist
-        const existingPrefs = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`);
-        
-        if (existingPrefs && existingPrefs.length > 0) {
-            // Update existing preferences using POST with upsert
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                headers: {
-                    'Prefer': 'resolution=merge-duplicates'
-                },
-                body: updateData
-            });
-        } else {
-            // Create new preferences with defaults
-            const newPrefs = {
-                user_id: session.userId,
-                display_name: display_name,
-                tone: 'professional',
-                education: 'bachelor',
-                language: 'english',
-                updated_at: new Date().toISOString()
-            };
-            await supabaseRequest('user_preferences', {
-                method: 'POST',
-                body: newPrefs
-            });
+        if (!updateResponse.ok) {
+            console.error('❌ Failed to update user metadata:', updateResponse.status);
+            return res.status(500).json({ success: false, error: 'Failed to update display name' });
         }
         
-        console.log('✅ Display name updated in user_preferences:', { userId: session.userId, display_name });
+        console.log('✅ Display name updated:', { userId: session.userId, display_name });
         
         res.json({ success: true, display_name });
         
