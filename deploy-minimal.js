@@ -1394,6 +1394,16 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
+        // Get user preferences from user_preferences table
+        let userPreferences;
+        try {
+            userPreferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}&select=*`);
+        } catch (preferencesError) {
+            console.error('❌ [API/ME] Preferences fetch error:', preferencesError);
+            // Continue with default preferences
+            userPreferences = null;
+        }
+        
         // Get user subscription data
         let subscriptionData;
         try {
@@ -1466,7 +1476,19 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     email: user.email,
                     display_name: displayName,
                     full_name: fullName,
-                    user_metadata: user.user_metadata
+                    user_metadata: user.user_metadata,
+                    // Add preferences from user_preferences table
+                    preferences: userPreferences && userPreferences.length > 0 ? {
+                        tone: userPreferences[0].tone || 'professional',
+                        education: userPreferences[0].education || 'bachelor',
+                        language: userPreferences[0].language || 'english',
+                        display_name: userPreferences[0].display_name || displayName
+                    } : {
+                        tone: 'professional',
+                        education: 'bachelor',
+                        language: 'english',
+                        display_name: displayName
+                    }
                 }
             };
             
@@ -1503,7 +1525,19 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     email: user.email,
                     display_name: displayName,
                     full_name: fullName,
-                    user_metadata: user.user_metadata
+                    user_metadata: user.user_metadata,
+                    // Add preferences from user_preferences table
+                    preferences: userPreferences && userPreferences.length > 0 ? {
+                        tone: userPreferences[0].tone || 'professional',
+                        education: userPreferences[0].education || 'bachelor',
+                        language: userPreferences[0].language || 'english',
+                        display_name: userPreferences[0].display_name || displayName
+                    } : {
+                        tone: 'professional',
+                        education: 'bachelor',
+                        language: 'english',
+                        display_name: displayName
+                    }
                 }
             });
         }
@@ -1556,13 +1590,13 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         
         const { tone, educationLevel, language, display_name } = req.body;
         
-        // Update user metadata in Supabase Auth Admin API
+        // Update user preferences in user_preferences table
         try {
             const updateData = {};
             
-            if (tone !== undefined) updateData.trontiq_tone = tone;
-            if (educationLevel !== undefined) updateData.trontiq_education_level = educationLevel;
-            if (language !== undefined) updateData.trontiq_language = language;
+            if (tone !== undefined) updateData.tone = tone;
+            if (educationLevel !== undefined) updateData.education = educationLevel;
+            if (language !== undefined) updateData.language = language;
             if (display_name !== undefined) updateData.display_name = display_name;
             
             if (Object.keys(updateData).length === 0) {
@@ -1572,29 +1606,66 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 });
             }
             
-            console.log('🔄 [API/ME POST] Updating user metadata:', updateData);
+            console.log('🔄 [API/ME POST] Updating user preferences:', updateData);
             
-            const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
-                method: 'PUT',
-                headers: {
-                    'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
-                    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    user_metadata: updateData
-                })
-            });
+            // Check if user preferences exist
+            const existingPreferences = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}&select=*`);
             
-            if (!userResponse.ok) {
-                console.error('❌ [API/ME POST] Failed to update user metadata:', userResponse.status);
-                return res.status(500).json({
-                    success: false,
-                    error: 'Failed to update user data'
+            if (existingPreferences && existingPreferences.length > 0) {
+                // Update existing preferences
+                const updateResult = await supabaseRequest(`user_preferences?user_id=eq.${session.userId}`, {
+                    method: 'PATCH',
+                    body: {
+                        ...updateData,
+                        updated_at: new Date().toISOString()
+                    }
                 });
+                
+                if (!updateResult) {
+                    throw new Error('Failed to update preferences');
+                }
+                
+                console.log('✅ [API/ME POST] User preferences updated successfully');
+            } else {
+                // Insert new preferences
+                const insertResult = await supabaseRequest('user_preferences', {
+                    method: 'POST',
+                    body: {
+                        user_id: session.userId,
+                        ...updateData,
+                        updated_at: new Date().toISOString()
+                    }
+                });
+                
+                if (!insertResult) {
+                    throw new Error('Failed to insert preferences');
+                }
+                
+                console.log('✅ [API/ME POST] User preferences created successfully');
             }
             
-            console.log('✅ [API/ME POST] User metadata updated successfully');
+            // If display_name was updated, also update it in user metadata
+            if (display_name !== undefined) {
+                try {
+                    const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                            'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            user_metadata: { display_name: display_name }
+                        })
+                    });
+                    
+                    if (userResponse.ok) {
+                        console.log('✅ [API/ME POST] Display name also updated in user metadata');
+                    }
+                } catch (metadataError) {
+                    console.warn('⚠️ [API/ME POST] Could not update display name in metadata:', metadataError);
+                }
+            }
             
             res.json({
                 success: true,
