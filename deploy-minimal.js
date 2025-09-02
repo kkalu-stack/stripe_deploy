@@ -1489,11 +1489,17 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata,
-                    // Only display name from preferences (other preferences are local storage only)
+                    // Include all preferences for widget compatibility
                     preferences: userPreferences && userPreferences.length > 0 ? {
-                        display_name: userPreferences[0].display_name || displayName
+                        display_name: userPreferences[0].display_name || displayName,
+                        tone: userPreferences[0].tone || 'professional',
+                        education: userPreferences[0].education || 'bachelor',
+                        language: userPreferences[0].language || 'english'
                     } : {
-                        display_name: displayName
+                        display_name: displayName,
+                        tone: 'professional',
+                        education: 'bachelor',
+                        language: 'english'
                     }
                 }
             };
@@ -1532,11 +1538,17 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata,
-                    // Only display name from preferences (other preferences are local storage only)
+                    // Include all preferences for widget compatibility
                     preferences: userPreferences && userPreferences.length > 0 ? {
-                        display_name: userPreferences[0].display_name || displayName
+                        display_name: userPreferences[0].display_name || displayName,
+                        tone: userPreferences[0].tone || 'professional',
+                        education: userPreferences[0].education || 'bachelor',
+                        language: userPreferences[0].language || 'english'
                     } : {
-                        display_name: displayName
+                        display_name: displayName,
+                        tone: 'professional',
+                        education: 'bachelor',
+                        language: 'english'
                     }
                 }
             });
