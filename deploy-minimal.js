@@ -206,9 +206,21 @@ async function supabaseRequest(endpoint, options = {}) {
             throw error;
         }
         
-        const data = await response.json();
-        console.log('✅ Supabase request successful');
-        return data;
+        // Handle 204 No Content responses (common for PATCH/DELETE operations)
+        if (response.status === 204) {
+            console.log('✅ Supabase request successful (204 No Content)');
+            return null; // No data to return for 204 responses
+        }
+        
+        // For other successful responses, try to parse JSON
+        try {
+            const data = await response.json();
+            console.log('✅ Supabase request successful');
+            return data;
+        } catch (jsonError) {
+            console.warn('⚠️ Could not parse JSON response, returning null');
+            return null;
+        }
     } catch (fetchError) {
         console.error('❌ Supabase request failed:', fetchError);
         throw fetchError;
@@ -1621,7 +1633,10 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     }
                 });
                 
-                if (!updateResult) {
+                if (updateResult === null) {
+                    // 204 response means success
+                    console.log('✅ [API/ME POST] Preferences updated successfully (204 response)');
+                } else if (!updateResult) {
                     throw new Error('Failed to update preferences');
                 }
                 
@@ -1637,7 +1652,10 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     }
                 });
                 
-                if (!insertResult) {
+                if (insertResult === null) {
+                    // 204 response means success
+                    console.log('✅ [API/ME POST] Preferences created successfully (204 response)');
+                } else if (!insertResult) {
                     throw new Error('Failed to insert preferences');
                 }
                 
