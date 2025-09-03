@@ -838,10 +838,11 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             // Store user-specific metadata in Stripe session to prevent cross-user data
             metadata: {
                 user_id: session.userId,
-                user_email: userEmail, // Include email in metadata
                 created_at: new Date().toISOString(),
                 session_id: sessionId,
-                browser_session: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                browser_session: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                force_fresh_checkout: 'true',
+                prevent_caching: 'true'
             }
         });
 
