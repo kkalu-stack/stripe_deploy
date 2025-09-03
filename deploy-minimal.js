@@ -770,8 +770,27 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         console.log('🔍 [CHECKOUT] Request body:', req.body);
         console.log('🔍 [CHECKOUT] Request headers:', req.headers);
 
-        // Note: User email is already available via /api/me endpoint
-        // No need to duplicate Supabase call here
+        // Get user email from session for Stripe checkout
+        let userEmail = null;
+        try {
+            // Get user details from Supabase to get the email
+            const { data: userData, error: userError } = await supabase
+                .from('auth.users')
+                .select('email')
+                .eq('id', session.userId)
+                .single();
+
+            if (userError || !userData) {
+                console.log('❌ [CHECKOUT] Could not fetch user email:', userError);
+                return res.status(401).json({ error: 'User email not found' });
+            }
+
+            userEmail = userData.email;
+            console.log('✅ [CHECKOUT] User email for Stripe:', userEmail);
+        } catch (userError) {
+            console.log('❌ [CHECKOUT] Error fetching user email:', userError);
+            return res.status(500).json({ error: 'Failed to fetch user email' });
+        }
 
         // Handle both JSON and form data
         const priceId = req.body.priceId;
@@ -794,6 +813,8 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         const stripeSession = await stripe.checkout.sessions.create({
             // SECURITY: Unique client reference to prevent cross-user data
             client_reference_id: `user_${session.userId}_${Date.now()}`,
+            // CRITICAL: Pass user email to Stripe to prevent cross-user data
+            customer_email: userEmail,
             payment_method_types: ['card'],
             line_items: [
                 {
@@ -806,6 +827,8 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             cancel_url: `${baseUrl}/cancel?user_id=${session.userId}&timestamp=${Date.now()}`,
             // SECURITY: Force fresh checkout to prevent cross-user data leakage
             billing_address_collection: 'required', // Force address collection
+            // SECURITY: Force Stripe to ignore cached customer data
+            locale: 'auto', // Force locale detection
             // Enable all the features you want
             allow_promotion_codes: true,
             automatic_tax: {
@@ -814,8 +837,10 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             // Store user-specific metadata in Stripe session to prevent cross-user data
             metadata: {
                 user_id: session.userId,
+                user_email: userEmail, // Include email in metadata
                 created_at: new Date().toISOString(),
-                session_id: sessionId
+                session_id: sessionId,
+                browser_session: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
             }
         });
 
