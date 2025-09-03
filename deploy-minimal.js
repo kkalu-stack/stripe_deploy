@@ -733,9 +733,39 @@ app.get('/cancel', (req, res) => {
     `);
 });
 
-// Create checkout session (no user data required)
-app.post('/api/create-checkout-session', async (req, res) => {
+// Create checkout session (REQUIRES AUTHENTICATION)
+app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
+        // SECURITY: Validate user session before allowing checkout
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            console.log('❌ [CHECKOUT] No session cookie found');
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        // Get user from session
+        const session = sessions.get(sessionId);
+        if (!session) {
+            console.log('❌ [CHECKOUT] Invalid or expired session');
+            return res.status(401).json({ error: 'Invalid session' });
+        }
+
+        // Validate session hasn't expired
+        if (Date.now() > session.expiresAt) {
+            console.log('❌ [CHECKOUT] Session expired');
+            sessions.delete(sessionId);
+            return res.status(401).json({ error: 'Session expired' });
+        }
+
+        console.log('✅ [CHECKOUT] User authenticated:', session.userId);
+        console.log('🔒 [CHECKOUT] Session details:', {
+            sessionId,
+            userId: session.userId,
+            expiresAt: new Date(session.expiresAt).toISOString(),
+            userAgent: req.headers['user-agent']?.substring(0, 100)
+        });
+
         // Handle both JSON and form data
         const priceId = req.body.priceId;
 
@@ -743,13 +773,13 @@ app.post('/api/create-checkout-session', async (req, res) => {
             return res.status(400).json({ error: 'Price ID is required' });
         }
 
-        console.log('Creating Stripe Prebuilt Checkout session for price:', priceId);
+        console.log('Creating Stripe Prebuilt Checkout session for authenticated user:', session.userId);
 
         // Use hardcoded base URL
         const baseUrl = 'https://stripe-deploy.onrender.com';
 
         // Create Stripe checkout session for Prebuilt Checkout
-        const session = await stripe.checkout.sessions.create({
+        const stripeSession = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             line_items: [
                 {
@@ -765,16 +795,22 @@ app.post('/api/create-checkout-session', async (req, res) => {
             automatic_tax: {
                 enabled: true
             },
-            // Store minimal metadata in Stripe session
+            // Store user-specific metadata in Stripe session to prevent cross-user data
             metadata: {
-                created_at: new Date().toISOString()
+                user_id: session.userId,
+                created_at: new Date().toISOString(),
+                session_id: sessionId
             }
         });
 
-        console.log('Checkout session created:', session.id);
+        console.log('Checkout session created:', stripeSession.id);
         
-        // Redirect directly to Stripe's checkout page (official Stripe approach)
-        return res.redirect(303, session.url);
+        // Return the checkout URL for the frontend to handle
+        res.json({ 
+            success: true, 
+            checkoutUrl: stripeSession.url,
+            sessionId: stripeSession.id
+        });
         
     } catch (error) {
         console.error('Error creating checkout session:', error);
@@ -2562,6 +2598,83 @@ async function handlePaymentFailed(invoice) {
         console.error('Error updating failed payment in Supabase:', error);
     }
 }
+
+// Supabase fallback endpoint for display name when /api/me fails
+app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        console.log('🔍 [SUPABASE_USER] Fallback request received');
+        
+        const { user_id, email } = req.body;
+        
+        if (!user_id && !email) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing user_id or email'
+            });
+        }
+        
+        // Try to get user from Supabase Admin API
+        let userResponse;
+        if (user_id) {
+            userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${user_id}`, {
+                method: 'GET',
+                headers: {
+                    'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+        } else if (email) {
+            userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
+                method: 'GET',
+                headers: {
+                    'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+        
+        if (!userResponse.ok) {
+            console.log('❌ [SUPABASE_USER] Failed to fetch user from Admin API:', userResponse.status);
+            return res.status(404).json({
+                success: false,
+                error: 'User not found'
+            });
+        }
+        
+        const userData = await userResponse.json();
+        const user = Array.isArray(userData) ? userData[0] : userData;
+        
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                error: 'User not found'
+            });
+        }
+        
+        const displayName = user.user_metadata?.display_name || user.user_metadata?.full_name || 'User';
+        
+        console.log('✅ [SUPABASE_USER] User found via fallback:', { userId: user.id, displayName });
+        
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                email: user.email,
+                display_name: displayName,
+                user_metadata: user.user_metadata
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ [SUPABASE_USER] Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
