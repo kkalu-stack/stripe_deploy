@@ -782,7 +782,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
 
         console.log('Creating Stripe Prebuilt Checkout session for authenticated user:', session.userId);
         console.log('🔒 [CHECKOUT] Security parameters:', {
-            customer_creation: 'always',
             billing_address_collection: 'required',
             client_reference_id: `user_${session.userId}_${Date.now()}`,
             force_fresh: 'true'
@@ -806,7 +805,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&user_id=${session.userId}&timestamp=${Date.now()}`,
             cancel_url: `${baseUrl}/cancel?user_id=${session.userId}&timestamp=${Date.now()}`,
             // SECURITY: Force fresh checkout to prevent cross-user data leakage
-            customer_creation: 'always', // Always create new customer
             billing_address_collection: 'required', // Force address collection
             // SECURITY: Prevent Stripe from using cached customer data
             customer_update: {
