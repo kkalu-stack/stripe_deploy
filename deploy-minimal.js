@@ -765,6 +765,10 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             expiresAt: new Date(session.expiresAt).toISOString(),
             userAgent: req.headers['user-agent']?.substring(0, 100)
         });
+        
+        // Log request body for debugging
+        console.log('🔍 [CHECKOUT] Request body:', req.body);
+        console.log('🔍 [CHECKOUT] Request headers:', req.headers);
 
         // Note: User email is already available via /api/me endpoint
         // No need to duplicate Supabase call here
@@ -838,6 +842,8 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             checkoutUrl: stripeSession.url,
             sessionId: stripeSession.id
         });
+        
+        console.log('✅ [CHECKOUT] Response sent successfully');
         
     } catch (error) {
         console.error('Error creating checkout session:', error);
