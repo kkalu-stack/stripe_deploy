@@ -806,11 +806,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             cancel_url: `${baseUrl}/cancel?user_id=${session.userId}&timestamp=${Date.now()}`,
             // SECURITY: Force fresh checkout to prevent cross-user data leakage
             billing_address_collection: 'required', // Force address collection
-            // SECURITY: Prevent Stripe from using cached customer data
-            customer_update: {
-                address: 'auto',
-                name: 'auto'
-            },
             // Enable all the features you want
             allow_promotion_codes: true,
             automatic_tax: {
@@ -820,15 +815,7 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             metadata: {
                 user_id: session.userId,
                 created_at: new Date().toISOString(),
-                session_id: sessionId,
-                force_fresh: 'true' // Force Stripe to ignore cached data
-            },
-            // SECURITY: Additional parameters to prevent data leakage
-            subscription_data: {
-                metadata: {
-                    user_id: session.userId,
-                    session_id: sessionId
-                }
+                session_id: sessionId
             }
         });
 
