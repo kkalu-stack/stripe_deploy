@@ -214,9 +214,9 @@ async function supabaseRequest(endpoint, options = {}) {
         
         // For other successful responses, try to parse JSON
         try {
-            const data = await response.json();
-            console.log('✅ Supabase request successful');
-            return data;
+        const data = await response.json();
+        console.log('✅ Supabase request successful');
+        return data;
         } catch (jsonError) {
             console.warn('⚠️ Could not parse JSON response, returning null');
             return null;
@@ -824,7 +824,7 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
                 },
             ],
             mode: 'subscription',
-            success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&user_id=${session.userId}&timestamp=${Date.now()}`,
+            success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&user_id=${session.userId}&timestamp=${Date.now()}&subscription=active`,
             cancel_url: `${baseUrl}/cancel?user_id=${session.userId}&timestamp=${Date.now()}`,
             // SECURITY: Force fresh checkout to prevent cross-user data leakage
             billing_address_collection: 'required', // Force address collection
@@ -857,9 +857,89 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         
         console.log('✅ [CHECKOUT] Response sent successfully');
         
+        // Note: The success page will handle immediate subscription activation
+        // while the webhook processes in the background for redundancy
+        
     } catch (error) {
         console.error('Error creating checkout session:', error);
         res.status(500).json({ error: 'Failed to create checkout session', details: error.message });
+    }
+});
+
+// Success page handler - immediately activate subscription
+app.get('/success', async (req, res) => {
+    try {
+        const { session_id, user_id, subscription } = req.query;
+        
+        if (subscription === 'active' && user_id) {
+            console.log('🎉 [SUCCESS] User completed checkout, activating subscription immediately');
+            
+            // Create a temporary subscription record immediately
+            const tempSubscriptionData = {
+                user_id: user_id,
+                stripe_subscription_id: `temp_${Date.now()}`, // Temporary ID
+                stripe_customer_id: `temp_customer_${Date.now()}`,
+                status: 'active',
+                current_period_start: new Date().toISOString(),
+                current_period_end: new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString(), // 30 days from now
+                tokens_limit: -1, // Unlimited for Pro
+                tokens_used: 0,
+                updated_at: new Date().toISOString(),
+                is_temp: true // Mark as temporary
+            };
+            
+            console.log('💾 [SUCCESS] Creating temporary subscription record:', tempSubscriptionData);
+            
+            // Save to database immediately
+            const subResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'resolution=merge-duplicates'
+                },
+                body: JSON.stringify(tempSubscriptionData)
+            });
+            
+            if (subResponse.ok) {
+                console.log('✅ [SUCCESS] Temporary subscription created successfully');
+            } else {
+                console.log('⚠️ [SUCCESS] Failed to create temporary subscription, webhook will handle it');
+            }
+        }
+        
+        // Send success page HTML
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Payment Successful - Trontiq Pro</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                    .success { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    .checkmark { color: #28a745; font-size: 48px; margin-bottom: 20px; }
+                    h1 { color: #333; }
+                    p { color: #666; line-height: 1.6; }
+                    .close { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; }
+                </style>
+            </head>
+            <body>
+                <div class="success">
+                    <div class="checkmark">✅</div>
+                    <h1>Payment Successful!</h1>
+                    <p>Welcome to Trontiq Pro! Your subscription has been activated.</p>
+                    <p>You can now close this window and return to your extension.</p>
+                    <p><strong>Note:</strong> Your subscription status will update in the extension within a few minutes.</p>
+                    <button class="close" onclick="window.close()">Close Window</button>
+                </div>
+            </body>
+            </html>
+        `);
+        
+    } catch (error) {
+        console.error('❌ [SUCCESS] Error handling success page:', error);
+        res.status(500).send('Error processing success page');
     }
 });
 
@@ -1479,6 +1559,14 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             fullName = user.user_metadata?.full_name || 'Not provided';
             displayName = user.user_metadata?.display_name || fullName || 'User';
             
+            // Debug: Log resume data availability
+            const resumeText = user.user_metadata?.resume_text || '';
+            console.log('🔍 [API/ME] Resume data check:', {
+                hasResumeText: !!resumeText,
+                resumeLength: resumeText.length,
+                userId: session.userId
+            });
+            
         } catch (adminApiError) {
             console.error('❌ [API/ME] Admin API error:', adminApiError);
             return res.status(401).json({
@@ -1570,6 +1658,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata,
+                    // Include resume text from user metadata
+                    resume_text: user.user_metadata?.resume_text || '',
                     // Include all preferences for widget compatibility
                     preferences: userPreferences && userPreferences.length > 0 ? {
                         display_name: userPreferences[0].display_name || displayName,
@@ -1590,8 +1680,10 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 isCancelled: isCancelled,
                 isProUser: isProUser,
                 subscriptionStatus: responseData.subscriptionStatus,
-                cancelled_at: responseData.cancelled_at,
-                cancel_at_period_end: responseData.cancel_at_period_end
+                cancelled_at: responseData.cancel_at_period_end,
+                cancel_at_period_end: responseData.cancel_at_period_end,
+                hasResumeText: !!responseData.user.resume_text,
+                resumeLength: responseData.user.resume_text ? responseData.user.resume_text.length : 0
             });
             
             // Set cache headers
@@ -1601,6 +1693,14 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         } else {
             // No subscription found - return free user data
             res.set('Cache-Control', 'private, max-age=30');
+            
+            // Debug: Log resume data for free users
+            const freeUserResumeText = user.user_metadata?.resume_text || '';
+            console.log('🔍 [API/ME] Free user resume data:', {
+                hasResumeText: !!freeUserResumeText,
+                resumeLength: freeUserResumeText.length,
+                userId: session.userId
+            });
             
             res.json({
                 success: true,
@@ -1619,6 +1719,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     display_name: displayName,
                     full_name: fullName,
                     user_metadata: user.user_metadata,
+                    // Include resume text from user metadata
+                    resume_text: user.user_metadata?.resume_text || '',
                     // Include all preferences for widget compatibility
                     preferences: userPreferences && userPreferences.length > 0 ? {
                         display_name: userPreferences[0].display_name || displayName,
@@ -2730,4 +2832,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
- 
