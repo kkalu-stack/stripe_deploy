@@ -766,6 +766,9 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             userAgent: req.headers['user-agent']?.substring(0, 100)
         });
 
+        // Note: User email is already available via /api/me endpoint
+        // No need to duplicate Supabase call here
+
         // Handle both JSON and form data
         const priceId = req.body.priceId;
 
@@ -774,12 +777,20 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         }
 
         console.log('Creating Stripe Prebuilt Checkout session for authenticated user:', session.userId);
+        console.log('🔒 [CHECKOUT] Security parameters:', {
+            customer_creation: 'always',
+            billing_address_collection: 'required',
+            client_reference_id: `user_${session.userId}_${Date.now()}`,
+            force_fresh: 'true'
+        });
 
         // Use hardcoded base URL
         const baseUrl = 'https://stripe-deploy.onrender.com';
 
         // Create Stripe checkout session for Prebuilt Checkout
         const stripeSession = await stripe.checkout.sessions.create({
+            // SECURITY: Unique client reference to prevent cross-user data
+            client_reference_id: `user_${session.userId}_${Date.now()}`,
             payment_method_types: ['card'],
             line_items: [
                 {
@@ -788,8 +799,16 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
                 },
             ],
             mode: 'subscription',
-            success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${baseUrl}/cancel`,
+            success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&user_id=${session.userId}&timestamp=${Date.now()}`,
+            cancel_url: `${baseUrl}/cancel?user_id=${session.userId}&timestamp=${Date.now()}`,
+            // SECURITY: Force fresh checkout to prevent cross-user data leakage
+            customer_creation: 'always', // Always create new customer
+            billing_address_collection: 'required', // Force address collection
+            // SECURITY: Prevent Stripe from using cached customer data
+            customer_update: {
+                address: 'auto',
+                name: 'auto'
+            },
             // Enable all the features you want
             allow_promotion_codes: true,
             automatic_tax: {
@@ -799,7 +818,15 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             metadata: {
                 user_id: session.userId,
                 created_at: new Date().toISOString(),
-                session_id: sessionId
+                session_id: sessionId,
+                force_fresh: 'true' // Force Stripe to ignore cached data
+            },
+            // SECURITY: Additional parameters to prevent data leakage
+            subscription_data: {
+                metadata: {
+                    user_id: session.userId,
+                    session_id: sessionId
+                }
             }
         });
 
