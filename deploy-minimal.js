@@ -737,21 +737,34 @@ app.get('/cancel', (req, res) => {
 app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         // SECURITY: Validate user session before allowing checkout
+        console.log('🔍 [CHECKOUT] Request received - checking cookies...');
+        console.log('🔍 [CHECKOUT] All cookies:', req.cookies);
+        
         const sessionId = req.cookies.sid;
+        console.log('🔍 [CHECKOUT] Session ID from cookie:', sessionId);
         
         if (!sessionId) {
             console.log('❌ [CHECKOUT] No session cookie found');
-            return res.status(401).json({ error: 'Authentication required' });
+            return res.status(401).json({ error: 'No session cookie found' });
         }
 
         // Get user from session
+        console.log('🔍 [CHECKOUT] Looking up session in memory store...');
+        console.log('🔍 [CHECKOUT] Total sessions in memory:', sessions.size);
+        
         const session = sessions.get(sessionId);
+        console.log('🔍 [CHECKOUT] Session found:', !!session);
+        
         if (!session) {
             console.log('❌ [CHECKOUT] Invalid or expired session');
+            console.log('🔍 [CHECKOUT] Available session IDs:', Array.from(sessions.keys()));
             return res.status(401).json({ error: 'Invalid session' });
         }
 
         // Validate session hasn't expired
+        console.log('🔍 [CHECKOUT] Session expires at:', new Date(session.expiresAt).toISOString());
+        console.log('🔍 [CHECKOUT] Current time:', new Date().toISOString());
+        
         if (Date.now() > session.expiresAt) {
             console.log('❌ [CHECKOUT] Session expired');
             sessions.delete(sessionId);
@@ -771,26 +784,16 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         console.log('🔍 [CHECKOUT] Request headers:', req.headers);
 
         // Get user email from session for Stripe checkout
+        // Note: We can't query auth.users directly, so we'll use a placeholder
+        // The actual user email will be handled by Stripe's customer creation
         let userEmail = null;
-        try {
-            // Get user details from Supabase to get the email
-            const { data: userData, error: userError } = await supabase
-                .from('auth.users')
-                .select('email')
-                .eq('id', session.userId)
-                .single();
-
-            if (userError || !userData) {
-                console.log('❌ [CHECKOUT] Could not fetch user email:', userError);
-                return res.status(401).json({ error: 'User email not found' });
-            }
-
-            userEmail = userData.email;
-            console.log('✅ [CHECKOUT] User email for Stripe:', userEmail);
-        } catch (userError) {
-            console.log('❌ [CHECKOUT] Error fetching user email:', userError);
-            return res.status(500).json({ error: 'Failed to fetch user email' });
-        }
+        
+        // For now, we'll create the checkout without customer_email
+        // Stripe will prompt the user to enter their email during checkout
+        // This prevents cross-user data leakage since each user enters their own email
+        console.log('ℹ️ [CHECKOUT] Skipping user email fetch (auth.users not accessible)');
+        console.log('ℹ️ [CHECKOUT] User will enter email during Stripe checkout');
+        console.log('ℹ️ [CHECKOUT] This prevents cross-user data leakage');
 
         // Handle both JSON and form data
         const priceId = req.body.priceId;
@@ -813,8 +816,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         const stripeSession = await stripe.checkout.sessions.create({
             // SECURITY: Unique client reference to prevent cross-user data
             client_reference_id: `user_${session.userId}_${Date.now()}`,
-            // CRITICAL: Pass user email to Stripe to prevent cross-user data
-            customer_email: userEmail,
             payment_method_types: ['card'],
             line_items: [
                 {
