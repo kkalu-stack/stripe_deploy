@@ -1248,8 +1248,8 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 // This avoids foreign key constraint issues with test users
                 res.json({
                     status: 'free',
-                    tokens_used: 0,
-                    tokens_limit: 50,
+                    requestsUsed: 0,
+                    monthlyLimit: 75,
                     is_unlimited: false,
                     current_period_end: null
                 });
@@ -1259,8 +1259,8 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
             // For any query error, just return free tier status
             res.json({
                 status: 'free',
-                tokens_used: 0,
-                tokens_limit: 50,
+                requestsUsed: 0,
+                monthlyLimit: 75,
                 is_unlimited: false,
                 current_period_end: null
             });
@@ -2394,19 +2394,47 @@ async function updateTokenUsage(userId, tokensUsed) {
     try {
         console.log('📊 Updating token usage for user:', userId, 'tokens:', tokensUsed);
         
-        // Update token usage in Supabase
-        const response = await supabaseRequest('user_subscriptions', {
-            method: 'PATCH',
-            body: JSON.stringify({
-                requests_used_this_month: tokensUsed
-            }),
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        }, `user_id=eq.${userId}`);
+        // First, check if subscription record exists
+        const existingSubscription = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
         
-        console.log('✅ Token usage updated successfully');
-        return response;
+        if (existingSubscription && existingSubscription.length > 0) {
+            // Update existing subscription record
+            const response = await supabaseRequest('user_subscriptions', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    requests_used_this_month: tokensUsed
+                }),
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }, `user_id=eq.${userId}`);
+            
+            console.log('✅ Token usage updated successfully for existing subscription');
+            return response;
+        } else {
+            // Create new subscription record for free user to track usage
+            console.log('📝 Creating subscription record for free user to track usage');
+            const newSubscription = {
+                user_id: userId,
+                status: 'free',
+                requests_used_this_month: tokensUsed,
+                monthly_request_limit: 75,
+                is_unlimited: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            
+            const response = await supabaseRequest('user_subscriptions', {
+                method: 'POST',
+                body: JSON.stringify(newSubscription),
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            console.log('✅ Subscription record created for free user with usage tracking');
+            return response;
+        }
     } catch (error) {
         console.error('❌ Error updating token usage:', error);
         // Don't fail the request if token usage update fails
