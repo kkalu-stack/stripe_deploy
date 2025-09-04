@@ -2785,10 +2785,7 @@ async function logUserRequest(userId, requestType = 'chat', tokensUsed = 0) {
         
         const logResponse = await supabaseRequest('requests', {
             method: 'POST',
-            body: JSON.stringify(requestLog),
-            headers: {
-                'Content-Type': 'application/json'
-            }
+            body: requestLog
         });
         
         console.log('✅ Request logged successfully');
