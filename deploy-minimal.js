@@ -214,11 +214,19 @@ async function supabaseRequest(endpoint, options = {}) {
         
         // For other successful responses, try to parse JSON
         try {
-        const data = await response.json();
-        console.log('✅ Supabase request successful');
-        return data;
+            const responseText = await response.text();
+            console.log('📡 Supabase response body:', responseText);
+            
+            if (!responseText || responseText.trim() === '') {
+                console.log('✅ Supabase request successful (empty response)');
+                return null;
+            }
+            
+            const data = JSON.parse(responseText);
+            console.log('✅ Supabase request successful');
+            return data;
         } catch (jsonError) {
-            console.warn('⚠️ Could not parse JSON response, returning null');
+            console.warn('⚠️ Could not parse JSON response:', jsonError.message);
             return null;
         }
     } catch (fetchError) {
@@ -1426,6 +1434,8 @@ app.post('/api/waitlist', async (req, res) => {
             joined_at: new Date().toISOString()
         };
         
+        console.log('📝 Creating waitlist entry:', waitlistEntry);
+        
         const response = await supabaseRequest('waitlist', {
             method: 'POST',
             body: JSON.stringify(waitlistEntry),
@@ -1435,11 +1445,27 @@ app.post('/api/waitlist', async (req, res) => {
         });
         
         console.log('✅ User added to waitlist:', session.userId);
+        console.log('📊 Supabase response:', response);
         
+        // Verify the record was actually inserted
+        try {
+            const verification = await supabaseRequest(`waitlist?user_id=eq.${session.userId}&select=*`);
+            console.log('🔍 Verification query result:', verification);
+            
+            if (verification && verification.length > 0) {
+                console.log('✅ Waitlist entry verified in database');
+            } else {
+                console.warn('⚠️ Waitlist entry not found in verification query');
+            }
+        } catch (verifyError) {
+            console.error('❌ Error verifying waitlist entry:', verifyError);
+        }
+        
+        // Even if response is null (empty response from Supabase), the 201 status means success
         res.json({
             success: true,
             message: 'Successfully joined the waitlist! We\'ll notify you when Pro features are available.',
-            waitlistEntry: response
+            waitlistEntry: response || { user_id: session.userId, email: email, status: 'pending' }
         });
         
     } catch (error) {
