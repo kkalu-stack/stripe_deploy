@@ -1436,6 +1436,11 @@ app.post('/api/waitlist', async (req, res) => {
         
         console.log('📝 Creating waitlist entry:', waitlistEntry);
         
+        // Debug: Check if service key is available
+        console.log('🔑 SUPABASE_SERVICE_ROLE_KEY exists:', !!SUPABASE_SERVICE_ROLE_KEY);
+        console.log('🔑 SUPABASE_SERVICE_ROLE_KEY length:', SUPABASE_SERVICE_ROLE_KEY ? SUPABASE_SERVICE_ROLE_KEY.length : 'undefined');
+        console.log('🔑 SUPABASE_SERVICE_ROLE_KEY starts with:', SUPABASE_SERVICE_ROLE_KEY ? SUPABASE_SERVICE_ROLE_KEY.substring(0, 20) + '...' : 'undefined');
+        
         const response = await supabaseRequest('waitlist', {
             method: 'POST',
             body: JSON.stringify(waitlistEntry),
@@ -1447,19 +1452,28 @@ app.post('/api/waitlist', async (req, res) => {
         console.log('✅ User added to waitlist:', session.userId);
         console.log('📊 Supabase response:', response);
         
-        // Verify the record was actually inserted
-        try {
-            const verification = await supabaseRequest(`waitlist?user_id=eq.${session.userId}&select=*`);
-            console.log('🔍 Verification query result:', verification);
-            
-            if (verification && verification.length > 0) {
-                console.log('✅ Waitlist entry verified in database');
-            } else {
-                console.warn('⚠️ Waitlist entry not found in verification query');
-            }
-        } catch (verifyError) {
-            console.error('❌ Error verifying waitlist entry:', verifyError);
+            // Verify the record was actually inserted
+    try {
+        console.log('🔍 Attempting verification query for user:', session.userId);
+        const verification = await supabaseRequest(`waitlist?user_id=eq.${session.userId}&select=*`);
+        console.log('🔍 Verification query result:', verification);
+        console.log('🔍 Verification query result type:', typeof verification);
+        console.log('🔍 Verification query result length:', verification ? verification.length : 'null/undefined');
+
+        if (verification && verification.length > 0) {
+            console.log('✅ Waitlist entry verified in database');
+            console.log('📋 Verified entry details:', verification[0]);
+        } else {
+            console.warn('⚠️ Waitlist entry not found in verification query');
+            console.warn('⚠️ This could mean:');
+            console.warn('   - Table does not exist');
+            console.warn('   - RLS policies are blocking access');
+            console.warn('   - Record was not actually inserted');
         }
+    } catch (verifyError) {
+        console.error('❌ Error verifying waitlist entry:', verifyError);
+        console.error('❌ Verification error details:', verifyError.message);
+    }
         
         // Even if response is null (empty response from Supabase), the 201 status means success
         res.json({
