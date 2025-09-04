@@ -1443,10 +1443,7 @@ app.post('/api/waitlist', async (req, res) => {
         
         const response = await supabaseRequest('waitlist', {
             method: 'POST',
-            body: JSON.stringify(waitlistEntry),
-            headers: {
-                'Content-Type': 'application/json'
-            }
+            body: waitlistEntry
         });
         
         console.log('✅ User added to waitlist:', session.userId);
