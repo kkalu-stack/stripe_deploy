@@ -1685,8 +1685,23 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             
             res.json(responseData);
         } else {
-            // No subscription found - return free user data
+            // No subscription found - check if free user has usage tracking record
             res.set('Cache-Control', 'private, max-age=30');
+            
+            // Check if free user has a subscription record for usage tracking
+            const freeUserSubscription = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&status=eq.free&select=requests_used_this_month,monthly_request_limit`);
+            
+            let requestsUsed = 0;
+            let monthlyLimit = 75;
+            
+            if (freeUserSubscription && freeUserSubscription.length > 0) {
+                // Free user has usage tracking record
+                requestsUsed = freeUserSubscription[0].requests_used_this_month || 0;
+                monthlyLimit = freeUserSubscription[0].monthly_request_limit || 75;
+                console.log('📊 [API/ME] Free user with usage tracking:', { requestsUsed, monthlyLimit });
+            } else {
+                console.log('📊 [API/ME] Free user without usage tracking record yet');
+            }
             
             // Debug: Log resume data for free users
             const freeUserResumeText = user.user_metadata?.resume_text || '';
@@ -1702,8 +1717,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 plan: 'free',
                 isProUser: false,
                 canChat: true,
-                requestsUsed: 0,
-                monthlyLimit: 75,
+                requestsUsed: requestsUsed,
+                monthlyLimit: monthlyLimit,
                 upgradeRequired: false,
                 upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
                 // Add user personal information
@@ -2440,12 +2455,18 @@ async function updateTokenUsage(userId, tokensUsed) {
 app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const sessionId = req.cookies.sid;
+        console.log('🔍 [API/GENERATE] Session ID from cookie:', sessionId);
+        
         if (!sessionId) {
+            console.log('❌ [API/GENERATE] No session ID found in cookies');
             return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
         }
         
         const session = getSession(sessionId);
+        console.log('🔍 [API/GENERATE] Session found:', session ? `User ID: ${session.userId}` : 'No session found');
+        
         if (!session) {
+            console.log('❌ [API/GENERATE] Session not found for ID:', sessionId);
             return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
         }
         
@@ -2513,7 +2534,11 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
         
         // Update token usage
         if (data.usage) {
+            console.log('🔄 [API/GENERATE] Updating token usage for user:', session.userId, 'tokens:', data.usage.total_tokens);
             await updateTokenUsage(session.userId, data.usage.total_tokens);
+            console.log('✅ [API/GENERATE] Token usage update completed');
+        } else {
+            console.log('⚠️ [API/GENERATE] No usage data in OpenAI response');
         }
         
         console.log('✅ OpenAI API call successful for user:', session.userId);
