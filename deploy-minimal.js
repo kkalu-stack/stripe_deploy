@@ -1872,6 +1872,55 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             userPreferences = null;
         }
         
+        // FREE TIER MODE: Always use new request tracking system
+        // Get current month's request count from requests table
+        const requestLimit = await checkUserRequestLimit(session.userId);
+        const requestsUsed = requestLimit.requestCount;
+        const monthlyLimit = requestLimit.limit; // 15 for free tier
+        
+        console.log('📊 [API/ME] Free tier request count:', { requestsUsed, monthlyLimit });
+        
+        // Always return free tier data (ignore old subscription data)
+        res.set('Cache-Control', 'private, max-age=30');
+        
+        res.json({
+            success: true,
+            isAuthenticated: true,
+            plan: 'free',
+            isProUser: false,
+            canChat: true,
+            requestsUsed: requestsUsed,
+            monthlyLimit: monthlyLimit,
+            upgradeRequired: false,
+            upgradeUrl: '/waitlist',
+            // Add user personal information
+            user: {
+                id: session.userId,
+                email: user.email,
+                display_name: displayName,
+                full_name: fullName,
+                user_metadata: user.user_metadata,
+                // Include resume text from user metadata
+                resume_text: user.user_metadata?.resume_text || '',
+                // Include all preferences for widget compatibility
+                preferences: userPreferences && userPreferences.length > 0 ? {
+                    display_name: userPreferences[0].display_name || displayName,
+                    tone: userPreferences[0].tone || 'professional',
+                    education: userPreferences[0].education || 'bachelor',
+                    language: userPreferences[0].language || 'english'
+                } : {
+                    display_name: displayName,
+                    tone: 'professional',
+                    education: 'bachelor',
+                    language: 'english'
+                }
+            }
+        });
+        
+        return; // Exit early - no need to check old subscription data
+        
+        // OLD SUBSCRIPTION LOGIC (DISABLED FOR FREE TIER)
+        /*
         // Get user subscription data
         let subscriptionData;
         try {
@@ -2030,6 +2079,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 }
             });
         }
+        */
         
     } catch (error) {
         console.error('❌ [API/ME] Endpoint error:', error);
