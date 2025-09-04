@@ -2801,16 +2801,16 @@ async function checkUserRequestLimit(userId) {
     try {
         console.log('🔍 Checking request limit for user:', userId);
         
-        // Get current month's request count
+        // Get current month's request count (only count 'chat' requests, not 'regenerate')
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const requests = await supabaseRequest(`requests?user_id=eq.${userId}&timestamp=gte.${startOfMonth}&select=id`);
+        const requests = await supabaseRequest(`requests?user_id=eq.${userId}&timestamp=gte.${startOfMonth}&request_type=eq.chat&select=id`);
         
         const requestCount = requests ? requests.length : 0;
         const limit = 15; // Free tier limit
         const canMakeRequest = requestCount < limit;
         
-        console.log(`📊 User ${userId} has made ${requestCount}/${limit} requests this month`);
+        console.log(`📊 User ${userId} has made ${requestCount}/${limit} chat requests this month (regenerates are free)`);
         
         return {
             canMakeRequest,
@@ -2849,7 +2849,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
             return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
         }
         
-        const { model, messages, max_tokens, temperature } = req.body;
+        const { model, messages, max_tokens, temperature, isRegenerate } = req.body;
         
         if (!model || !messages) {
             return res.status(400).json({
@@ -2858,17 +2858,26 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        // Check user request limit (15 requests per month for free tier)
-        const requestLimit = await checkUserRequestLimit(session.userId);
-        if (!requestLimit.canMakeRequest) {
-            return res.status(402).json({
-                success: false,
-                upgradeRequired: true,
-                upgradeMessage: `You've reached your monthly limit of ${requestLimit.limit} requests. Join our waitlist to be notified when Pro features are available!`,
-                upgradeUrl: '/waitlist',
-                requestCount: requestLimit.requestCount,
-                limit: requestLimit.limit
-            });
+        // Check if this is a regenerate request
+        const isRegenerateRequest = isRegenerate === true;
+        console.log('🔄 [API/GENERATE] Request type:', isRegenerateRequest ? 'REGENERATE (FREE)' : 'NEW REQUEST');
+        
+        // Only check request limit for new requests, not regenerates
+        if (!isRegenerateRequest) {
+            // Check user request limit (15 requests per month for free tier)
+            const requestLimit = await checkUserRequestLimit(session.userId);
+            if (!requestLimit.canMakeRequest) {
+                return res.status(402).json({
+                    success: false,
+                    upgradeRequired: true,
+                    upgradeMessage: `You've reached your monthly limit of ${requestLimit.limit} requests. Join our waitlist to be notified when Pro features are available!`,
+                    upgradeUrl: '/waitlist',
+                    requestCount: requestLimit.requestCount,
+                    limit: requestLimit.limit
+                });
+            }
+        } else {
+            console.log('🆓 [API/GENERATE] Regenerate request - skipping limit check');
         }
         
         // Get API key from the 10-key rotation system
@@ -2913,14 +2922,16 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
         
         const data = await openaiResponse.json();
         
-        // Log the request
+        // Log the request (but don't count regenerates against monthly limit)
         if (data.usage) {
-            console.log('🔄 [API/GENERATE] Logging request for user:', session.userId, 'tokens:', data.usage.total_tokens);
-            await logUserRequest(session.userId, 'chat', data.usage.total_tokens);
+            const requestType = isRegenerateRequest ? 'regenerate' : 'chat';
+            console.log('🔄 [API/GENERATE] Logging request for user:', session.userId, 'type:', requestType, 'tokens:', data.usage.total_tokens);
+            await logUserRequest(session.userId, requestType, data.usage.total_tokens);
             console.log('✅ [API/GENERATE] Request logged successfully');
         } else {
+            const requestType = isRegenerateRequest ? 'regenerate' : 'chat';
             console.log('⚠️ [API/GENERATE] No usage data in OpenAI response, logging basic request');
-            await logUserRequest(session.userId, 'chat', 0);
+            await logUserRequest(session.userId, requestType, 0);
         }
         
         console.log('✅ OpenAI API call successful for user:', session.userId);
