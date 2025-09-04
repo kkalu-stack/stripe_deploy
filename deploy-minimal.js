@@ -1305,14 +1305,8 @@ app.post('/api/update-token-usage', async (req, res) => {
             return res.status(400).json({ error: 'Missing userId or tokensUsed' });
         }
         
-        // Update token usage in Supabase
-        await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
-            method: 'PATCH',
-            body: {
-                tokens_used: tokensUsed,
-                updated_at: new Date().toISOString()
-            }
-        });
+        // Use the new updateTokenUsage helper function that handles free users
+        await updateTokenUsage(userId, tokensUsed);
         
         console.log('✅ Token usage updated for user:', userId, 'tokens:', tokensUsed);
         res.json({ success: true, tokensUsed });
