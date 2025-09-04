@@ -733,7 +733,9 @@ app.get('/cancel', (req, res) => {
     `);
 });
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Create checkout session (REQUIRES AUTHENTICATION)
+/*
 app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         // SECURITY: Validate user session before allowing checkout
@@ -865,8 +867,11 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         res.status(500).json({ error: 'Failed to create checkout session', details: error.message });
     }
 });
+*/
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Success page handler - immediately activate subscription
+/*
 app.get('/success', async (req, res) => {
     try {
         const { session_id, user_id, subscription } = req.query;
@@ -942,8 +947,11 @@ app.get('/success', async (req, res) => {
         res.status(500).send('Error processing success page');
     }
 });
+*/
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Verify payment (no user data storage)
+/*
 app.post('/api/verify-payment', async (req, res) => {
     try {
         const { sessionId } = req.body;
@@ -977,8 +985,11 @@ app.post('/api/verify-payment', async (req, res) => {
         res.status(500).json({ error: 'Failed to verify payment', details: error.message });
     }
 });
+*/
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Cancel subscription (session-based authentication)
+/*
 app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const { subscriptionId } = req.body;
@@ -1078,8 +1089,11 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
         res.status(500).json({ error: 'Failed to cancel subscription', details: error.message });
     }
 });
+*/
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Reactivate cancelled subscription
+/*
 app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const { subscriptionId } = req.body;
@@ -1176,6 +1190,7 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
         res.status(500).json({ error: 'Failed to reactivate subscription', details: error.message });
     }
 });
+*/
 
 // Get subscription status from Supabase (preferred method)
 app.get('/api/subscription-status/:userId', async (req, res) => {
@@ -1276,7 +1291,9 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
     }
 });
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Get subscription status from Stripe (fallback method)
+/*
 app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
     try {
         const { subscriptionId } = req.params;
@@ -1295,6 +1312,7 @@ app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
         res.status(500).json({ error: 'Failed to retrieve subscription' });
     }
 });
+*/
 
 // Update token usage in Supabase
 app.post('/api/update-token-usage', async (req, res) => {
@@ -1369,7 +1387,105 @@ app.post('/api/create-subscription-record', async (req, res) => {
     }
 });
 
+// Waitlist endpoints
+app.post('/api/waitlist', async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const { email, notes } = req.body;
+        
+        if (!email) {
+            return res.status(400).json({ success: false, error: 'Email is required' });
+        }
+        
+        // Check if user is already on waitlist
+        const existingEntry = await supabaseRequest(`waitlist?user_id=eq.${session.userId}&select=id`);
+        
+        if (existingEntry && existingEntry.length > 0) {
+            return res.json({
+                success: true,
+                message: 'You are already on our waitlist!',
+                alreadyOnWaitlist: true
+            });
+        }
+        
+        // Add user to waitlist
+        const waitlistEntry = {
+            user_id: session.userId,
+            email: email,
+            status: 'pending',
+            notes: notes || '',
+            joined_at: new Date().toISOString()
+        };
+        
+        const response = await supabaseRequest('waitlist', {
+            method: 'POST',
+            body: JSON.stringify(waitlistEntry),
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('✅ User added to waitlist:', session.userId);
+        
+        res.json({
+            success: true,
+            message: 'Successfully joined the waitlist! We\'ll notify you when Pro features are available.',
+            waitlistEntry: response
+        });
+        
+    } catch (error) {
+        console.error('❌ Error adding user to waitlist:', error);
+        res.status(500).json({ success: false, error: 'Failed to join waitlist' });
+    }
+});
+
+app.get('/api/waitlist/status', async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        // Check if user is on waitlist
+        const waitlistEntry = await supabaseRequest(`waitlist?user_id=eq.${session.userId}&select=*`);
+        
+        if (waitlistEntry && waitlistEntry.length > 0) {
+            res.json({
+                success: true,
+                onWaitlist: true,
+                status: waitlistEntry[0].status,
+                joinedAt: waitlistEntry[0].joined_at
+            });
+        } else {
+            res.json({
+                success: true,
+                onWaitlist: false
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Error checking waitlist status:', error);
+        res.status(500).json({ success: false, error: 'Failed to check waitlist status' });
+    }
+});
+
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Create customer portal session (for subscription management)
+/*
 app.post('/api/create-portal-session', async (req, res) => {
     try {
         const { customerId } = req.body;
@@ -1387,6 +1503,183 @@ app.post('/api/create-portal-session', async (req, res) => {
         console.error('Error creating portal session:', error);
         res.status(500).json({ error: 'Failed to create portal session' });
     }
+});
+*/
+
+// Waitlist page
+app.get('/waitlist', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Join Waitlist - Trontiq Pro</title>
+            <style>
+                body { 
+                    font-family: Arial, sans-serif; 
+                    text-align: center; 
+                    padding: 50px; 
+                    background: #f8f9fa; 
+                    margin: 0;
+                }
+                .waitlist-container { 
+                    background: white; 
+                    padding: 40px; 
+                    border-radius: 10px; 
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+                    max-width: 500px;
+                    margin: 0 auto;
+                }
+                .logo { 
+                    font-size: 2em; 
+                    font-weight: bold; 
+                    color: #333; 
+                    margin-bottom: 20px;
+                }
+                .form-group { 
+                    margin: 20px 0; 
+                    text-align: left;
+                }
+                label { 
+                    display: block; 
+                    margin-bottom: 5px; 
+                    font-weight: bold;
+                }
+                input[type="email"] { 
+                    width: 100%; 
+                    padding: 10px; 
+                    border: 1px solid #ddd; 
+                    border-radius: 5px; 
+                    font-size: 16px;
+                    box-sizing: border-box;
+                }
+                .join-btn { 
+                    background: #007bff; 
+                    color: white; 
+                    padding: 12px 30px; 
+                    border: none; 
+                    border-radius: 5px; 
+                    font-size: 16px; 
+                    cursor: pointer; 
+                    width: 100%;
+                    margin-top: 10px;
+                }
+                .join-btn:hover { 
+                    background: #0056b3; 
+                }
+                .join-btn:disabled { 
+                    background: #ccc; 
+                    cursor: not-allowed; 
+                }
+                .message { 
+                    margin-top: 20px; 
+                    padding: 10px; 
+                    border-radius: 5px; 
+                    display: none;
+                }
+                .success { 
+                    background: #d4edda; 
+                    color: #155724; 
+                    border: 1px solid #c3e6cb; 
+                }
+                .error { 
+                    background: #f8d7da; 
+                    color: #721c24; 
+                    border: 1px solid #f5c6cb; 
+                }
+                .features {
+                    text-align: left;
+                    margin: 30px 0;
+                }
+                .features h3 {
+                    text-align: center;
+                    color: #333;
+                }
+                .features ul {
+                    list-style: none;
+                    padding: 0;
+                }
+                .features li {
+                    padding: 8px 0;
+                    border-bottom: 1px solid #eee;
+                }
+                .features li:before {
+                    content: "✓ ";
+                    color: #28a745;
+                    font-weight: bold;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="waitlist-container">
+                <div class="logo">Trontiq Pro</div>
+                <h2>Join Our Waitlist</h2>
+                <p>Be the first to know when Trontiq Pro features are available!</p>
+                
+                <div class="features">
+                    <h3>Pro Features Coming Soon:</h3>
+                    <ul>
+                        <li>Unlimited AI requests</li>
+                        <li>Advanced resume analysis</li>
+                        <li>Custom cover letter generation</li>
+                        <li>Priority support</li>
+                        <li>Early access to new features</li>
+                    </ul>
+                </div>
+                
+                <form id="waitlistForm">
+                    <div class="form-group">
+                        <label for="email">Email Address:</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <button type="submit" class="join-btn" id="joinBtn">Join Waitlist</button>
+                </form>
+                
+                <div id="message" class="message"></div>
+            </div>
+            
+            <script>
+                document.getElementById('waitlistForm').addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    
+                    const email = document.getElementById('email').value;
+                    const joinBtn = document.getElementById('joinBtn');
+                    const message = document.getElementById('message');
+                    
+                    joinBtn.disabled = true;
+                    joinBtn.textContent = 'Joining...';
+                    
+                    try {
+                        const response = await fetch('/api/waitlist', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            credentials: 'include',
+                            body: JSON.stringify({ email: email })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            message.className = 'message success';
+                            message.textContent = data.message;
+                            message.style.display = 'block';
+                            document.getElementById('waitlistForm').style.display = 'none';
+                        } else {
+                            throw new Error(data.error || 'Failed to join waitlist');
+                        }
+                    } catch (error) {
+                        message.className = 'message error';
+                        message.textContent = 'Error: ' + error.message;
+                        message.style.display = 'block';
+                        joinBtn.disabled = false;
+                        joinBtn.textContent = 'Join Waitlist';
+                    }
+                });
+            </script>
+        </body>
+        </html>
+    `);
 });
 
 // Test endpoint
@@ -1635,7 +1928,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 requestsUsed: requestsUsed,
                 monthlyLimit: monthlyLimit,
                 upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
-                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
+                upgradeUrl: '/waitlist',
                 // Add subscription information for cancellation
                 stripe_subscription_id: subscription.stripe_subscription_id,
                 // Add cancellation information
@@ -1688,20 +1981,12 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             // No subscription found - check if free user has usage tracking record
             res.set('Cache-Control', 'private, max-age=30');
             
-            // Check if free user has a subscription record for usage tracking
-            const freeUserSubscription = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&status=eq.free&select=requests_used_this_month,monthly_request_limit`);
+            // Get current month's request count from requests table
+            const requestLimit = await checkUserRequestLimit(session.userId);
+            const requestsUsed = requestLimit.requestCount;
+            const monthlyLimit = requestLimit.limit; // 15 for free tier
             
-            let requestsUsed = 0;
-            let monthlyLimit = 75;
-            
-            if (freeUserSubscription && freeUserSubscription.length > 0) {
-                // Free user has usage tracking record
-                requestsUsed = freeUserSubscription[0].requests_used_this_month || 0;
-                monthlyLimit = freeUserSubscription[0].monthly_request_limit || 75;
-                console.log('📊 [API/ME] Free user with usage tracking:', { requestsUsed, monthlyLimit });
-            } else {
-                console.log('📊 [API/ME] Free user without usage tracking record yet');
-            }
+            console.log('📊 [API/ME] Free user request count:', { requestsUsed, monthlyLimit });
             
             // Debug: Log resume data for free users
             const freeUserResumeText = user.user_metadata?.resume_text || '';
@@ -1720,7 +2005,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 requestsUsed: requestsUsed,
                 monthlyLimit: monthlyLimit,
                 upgradeRequired: false,
-                upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session',
+                upgradeUrl: '/waitlist',
                 // Add user personal information
                 user: {
                     id: session.userId, // Add user ID for subscription operations
@@ -2126,7 +2411,7 @@ app.get('/api/upgrade', (req, res) => {
             'Early access to new features'
         ],
         price: '$4.99/month',
-        upgradeUrl: 'https://stripe-deploy.onrender.com/api/create-checkout-session'
+        upgradeUrl: '/waitlist'
     });
 });
 
@@ -2398,56 +2683,66 @@ async function checkUserSubscriptionStatus(userId) {
     }
 }
 
-// Helper function to update token usage
-async function updateTokenUsage(userId, tokensUsed) {
+// Helper function to log request and check limits
+async function logUserRequest(userId, requestType = 'chat', tokensUsed = 0) {
     try {
-        console.log('📊 Updating token usage for user:', userId, 'tokens:', tokensUsed);
+        console.log('📊 Logging request for user:', userId, 'type:', requestType, 'tokens:', tokensUsed);
         
-        // First, check if subscription record exists
-        const existingSubscription = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+        // Log the request in the requests table
+        const requestLog = {
+            user_id: userId,
+            request_type: requestType,
+            tokens_used: tokensUsed,
+            timestamp: new Date().toISOString()
+        };
         
-        if (existingSubscription && existingSubscription.length > 0) {
-            // Update existing subscription record
-            const response = await supabaseRequest('user_subscriptions', {
-                method: 'PATCH',
-                body: JSON.stringify({
-                    requests_used_this_month: tokensUsed
-                }),
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            }, `user_id=eq.${userId}`);
-            
-            console.log('✅ Token usage updated successfully for existing subscription');
-            return response;
-        } else {
-            // Create new subscription record for free user to track usage
-            console.log('📝 Creating subscription record for free user to track usage');
-            const newSubscription = {
-                user_id: userId,
-                status: 'free',
-                requests_used_this_month: tokensUsed,
-                monthly_request_limit: 75,
-                is_unlimited: false,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            };
-            
-            const response = await supabaseRequest('user_subscriptions', {
-                method: 'POST',
-                body: JSON.stringify(newSubscription),
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            console.log('✅ Subscription record created for free user with usage tracking');
-            return response;
-        }
+        const logResponse = await supabaseRequest('requests', {
+            method: 'POST',
+            body: JSON.stringify(requestLog),
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('✅ Request logged successfully');
+        return logResponse;
     } catch (error) {
-        console.error('❌ Error updating token usage:', error);
-        // Don't fail the request if token usage update fails
+        console.error('❌ Error logging request:', error);
         return null;
+    }
+}
+
+// Helper function to check if user can make requests (under 15/month limit)
+async function checkUserRequestLimit(userId) {
+    try {
+        console.log('🔍 Checking request limit for user:', userId);
+        
+        // Get current month's request count
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const requests = await supabaseRequest(`requests?user_id=eq.${userId}&timestamp=gte.${startOfMonth}&select=id`);
+        
+        const requestCount = requests ? requests.length : 0;
+        const limit = 15; // Free tier limit
+        const canMakeRequest = requestCount < limit;
+        
+        console.log(`📊 User ${userId} has made ${requestCount}/${limit} requests this month`);
+        
+        return {
+            canMakeRequest,
+            requestCount,
+            limit,
+            remaining: limit - requestCount
+        };
+    } catch (error) {
+        console.error('❌ Error checking request limit:', error);
+        // Default to allowing request if there's an error
+        return {
+            canMakeRequest: true,
+            requestCount: 0,
+            limit: 15,
+            remaining: 15
+        };
     }
 }
 
@@ -2479,14 +2774,16 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        // Check user subscription status
-        const userStatus = await checkUserSubscriptionStatus(session.userId);
-        if (userStatus.upgradeRequired) {
+        // Check user request limit (15 requests per month for free tier)
+        const requestLimit = await checkUserRequestLimit(session.userId);
+        if (!requestLimit.canMakeRequest) {
             return res.status(402).json({
                 success: false,
                 upgradeRequired: true,
-                upgradeMessage: userStatus.upgradeMessage,
-                upgradeUrl: userStatus.upgradeUrl
+                upgradeMessage: `You've reached your monthly limit of ${requestLimit.limit} requests. Join our waitlist to be notified when Pro features are available!`,
+                upgradeUrl: '/waitlist',
+                requestCount: requestLimit.requestCount,
+                limit: requestLimit.limit
             });
         }
         
@@ -2532,13 +2829,14 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
         
         const data = await openaiResponse.json();
         
-        // Update token usage
+        // Log the request
         if (data.usage) {
-            console.log('🔄 [API/GENERATE] Updating token usage for user:', session.userId, 'tokens:', data.usage.total_tokens);
-            await updateTokenUsage(session.userId, data.usage.total_tokens);
-            console.log('✅ [API/GENERATE] Token usage update completed');
+            console.log('🔄 [API/GENERATE] Logging request for user:', session.userId, 'tokens:', data.usage.total_tokens);
+            await logUserRequest(session.userId, 'chat', data.usage.total_tokens);
+            console.log('✅ [API/GENERATE] Request logged successfully');
         } else {
-            console.log('⚠️ [API/GENERATE] No usage data in OpenAI response');
+            console.log('⚠️ [API/GENERATE] No usage data in OpenAI response, logging basic request');
+            await logUserRequest(session.userId, 'chat', 0);
         }
         
         console.log('✅ OpenAI API call successful for user:', session.userId);
