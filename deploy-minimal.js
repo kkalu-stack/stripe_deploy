@@ -3415,12 +3415,21 @@ function buildUserPromptServerSide(message, userProfile, jobContext, chatHistory
     const isProfileToggleOff = toggleState === 'off';
     const isProfileEnabled = !isProfileToggleOff;
     
-    // Build conversation context
+    // Build conversation context with smart truncation to prevent token limit exceeded
     let conversationContext = '';
     if (chatHistory && Array.isArray(chatHistory) && chatHistory.length > 0) {
-        conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(msg => 
+        // ✅ CRITICAL FIX: Limit conversation history to prevent token limit exceeded
+        // Keep only the last 6 messages (3 turns) to ensure we stay under token limits
+        const truncatedHistory = chatHistory.slice(-6);
+        conversationContext = '\n\nCONVERSATION HISTORY:\n' + truncatedHistory.map(msg => 
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content || ''}`
         ).join('\n');
+        
+        console.log('📊 [TOKEN MANAGEMENT] Conversation history truncated:', {
+            originalLength: chatHistory.length,
+            truncatedLength: truncatedHistory.length,
+            conversationContextLength: conversationContext.length
+        });
     }
     
     // Build user context
@@ -3480,6 +3489,10 @@ Based on the user's message, conversation history, and available context, determ
 
 Respond naturally and helpfully based on the user's request.`;
     }
+    
+    // ✅ CRITICAL FIX: Log total prompt length for token management
+    console.log('📊 [TOKEN MANAGEMENT] Total user prompt length:', message.length, 'characters');
+    console.log('📊 [TOKEN MANAGEMENT] Estimated tokens:', Math.ceil(message.length / 4)); // Rough estimate: 4 chars per token
     
     return message;
 }
