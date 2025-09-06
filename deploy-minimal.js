@@ -2896,6 +2896,14 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                         ];
                         console.log('🔒 [SERVER-SIDE] Using buildResumePrompt for resume generation');
                     }
+                } else if (mode === 'analysis') {
+                    // Use the specialized buildDetailedAnalysisPrompt function
+                    const analysisPrompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext);
+                    finalMessages = [
+                        { role: 'system', content: SYSTEM_PROMPT },
+                        { role: 'user', content: analysisPrompt }
+                    ];
+                    console.log('🔒 [SERVER-SIDE] Using buildDetailedAnalysisPrompt for analysis');
                 } else {
                     // Fallback to original server-side functions
                     const systemPrompt = buildSystemPromptServerSide(mode, toggleState);
