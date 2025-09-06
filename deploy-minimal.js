@@ -2857,69 +2857,56 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             mode
         } = req.body;
         
-        // NEW: Server-side prompt building logic
+        // ✅ DUPLICATE ORIGINAL CLIENT-SIDE SETUP: Server now works exactly like original client
         let finalMessages = messages;
         
-        // If server-side prompt building parameters are provided, build prompts server-side
+        // If we have raw parameters (like original client-side), build complete messages server-side
         if (message && userProfile && toggleState !== undefined && mode) {
-            console.log('🔧 [API/GENERATE] Building prompts server-side');
+            console.log('🔧 [API/GENERATE] Duplicating original client-side setup');
             console.log('🔧 [API/GENERATE] Mode:', mode, 'Toggle:', toggleState);
-            console.log('🔧 [API/GENERATE] Message length:', message ? message.length : 0);
-            console.log('🔧 [API/GENERATE] UserProfile keys:', userProfile ? Object.keys(userProfile) : 'none');
-            console.log('🔧 [API/GENERATE] Has resume data:', !!(userProfile && userProfile.resumeText));
-            console.log('🔧 [API/GENERATE] ChatHistory length:', chatHistory ? chatHistory.length : 0);
             
             try {
-                // ✅ NEW SERVER-SIDE PROMPT BUILDING: Use the moved functions for complete IP protection
+                // ✅ DUPLICATE ORIGINAL CLIENT-SIDE LOGIC: Build complete messages exactly like original client
+                let prompt = '';
+                let systemMessage = SYSTEM_PROMPT;
+                let guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
+                
+                // Build the appropriate prompt based on mode (exactly like original client)
                 if (mode === 'natural' || mode === 'advise') {
-                    // Use buildNaturalIntentPrompt for natural conversation
-                    const naturalPrompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
-                    finalMessages = [
-                        { role: 'system', content: SYSTEM_PROMPT },
-                        { role: 'user', content: naturalPrompt }
-                    ];
-                    console.log('🔒 [SERVER-SIDE] Using buildNaturalIntentPrompt for natural conversation');
+                    prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
                 } else if (mode === 'generate') {
-                    // Determine if this is resume or cover letter generation based on message content
                     if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('coverletter')) {
-                        const coverLetterPrompt = buildCoverLetterPrompt(message, userProfile, jobContext);
-                        finalMessages = [
-                            { role: 'system', content: SYSTEM_PROMPT },
-                            { role: 'user', content: coverLetterPrompt }
-                        ];
-                        console.log('🔒 [SERVER-SIDE] Using buildCoverLetterPrompt for cover letter generation');
+                        prompt = buildCoverLetterPrompt(message, userProfile, jobContext);
                     } else {
-                        const resumePrompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
-                        finalMessages = [
-                            { role: 'system', content: SYSTEM_PROMPT },
-                            { role: 'user', content: resumePrompt }
-                        ];
-                        console.log('🔒 [SERVER-SIDE] Using buildResumePrompt for resume generation');
+                        prompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
                     }
+                } else if (mode === 'analysis') {
+                    prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext);
                 } else {
-                    // Fallback to original server-side functions
-                    const systemPrompt = buildSystemPromptServerSide(mode, toggleState);
-                    const userPrompt = buildUserPromptServerSide(message, userProfile, jobContext, chatHistory, toggleState, mode);
-                    finalMessages = [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ];
-                    console.log('🔒 [SERVER-SIDE] Using original server-side functions as fallback');
+                    // Fallback
+                    prompt = message;
                 }
                 
-                console.log('✅ [API/GENERATE] Server-side prompts built successfully');
-                console.log('✅ [API/GENERATE] Final messages length:', finalMessages.length);
+                // ✅ DUPLICATE ORIGINAL CLIENT-SIDE MESSAGE STRUCTURE
+                finalMessages = [{
+                    role: 'system',
+                    content: systemMessage + '\n\n' + guard
+                }, {
+                    role: 'user',
+                    content: guard + '\n\n' + prompt
+                }];
+                
+                console.log('✅ [API/GENERATE] Duplicated original client-side message structure');
             } catch (error) {
-                console.error('❌ [API/GENERATE] Error building server-side prompts:', error);
+                console.error('❌ [API/GENERATE] Error duplicating client-side setup:', error);
                 return res.status(500).json({
                     success: false,
-                    error: `Failed to build prompts: ${error.message}`
+                    error: `Failed to duplicate client-side setup: ${error.message}`
                 });
             }
         } else {
-            // Fallback to client-provided messages (backward compatibility)
+            // Use client-provided messages (backward compatibility)
             console.log('🔄 [API/GENERATE] Using client-provided messages (backward compatibility)');
-            console.log('🔄 [API/GENERATE] Missing params - message:', !!message, 'userProfile:', !!userProfile, 'toggleState:', !!toggleState, 'mode:', !!mode);
         }
         
         if (!model || !finalMessages) {
