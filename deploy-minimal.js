@@ -2872,23 +2872,38 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
         if (message && userProfile !== undefined && toggleState && mode) {
             console.log('🔧 [API/GENERATE] Building prompts server-side');
             console.log('🔧 [API/GENERATE] Mode:', mode, 'Toggle:', toggleState);
+            console.log('🔧 [API/GENERATE] Message length:', message ? message.length : 0);
+            console.log('🔧 [API/GENERATE] UserProfile keys:', userProfile ? Object.keys(userProfile) : 'none');
+            console.log('🔧 [API/GENERATE] Has resume data:', !!(userProfile && userProfile.resumeText));
+            console.log('🔧 [API/GENERATE] ChatHistory length:', chatHistory ? chatHistory.length : 0);
             
-            // Build system prompt server-side
-            const systemPrompt = buildSystemPromptServerSide(mode, toggleState);
-            
-            // Build user prompt server-side
-            const userPrompt = buildUserPromptServerSide(message, userProfile, jobContext, chatHistory, toggleState, mode);
-            
-            // Create messages array with server-built prompts
-            finalMessages = [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt }
-            ];
-            
-            console.log('✅ [API/GENERATE] Server-side prompts built successfully');
+            try {
+                // Build system prompt server-side
+                const systemPrompt = buildSystemPromptServerSide(mode, toggleState);
+                
+                // Build user prompt server-side
+                const userPrompt = buildUserPromptServerSide(message, userProfile, jobContext, chatHistory, toggleState, mode);
+                
+                // Create messages array with server-built prompts
+                finalMessages = [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ];
+                
+                console.log('✅ [API/GENERATE] Server-side prompts built successfully');
+                console.log('✅ [API/GENERATE] System prompt length:', systemPrompt.length);
+                console.log('✅ [API/GENERATE] User prompt length:', userPrompt.length);
+            } catch (error) {
+                console.error('❌ [API/GENERATE] Error building server-side prompts:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: `Failed to build prompts: ${error.message}`
+                });
+            }
         } else {
             // Fallback to client-provided messages (backward compatibility)
             console.log('🔄 [API/GENERATE] Using client-provided messages (backward compatibility)');
+            console.log('🔄 [API/GENERATE] Missing params - message:', !!message, 'userProfile:', userProfile !== undefined, 'toggleState:', !!toggleState, 'mode:', !!mode);
         }
         
         if (!model || !finalMessages) {
@@ -3326,7 +3341,10 @@ const SYSTEM_PROMPT = "AI Assistant System Prompt: Job Application Assistant (Re
 function formatUserProfile(profile, options = {}) {
     const { includeRaw = false, isProfileToggleOff = false } = options;
     
-    if (!profile) return 'No profile available';
+    if (!profile) {
+        console.error('❌ [SERVER] No profile provided - this should never happen as all users must have a profile');
+        return 'No profile available';
+    }
     
     const uiOnlyNote = `DisplayNameForUIOnly: ${profile.trontiq_display_name || 'User'} (UI may render this once at conversation start; ASSISTANT MUST NOT prepend name in messages)`;
     
@@ -3343,12 +3361,12 @@ NOTE: Profile data is disabled. Only basic preferences are available.
     let profileText = `
 ${uiOnlyNote}
 Current Title: ${profile.title || 'Not specified'}
-Skills: ${profile.skills ? profile.skills.join(', ') : 'Not specified'}
+Skills: ${profile.skills && Array.isArray(profile.skills) ? profile.skills.join(', ') : 'Not specified'}
 Education: ${profile.education || 'Not specified'}
-Experience: ${profile.experience ? profile.experience.map(exp => 
-    `${exp.role || 'Role'} at ${exp.company || 'Company'} (${exp.duration || 'Duration'}) - ${exp.achievements ? exp.achievements.join(', ') : 'No achievements listed'}`
+Experience: ${profile.experience && Array.isArray(profile.experience) ? profile.experience.map(exp => 
+    `${exp.role || 'Role'} at ${exp.company || 'Company'} (${exp.duration || 'Duration'}) - ${exp.achievements && Array.isArray(exp.achievements) ? exp.achievements.join(', ') : 'No achievements listed'}`
 ).join('\n') : 'Not specified'}
-Projects: ${profile.projects ? profile.projects.join(', ') : 'Not specified'}
+Projects: ${profile.projects && Array.isArray(profile.projects) ? profile.projects.join(', ') : 'Not specified'}
 Preferred Tone: ${profile.preferredTone || 'professional'}
 Language: ${profile.language || 'english'}
 Education Level: ${profile.educationLevel || 'not specified'}
@@ -3399,14 +3417,25 @@ function buildSystemPromptServerSide(mode, toggleState) {
 
 // Build user prompt server-side (exact copy from background.js logic)
 function buildUserPromptServerSide(message, userProfile, jobContext, chatHistory, toggleState, mode) {
+    // Add null checks and default values
+    if (!message) message = '';
+    if (!userProfile) {
+        console.error('❌ [SERVER] No user profile provided - this should never happen as all users must have a profile');
+        userProfile = {}; // Fallback for safety
+    }
+    if (!jobContext) jobContext = {};
+    if (!chatHistory) chatHistory = [];
+    if (!toggleState) toggleState = 'off';
+    if (!mode) mode = 'natural';
+    
     const isProfileToggleOff = toggleState === 'off';
     const isProfileEnabled = !isProfileToggleOff;
     
     // Build conversation context
     let conversationContext = '';
-    if (chatHistory && chatHistory.length > 0) {
+    if (chatHistory && Array.isArray(chatHistory) && chatHistory.length > 0) {
         conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(msg => 
-            `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+            `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content || ''}`
         ).join('\n');
     }
     
