@@ -2861,7 +2861,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         let finalMessages = messages;
         
         // If server-side prompt building parameters are provided, build prompts server-side
-        if (message && userProfile !== undefined && toggleState !== undefined && mode) {
+        if (message && userProfile && toggleState !== undefined && mode) {
             console.log('🔧 [API/GENERATE] Building prompts server-side');
             console.log('🔧 [API/GENERATE] Mode:', mode, 'Toggle:', toggleState);
             console.log('🔧 [API/GENERATE] Message length:', message ? message.length : 0);
@@ -2896,14 +2896,6 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                         ];
                         console.log('🔒 [SERVER-SIDE] Using buildResumePrompt for resume generation');
                     }
-                } else if (mode === 'analysis') {
-                    // Use the specialized buildDetailedAnalysisPrompt function
-                    const analysisPrompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext);
-                    finalMessages = [
-                        { role: 'system', content: SYSTEM_PROMPT },
-                        { role: 'user', content: analysisPrompt }
-                    ];
-                    console.log('🔒 [SERVER-SIDE] Using buildDetailedAnalysisPrompt for analysis');
                 } else {
                     // Fallback to original server-side functions
                     const systemPrompt = buildSystemPromptServerSide(mode, toggleState);
@@ -2927,7 +2919,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         } else {
             // Fallback to client-provided messages (backward compatibility)
             console.log('🔄 [API/GENERATE] Using client-provided messages (backward compatibility)');
-            console.log('🔄 [API/GENERATE] Missing params - message:', !!message, 'userProfile:', userProfile !== undefined, 'toggleState:', !!toggleState, 'mode:', !!mode);
+            console.log('🔄 [API/GENERATE] Missing params - message:', !!message, 'userProfile:', !!userProfile, 'toggleState:', !!toggleState, 'mode:', !!mode);
         }
         
         if (!model || !finalMessages) {
