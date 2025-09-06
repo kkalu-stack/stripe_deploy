@@ -2865,8 +2865,20 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
             mode
         } = req.body;
         
+        // Debug: Log what we received
+        console.log('🔍 [API/GENERATE] Request body analysis:', {
+            hasModel: !!model,
+            hasMessages: !!messages,
+            hasMessage: !!message,
+            hasUserProfile: userProfile !== undefined,
+            hasToggleState: !!toggleState,
+            hasMode: !!mode,
+            messageLength: message ? message.length : 0,
+            userProfileKeys: userProfile ? Object.keys(userProfile) : 'none'
+        });
+        
         // NEW: Server-side prompt building logic
-        let finalMessages = messages;
+        let finalMessages = messages || [];
         
         // If server-side prompt building parameters are provided, build prompts server-side
         if (message && userProfile !== undefined && toggleState && mode) {
@@ -2904,6 +2916,14 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), async (req, res) => {
             // Fallback to client-provided messages (backward compatibility)
             console.log('🔄 [API/GENERATE] Using client-provided messages (backward compatibility)');
             console.log('🔄 [API/GENERATE] Missing params - message:', !!message, 'userProfile:', userProfile !== undefined, 'toggleState:', !!toggleState, 'mode:', !!mode);
+            
+            // If no messages provided and no server-side params, return error
+            if (!finalMessages || finalMessages.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No messages provided and server-side prompt building parameters missing'
+                });
+            }
         }
         
         if (!model || !finalMessages) {
