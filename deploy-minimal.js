@@ -4016,9 +4016,10 @@ const PORT = process.env.PORT || 3000;
 // These functions were moved from background.js to protect IP
 
 // Build natural intent prompt (exact copy from background.js)
-function buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, isProfileToggleOff) {
-  // ✅ Use the isProfileToggleOff parameter passed from the calling function
+function buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
+  // ✅ Use the toggleState parameter passed from the calling function
   // ❌ DO NOT override with profile data logic - this was the bug!
+  var isProfileToggleOff = toggleState === 'off';
   var isProfileEnabled = !isProfileToggleOff;
 
   // Build comprehensive context
