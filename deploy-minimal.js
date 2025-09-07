@@ -4147,15 +4147,34 @@ async function callOpenAIDirect(prompt) {
         content: guard + '\n\n' + prompt
     }];
     
-    // Use the same OpenAI API call logic as the main endpoint
-    const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: messages,
-        max_tokens: 4000,
-        temperature: 0.7
+    // Use the same API key rotation system as the main endpoint
+    const apiKey = getNextApiKey();
+    if (!apiKey) {
+        throw new Error('No API keys available');
+    }
+    
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: messages,
+            max_tokens: 4000,
+            temperature: 0.7
+        })
     });
     
-    return response.choices[0].message.content;
+    if (!openaiResponse.ok) {
+        const errorData = await openaiResponse.text();
+        console.error('❌ OpenAI API error in callOpenAIDirect:', openaiResponse.status, errorData);
+        throw new Error(`OpenAI API error: ${openaiResponse.status} - ${errorData}`);
+    }
+    
+    const data = await openaiResponse.json();
+    return data.choices[0].message.content;
 }
 
 // ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Format resume for display (exact copy from background.js)
