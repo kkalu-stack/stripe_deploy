@@ -2881,7 +2881,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                         prompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
                     }
                 } else if (mode === 'analysis') {
-                    prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext);
+                    prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
                 } else {
                     // Fallback
                     prompt = message;
@@ -3795,7 +3795,7 @@ Based on the user's message, conversation history, and available context, determ
 Respond naturally and helpfully based on the user's request.`;
     } else if (mode === 'analysis') {
         // Use the specialized buildDetailedAnalysisPrompt function
-        return buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext);
+        return buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
     }
     
     // ✅ CRITICAL FIX: Log total prompt length for token management
@@ -3978,9 +3978,9 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
 }
 
 // Build detailed analysis prompt (exact copy from background.js)
-function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext) {
-    // Check if profile toggle is OFF (no resume data available)
-    const isProfileToggleOff = !(userProfile && userProfile.resumeText);
+function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
+    // Use the toggleState parameter passed from client instead of inferring from profile data
+    const isProfileToggleOff = toggleState === 'off';
 
     // Debug: Log resume data availability
     console.log('🔍 [DETAILED ANALYSIS] Resume data check:', {
@@ -4104,7 +4104,51 @@ Please provide general guidance and information related to this question. Do NOT
 FINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat "1." for multiple items.`;
     }
 
-    // Profile toggle is ON - provide detailed resume analysis
+    // Check if there's actually resume data available
+    if (!userProfile || !userProfile.resumeText || userProfile.resumeText.trim().length === 0) {
+        return `You are in PROFILE TOGGLE ON mode, but no resume data is available for analysis.
+
+USER PREFERENCES:
+- Language: ${userLanguage}
+- Preferred Tone: ${userTone}
+- Education Level: ${userEducation}
+
+LANGUAGE AND COMMUNICATION REQUIREMENTS:
+- ALWAYS respond in the user's preferred language: ${userLanguage}
+- If language is "spanish", respond entirely in Spanish
+- If language is "french", respond entirely in French
+- If language is "german", respond entirely in German
+- If language is "arabic", respond entirely in Arabic
+
+TONE REQUIREMENTS:
+- Match the user's preferred tone: ${userTone}
+- If tone is "professional": Use formal, business-like language
+- If tone is "casual": Use friendly, conversational language
+- If tone is "enthusiastic": Use energetic, positive language
+- If tone is "confident": Use assertive, self-assured language
+- If tone is "friendly": Use warm, approachable language
+
+EDUCATION LEVEL ADAPTATION:
+- Adapt to user's education level: ${userEducation}
+- If education level is "high_school": Use simpler language, avoid complex jargon
+- If education level is "undergraduate": Use standard professional language
+- If education level is "graduate": Use advanced terminology with explanations
+- If education level is "doctorate": Use sophisticated language, technical jargon
+- If education level is "none": Use clear, accessible language
+
+JOB DESCRIPTION:
+${contextText}
+
+USER REQUEST: "${message}"
+
+IMPORTANT: The user has enabled their profile toggle (personalized mode), but no resume data is currently available. 
+
+Please respond with a helpful message explaining that resume analysis requires the user to first upload their resume. Provide general guidance about the job description and suggest they upload their resume to get personalized analysis.
+
+Be helpful and encouraging, explaining the benefits of uploading their resume for personalized job application assistance.`;
+    }
+
+    // Profile toggle is ON and resume data is available - provide detailed resume analysis
     return `Analyze this resume against the job description. Provide detailed analysis like ChatGPT does.
 
 USER PREFERENCES:
