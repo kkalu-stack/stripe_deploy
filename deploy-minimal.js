@@ -91,9 +91,10 @@ if (openaiApiKeys.length === 0) {
     console.error('❌ Available environment variables:', Object.keys(process.env).filter(key => key.includes('OPENAI')));
 }
 
-// Key rotation system
+// Key rotation system - Initialize AFTER all keys are loaded
 let currentKeyIndex = 0;
 let keyUsageCount = new Array(openaiApiKeys.length).fill(0);
+console.log(`🔑 Initialized keyUsageCount array with ${keyUsageCount.length} slots`);
 
 function getNextApiKey() {
     if (openaiApiKeys.length === 0) {
@@ -118,7 +119,8 @@ function getNextApiKey() {
     // Increment usage count
     keyUsageCount[currentKeyIndex]++;
     
-    console.log(`🔑 Using API key ${currentKeyIndex + 1} (usage: ${keyUsageCount[currentKeyIndex]})`);
+    console.log(`🔑 [ROTATION] Using API key ${currentKeyIndex + 1} (usage: ${keyUsageCount[currentKeyIndex]})`);
+    console.log(`🔑 [ROTATION] Key preview: ${openaiApiKeys[currentKeyIndex].substring(0, 8)}...`);
     return openaiApiKeys[currentKeyIndex];
 }
 
@@ -3084,6 +3086,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             });
         }
         console.log('✅ [DEBUG] API key obtained successfully');
+        console.log(`🔑 [DEBUG] Using key: ${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}`);
         
         // Call OpenAI API with rotated key
         console.log('🔍 [DEBUG] Making OpenAI API call with:', {
