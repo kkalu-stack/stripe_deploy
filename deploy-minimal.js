@@ -575,8 +575,75 @@ app.get('/api/api-key-status', (req, res) => {
         keyStatus: keyStatus,
         environment: process.env.NODE_ENV || 'production',
         hasFallbackKey: !!process.env.OPENAI_API_KEY,
+        supabaseUrl: SUPABASE_URL,
+        supabaseUrlPrefix: SUPABASE_URL ? SUPABASE_URL.substring(0, 30) + '...' : 'undefined',
         message: hasKeys ? 'API keys are configured' : 'No API keys found - please set OPENAI_API_KEY_1 through OPENAI_API_KEY_10 OR OPENAI_API_KEY'
     });
+});
+
+// Test OpenAI API endpoint (no authentication required for testing)
+app.post('/api/test-openai', async (req, res) => {
+    try {
+        console.log('🧪 [TEST] Testing OpenAI API connection...');
+        
+        const apiKey = getNextApiKey();
+        if (!apiKey) {
+            return res.status(500).json({
+                success: false,
+                error: 'No API keys available',
+                message: 'Please set OPENAI_API_KEY environment variable'
+            });
+        }
+        
+        console.log('🧪 [TEST] API key obtained, making test call...');
+        
+        const testResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo',
+                messages: [
+                    { role: 'user', content: 'Say "Hello, API test successful!"' }
+                ],
+                max_tokens: 50,
+                temperature: 0.7
+            })
+        });
+        
+        console.log('🧪 [TEST] OpenAI response status:', testResponse.status);
+        
+        if (!testResponse.ok) {
+            const errorData = await testResponse.text();
+            console.error('🧪 [TEST] OpenAI API error:', errorData);
+            return res.status(500).json({
+                success: false,
+                error: 'OpenAI API error',
+                status: testResponse.status,
+                details: errorData
+            });
+        }
+        
+        const data = await testResponse.json();
+        console.log('🧪 [TEST] OpenAI API success:', data);
+        
+        res.json({
+            success: true,
+            message: 'OpenAI API test successful',
+            response: data.choices[0].message.content,
+            usage: data.usage
+        });
+        
+    } catch (error) {
+        console.error('🧪 [TEST] Test error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Test failed',
+            message: error.message
+        });
+    }
 });
 
 // Test Supabase connection
@@ -3094,11 +3161,25 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         let responseContent = '';
         if (data.choices && data.choices.length > 0 && data.choices[0] && data.choices[0].message) {
             responseContent = data.choices[0].message.content || '';
+            console.log('🔍 [DEBUG] Response content extracted:', {
+                hasContent: !!responseContent,
+                contentLength: responseContent ? responseContent.length : 0,
+                contentPreview: responseContent ? responseContent.substring(0, 100) + '...' : 'empty'
+            });
         } else {
             console.error('❌ [ERROR] Invalid OpenAI response structure:', data);
             return res.status(500).json({
                 success: false,
                 error: 'Invalid response from OpenAI API'
+            });
+        }
+        
+        // Check if response content is empty
+        if (!responseContent || responseContent.trim() === '') {
+            console.error('❌ [ERROR] Empty response content from OpenAI');
+            return res.status(500).json({
+                success: false,
+                error: 'Empty response from OpenAI API'
             });
         }
         
