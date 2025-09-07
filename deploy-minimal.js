@@ -3183,9 +3183,18 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             });
         }
         
+        // Strip decision tags from response before sending to client
+        const parsedResponse = parseAIDecision(responseContent);
+        console.log('🔍 [DEBUG] Parsed response:', {
+            type: parsedResponse.type,
+            hasTags: responseContent.includes('[') && responseContent.includes(']'),
+            originalLength: responseContent.length,
+            cleanedLength: parsedResponse.response.length
+        });
+        
         res.json({
             success: true,
-            content: responseContent,
+            content: parsedResponse.response, // Send cleaned response without tags
             usage: data.usage
         });
         
