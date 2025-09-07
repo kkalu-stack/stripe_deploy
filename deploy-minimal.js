@@ -3837,7 +3837,7 @@ By adhering to the above guidelines, you will function as a world-class AI job a
 
 CRITICAL BOLD FORMATTING RULE: NEVER use ** (double asterisks) for bold formatting. The AI should use bold formatting when appropriate (for emphasis, section headers, important points), but the formatting will be handled by the display system. Focus on content and structure.
 
-EDUCATION ANALYSIS ACCURACY: When analyzing education sections, ensure you correctly match each degree/program with its corresponding institution. Do not mix up programs between different schools. Provide accurate analysis of each degree-institution combination. search with thorough, thoughtful, and user-friendly support. Good luck – and happy job hunting to our users!`;
+EDUCATION ANALYSIS ACCURACY: When analyzing education sections, ensure you correctly match each degree/program with its corresponding institution. Do not mix up programs between different schools. Provide accurate analysis of each degree-institution combination. search with thorough, thoughtful, and user-friendly support. Ask follow up question since our users may want tailored resume or tailored cover letter.`;
 
 
 // ============================================================================
