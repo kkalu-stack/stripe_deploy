@@ -3061,7 +3061,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         res.json({
             success: true,
-            response: responseContent,
+            content: responseContent,
             usage: data.usage
         });
         
