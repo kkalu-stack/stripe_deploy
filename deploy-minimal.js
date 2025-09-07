@@ -1921,10 +1921,16 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
         const requestsUsed = requestLimit.requestCount;
         const monthlyLimit = requestLimit.limit; // 15 for free tier
         
-        console.log('📊 [API/ME] Free tier request count:', { requestsUsed, monthlyLimit });
+        console.log('📊 [API/ME] Free tier request count:', { 
+            userId: req.userId,
+            requestsUsed, 
+            monthlyLimit,
+            requestLimit: requestLimit
+        });
         
         // Always return free tier data (ignore old subscription data)
-        res.set('Cache-Control', 'private, max-age=30');
+        // Reduced cache time for request count accuracy
+        res.set('Cache-Control', 'private, max-age=5');
         
         res.json({
             success: true,
@@ -1932,8 +1938,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             plan: 'free',
             isProUser: false,
             canChat: true,
-            requestsUsed: requestsUsed,
-            monthlyLimit: monthlyLimit,
             upgradeRequired: false,
             upgradeUrl: '/waitlist',
             // Add user personal information
@@ -1945,6 +1949,10 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
                 user_metadata: user.user_metadata,
                 // Include resume text from user metadata
                 resume_text: user.user_metadata?.resume_text || '',
+                // Include request count data in user object
+                requestsUsed: requestsUsed,
+                monthlyLimit: monthlyLimit,
+                plan: 'free',
                 // Include all preferences for widget compatibility
                 preferences: userPreferences && userPreferences.length > 0 ? {
                     display_name: userPreferences[0].display_name || displayName,
@@ -2810,7 +2818,16 @@ async function checkUserRequestLimit(userId) {
         // Get current month's request count (only count 'chat' requests, not 'regenerate')
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        
+        console.log('🔍 [REQUEST COUNT] Query parameters:', {
+            userId,
+            startOfMonth,
+            query: `requests?user_id=eq.${userId}&timestamp=gte.${startOfMonth}&request_type=eq.chat&select=id`
+        });
+        
         const requests = await supabaseRequest(`requests?user_id=eq.${userId}&timestamp=gte.${startOfMonth}&request_type=eq.chat&select=id`);
+        
+        console.log('🔍 [REQUEST COUNT] Raw database response:', requests);
         
         const requestCount = requests ? requests.length : 0;
         const limit = 15; // Free tier limit
@@ -2999,9 +3016,12 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         console.log('✅ OpenAI API call successful for user:', req.userId);
         
+        // Extract the response content from OpenAI
+        const responseContent = data.choices[0]?.message?.content || '';
+        
         res.json({
             success: true,
-            choices: data.choices,
+            response: responseContent,
             usage: data.usage
         });
         
