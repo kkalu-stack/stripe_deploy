@@ -2881,7 +2881,18 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                         prompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
                     }
                 } else if (mode === 'analysis') {
+                    console.log('🔍 [ANALYSIS MODE] Building detailed analysis prompt...');
+                    console.log('🔍 [ANALYSIS MODE] Parameters:', {
+                        messageLength: message ? message.length : 0,
+                        chatHistoryLength: chatHistory ? chatHistory.length : 0,
+                        hasUserProfile: !!userProfile,
+                        hasResumeText: !!(userProfile && userProfile.resumeText),
+                        resumeLength: userProfile && userProfile.resumeText ? userProfile.resumeText.length : 0,
+                        toggleState: toggleState,
+                        hasJobContext: !!jobContext
+                    });
                     prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                    console.log('🔍 [ANALYSIS MODE] Prompt built, length:', prompt ? prompt.length : 0);
                 } else {
                     // Fallback
                     prompt = message;
@@ -3979,6 +3990,14 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
 
 // Build detailed analysis prompt (exact copy from background.js)
 function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
+    console.log('🔍 [DETAILED ANALYSIS] Function called with parameters:', {
+        messageLength: message ? message.length : 0,
+        chatHistoryLength: chatHistory ? chatHistory.length : 0,
+        hasUserProfile: !!userProfile,
+        hasJobContext: !!jobContext,
+        toggleState: toggleState
+    });
+    
     // Use the toggleState parameter passed from client instead of inferring from profile data
     const isProfileToggleOff = toggleState === 'off';
 
