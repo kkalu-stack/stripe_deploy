@@ -63,7 +63,7 @@ function authenticateSession(req, res, next) {
     next();
 }
 
-// OpenAI API Key Rotation System (10 keys)
+// OpenAI API Key Rotation System (10 keys + fallback to single key)
 const openaiApiKeys = [
     process.env.OPENAI_API_KEY_1,
     process.env.OPENAI_API_KEY_2,
@@ -77,7 +77,19 @@ const openaiApiKeys = [
     process.env.OPENAI_API_KEY_10
 ].filter(key => key && key.trim() !== ''); // Filter out empty keys
 
+// Fallback to single API key if no rotation keys are found
+if (openaiApiKeys.length === 0 && process.env.OPENAI_API_KEY) {
+    openaiApiKeys.push(process.env.OPENAI_API_KEY);
+    console.log('🔑 Using fallback single API key');
+}
+
 console.log(`🔑 Loaded ${openaiApiKeys.length} OpenAI API keys`);
+if (openaiApiKeys.length === 0) {
+    console.error('❌ CRITICAL: No OpenAI API keys found! Please set either:');
+    console.error('❌ - OPENAI_API_KEY_1 through OPENAI_API_KEY_10 for rotation system, OR');
+    console.error('❌ - OPENAI_API_KEY for single key fallback');
+    console.error('❌ Available environment variables:', Object.keys(process.env).filter(key => key.includes('OPENAI')));
+}
 
 // Key rotation system
 let currentKeyIndex = 0;
@@ -86,8 +98,13 @@ let keyUsageCount = new Array(openaiApiKeys.length).fill(0);
 function getNextApiKey() {
     if (openaiApiKeys.length === 0) {
         console.error('❌ No OpenAI API keys configured');
+        console.error('❌ Please set either OPENAI_API_KEY_1 through OPENAI_API_KEY_10 OR OPENAI_API_KEY');
+        console.error('❌ Current environment variables with OPENAI:', Object.keys(process.env).filter(key => key.includes('OPENAI')));
         return null;
     }
+    
+    // Debug: Log available keys
+    console.log(`🔍 [DEBUG] Available API keys: ${openaiApiKeys.length}, Usage counts: [${keyUsageCount.join(', ')}]`);
     
     // Find the key with the lowest usage count
     let minUsage = Math.min(...keyUsageCount);
@@ -539,6 +556,27 @@ app.post('/api/auth/logout', (req, res) => {
 // Simple test endpoint
 app.get('/api/simple-test', (req, res) => {
     res.json({ message: 'Simple test endpoint working!' });
+});
+
+// API Key status endpoint
+app.get('/api/api-key-status', (req, res) => {
+    const keyCount = openaiApiKeys.length;
+    const hasKeys = keyCount > 0;
+    const keyStatus = openaiApiKeys.map((key, index) => ({
+        index: index + 1,
+        hasKey: !!key,
+        keyLength: key ? key.length : 0,
+        keyPrefix: key ? key.substring(0, 8) + '...' : 'none'
+    }));
+    
+    res.json({
+        hasApiKeys: hasKeys,
+        keyCount: keyCount,
+        keyStatus: keyStatus,
+        environment: process.env.NODE_ENV || 'production',
+        hasFallbackKey: !!process.env.OPENAI_API_KEY,
+        message: hasKeys ? 'API keys are configured' : 'No API keys found - please set OPENAI_API_KEY_1 through OPENAI_API_KEY_10 OR OPENAI_API_KEY'
+    });
 });
 
 // Test Supabase connection
@@ -2969,6 +3007,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         }
         
         // Get API key from the 10-key rotation system
+        console.log('🔍 [DEBUG] Getting API key from rotation system...');
         const apiKey = getNextApiKey();
         if (!apiKey) {
             console.error('❌ No API keys available');
@@ -2977,6 +3016,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 error: 'No API keys available'
             });
         }
+        console.log('✅ [DEBUG] API key obtained successfully');
         
         // Call OpenAI API with rotated key
         console.log('🔍 [DEBUG] Making OpenAI API call with:', {
@@ -2987,6 +3027,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             hasApiKey: !!apiKey
         });
         
+        console.log('🔍 [DEBUG] About to make OpenAI API call...');
         const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -3000,6 +3041,8 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 temperature: temperature || 0.7
             })
         });
+        
+        console.log('🔍 [DEBUG] OpenAI API call completed, status:', openaiResponse.status);
         
         if (!openaiResponse.ok) {
             const errorData = await openaiResponse.text();
