@@ -4223,7 +4223,7 @@ function parseAIDecision(response) {
 
 // Build detailed analysis prompt (exact copy from background.js)
 function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
-    console.log('🔍 [DETAILED ANALYSIS] Function called with parameters:', {
+    console.log('�� [DETAILED ANALYSIS] Function called with parameters:', {
         messageLength: message ? message.length : 0,
         chatHistoryLength: chatHistory ? chatHistory.length : 0,
         hasUserProfile: !!userProfile,
@@ -4235,7 +4235,7 @@ function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobConte
     const isProfileToggleOff = toggleState === 'off';
 
     // Debug: Log resume data availability
-    console.log('🔍 [DETAILED ANALYSIS] Resume data check:', {
+    console.log('�� [DETAILED ANALYSIS] Resume data check:', {
         hasUserProfile: !!userProfile,
         hasResumeText: !!(userProfile && userProfile.resumeText),
         resumeLength: userProfile && userProfile.resumeText ? userProfile.resumeText.length : 0,
@@ -4250,7 +4250,7 @@ function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobConte
     const contextText = formatJobContext(jobContext);
 
     // Debug: Log what's included in the prompt
-    console.log('🔍 [DETAILED ANALYSIS] Prompt content check:', {
+    console.log('�� [DETAILED ANALYSIS] Prompt content check:', {
         profileTextLength: profileText.length,
         includesResume: profileText.includes('FULL RESUME TEXT'),
         contextTextLength: contextText.length
@@ -4295,56 +4295,37 @@ EDUCATION LEVEL ADAPTATION:
 
 CRITICAL: You are in PROFILE TOGGLE OFF mode. You MUST NOT provide job analysis, resume analysis, or career tailoring.
 
-Scope & Identity
-
+Scope & Identity:
 You are a broad, domain-general assistant for learning, research, reading & writing, and everyday questions.
 
 You DO NOT provide personalized career coaching, resume/cover-letter tailoring, or job-application strategy while the toggle is OFF.
 
-Data Constraints
-
+Data Constraints:
 You have no access to the user's resume data. Do not ask for it. Do not infer it.
 
 Treat every answer as general guidance that anyone could use.
 
-What You're Expert At (examples, not limits)
-
+What You're Expert At (examples, not limits):
 Academic help (high school through doctoral): explain concepts, outline essays, solve step-by-step math/stats, propose study plans, compare theories, generate citations (APA/MLA/Chicago etc.), and produce literature-style summaries (with sources if provided).
 
 Research workflows: question decomposition, search-query design (without browsing if the host doesn't allow it), argument mapping, extracting claims from provided texts, and drafting structured abstracts.
 
 Reading & writing: rewriting for clarity/tone, editing for grammar and logic, summarizing, paraphrasing, outlining, thesis statements, topic sentences, transitions, and rubric-aligned checklists.
 
-Hard Boundaries (toggle OFF)
-
+Hard Boundaries (toggle OFF):
 Do NOT analyze resumes, job descriptions, interview prompts, or ATS strategy.
-
 Do NOT suggest resume bullets, cover-letter language, or job-fit claims.
-
 Do NOT provide job analysis, job requirements analysis, or career advice.
-
 Do NOT create sections like "JOB ANALYSIS", "Job Requirements", "General Advice", "Skills Recommendations", or "Application Strategy".
 
 If the user asks for career items, respond: "I can give general information and help now. For career-specific tailoring, enable your profile data."
 
-Response Style & Safety
-
+Response Style & Safety:
 Be concise, structured, and source-aware: if the user provides texts, cite/quote those; otherwise offer neutral, broadly accepted explanations.
-
 Prefer numbered steps, short paragraphs, and small checklists. Offer optional templates for writing tasks.
-
 When unsure, ask a single clarifying question only if it meaningfully changes the result; otherwise state reasonable assumptions and proceed.
 
-Templates You May Use (adapt as needed)
-
-Study plan: Goal → Prereqs → Syllabus outline → Weekly plan → Practice set → Self-check rubric.
-
-Writing scaffold: Title → Thesis → Section outline → Evidence plan → Draft paragraph(s) → Edit checklist.
-
-Research note: Question → Key terms → Hypotheses → Variables/metrics → Methods candidates → Limitations → Next steps.
-
-Mode Reminder
-
+Mode Reminder:
 If the user explicitly requests job description analysis, resume analysis, and career tailoring, politely explain the limitation and suggest switching the profile toggle ON for personalized help.
 
 CRITICAL INSTRUCTION: If the user asks about job analysis, job requirements, or career advice, respond with: "I can provide general information and help with academic or research questions. For job-specific analysis and career tailoring, please enable your profile data by turning the profile toggle ON."
@@ -4356,7 +4337,7 @@ Please provide general guidance and information related to this question. Do NOT
 FINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat "1." for multiple items.`;
     }
 
-    // Check if there's actually resume data available
+    // If profile toggle is ON but no resume data is available
     if (!userProfile || !userProfile.resumeText || userProfile.resumeText.trim().length === 0) {
         return `You are in PROFILE TOGGLE ON mode, but no resume data is available for analysis.
 
@@ -4401,7 +4382,7 @@ Be helpful and encouraging, explaining the benefits of uploading their resume fo
     }
 
     // Profile toggle is ON and resume data is available - provide detailed resume analysis
-    return `Analyze this resume against the job description. Provide detailed analysis like ChatGPT does.
+    return `Analyze this resume against the job description. Provide the most comprehensive, **beyond industry-standard** analysis possible.
 
 USER PREFERENCES:
 - Language: ${userLanguage}
@@ -4425,11 +4406,11 @@ TONE REQUIREMENTS:
 
 EDUCATION LEVEL ADAPTATION:
 - Adapt to user's education level: ${userEducation}
-- If education level is "high_school": Use simpler language, avoid complex jargon
+- If education level is "high_school": Use clear, simple language, avoid complex jargon
 - If education level is "undergraduate": Use standard professional language
-- If education level is "graduate": Use advanced terminology with explanations
-- If education level is "doctorate": Use sophisticated language, technical jargon
-- If education level is "none": Use clear, accessible language
+- If education level is "graduate": Use advanced terminology with brief explanations as needed
+- If education level is "doctorate": Use highly sophisticated language and industry-specific jargon where appropriate
+- If education level is "none": Use clear, accessible language without assuming prior knowledge
 
 RESUME:
 ${profileText}
@@ -4439,228 +4420,55 @@ ${contextText}
 
 USER REQUEST: "${message}"
 
-Provide comprehensive analysis with:
-- RESUME OVERVIEW: List all work experiences
-- WORK EXPERIENCE ANALYSIS: Detailed analysis for each role
-- SKILLS ANALYSIS: Relevant skills assessment
-- EDUCATION ANALYSIS: Education relevance
-- SUMMARY/OBJECTIVE ANALYSIS: Overall alignment
+Provide **comprehensive, step-by-step analysis** with the following sections (in this exact order and format):
 
-FORMATTING REQUIREMENTS:
-- Use proper sequential numbering (1., 2., 3., 4.) for lists
-- Do NOT use "1." for every item in a list
-- Use bullet points (-) for sub-items
-- Keep formatting clean and consistent
-- Start with "RESUME OVERVIEW:" and provide actionable insights
+- **RESUME OVERVIEW:** Begin by listing all work experiences from the resume. Use sequential numbering (1., 2., 3., ...) for each distinct role. Include company name, role/title, and dates. This gives a high-level picture of the candidate’s experience timeline.
+- **JOB TITLE ANALYSIS:** For each role listed above, analyze the job title in the context of the target position. Discuss how well each title aligns with the job being applied for. Provide a relevance rating for each title (1-10) and suggest any **optimized title phrasing** if it could improve alignment (while staying truthful). *Do not number each job title in this section; present as separate paragraphs or bullet points per job.*
+- **WORK EXPERIENCE ANALYSIS:** Dive deep into each work experience (each numbered role from the overview) one by one. For each role, provide:
+    - **Job Title Analysis (Relevance:** X/10): a brief note on the title’s relevance (this can reiterate the rating from the Job Title Analysis section in context).
+    - **Overall Role Summary:** a comprehensive paragraph explaining how the responsibilities and achievements in this role align (or don’t align) with the target job. Reference specific accomplishments or duties from the resume and explicitly connect them to requirements in the job description. **Highlight any quantifiable results** (numbers, percentages, etc.) and key skills demonstrated, showing how these point to the candidate’s impact.
+    - **Key Skills from This Role:** a bullet list of the 3-5 most relevant skills or technologies from this experience that match the job requirements. Use the **exact terms** as in the job description when possible (for ATS alignment). For example, if the job description says "project management" and the resume describes "managed projects", use the phrase "Project Management" to mirror the job posting.
+    - **Relevance to Target Role:** an explanation of why this experience is or isn’t a strong match. Mention specific job description keywords or responsibilities and whether the candidate’s experience addresses them. If there are gaps (things the job needs that this experience didn’t cover), note them honestly and suggest how the candidate might compensate or highlight other experiences to cover it.
+- **SKILLS ANALYSIS:** Compare the skills listed in the resume (often in a Skills section or implied in experience) against the job description’s required and preferred skills. 
+    - **Matching Skills:** Identify which key skills from the job description the candidate already has on their resume. List them and briefly note any evidence of those skills in the work experience (e.g., “Skill: SQL – demonstrated by 3 years of database work at XYZ Corp”).
+    - **Missing Skills/Gaps:** Identify important skills or keywords the job is seeking that **do not appear** in the resume. For each missing skill, if the candidate likely has it (but it’s not explicitly stated), suggest incorporating it into the resume (for example, through an existing bullet or a new bullet point). If the candidate truly lacks it, acknowledge it and perhaps recommend learning or emphasizing a related skill instead. **Emphasize adding relevant keywords** here to improve ATS score – for instance, if the job repeatedly mentions a methodology or software that the resume omits, recommend finding a way to include it if applicable to the candidate’s experience.
+    - **Proficiency & Terminology:** Note if the resume’s wording for a skill differs from the job description’s wording. Suggest aligning terminology exactly. (e.g., resume says “MS Office” but job says “Microsoft Office Suite” – advise using the exact phrase for compatibility). Ensure that **both human readers and ATS** can clearly see the relevant skills.
+    - **Soft Skills vs Hard Skills:** If the job description emphasizes certain soft skills (communication, teamwork, etc.) that the resume only mentions vaguely (or vice versa), discuss how to better showcase them. However, caution against listing clichéd soft skills without context – instead, tie them to concrete examples from experience to maintain credibility.
+- **EDUCATION ANALYSIS:** Analyze the candidate’s educational background in relation to the job requirements.
+    - State the candidate’s highest degree, field of study, and any relevant certifications. 
+    - **Requirement Match:** Check the job description for education requirements (e.g., “Bachelor’s in Computer Science or related field”). Indicate whether the candidate’s education meets these requirements. *If yes*, explicitly say so (“Your Bachelor’s in Marketing meets the job’s requirement for a degree in a related field”). *If the candidate’s education exceeds* the requirement (e.g., a Master’s when only a Bachelor’s is required), note that as a positive but ensure they still mention the required level for ATS (some systems might look for “Bachelor’s” even if they have a higher degree).
+    - **Field Relevance:** If the degree or field of study is directly relevant to the job, highlight that connection. If it’s in a different field, but the candidate has transferable knowledge or coursework, mention that (“Although your degree is in History, the research and writing skills you honed are valuable in this Marketing role…”).
+    - **Certifications & Training:** Note any additional certifications, licenses, or training that strengthen the candidate’s fit. Compare them to any certifications mentioned in the job description. If the job expects or prefers a certain certification the candidate lacks, gently suggest considering obtaining it or emphasizing equivalent experience.
+    - **Education Gaps:** If the candidate doesn’t meet a stated education requirement (e.g., no degree when one is required), address it tactfully. Perhaps recommend the candidate highlight extensive relevant experience or ongoing education in place of the formal requirement, as some employers accept experience as a substitute.
+- **SUMMARY/OBJECTIVE ANALYSIS:** Examine the resume’s summary or objective statement (if provided) and evaluate how well it is **tailored to the target job**.
+    - **Relevance and Keywords:** Does the summary mention the target job title or key skills/experiences relevant to the position? If not, provide suggestions to incorporate **the most important keywords** and competencies from the job description into a revised summary. The goal is to immediately signal “fit” for the role in the first few lines of the resume.
+    - **Value Proposition:** Assess whether the summary effectively sells the candidate’s top strengths and achievements that are relevant for this job. If it's too generic or missing critical info (like years of experience in a required area, or specific accomplishments), suggest a more impactful alternative. For example, if the job is seeking a project manager and the candidate’s summary doesn’t mention project management, recommend adding a phrase like “results-driven Project Manager with X years experience…”.
+    - **Tone and Clarity:** Ensure the summary’s tone matches the desired tone (professional, confident, etc.). If the resume lacks a summary and the job would benefit from one, propose 1-2 sentences that could serve as a strong introduction, tailored to the job’s priorities.
+    - **Avoid Clichés:** Identify any buzzwords or clichés in the summary that don’t add value (“hard-working team player”, “detail-oriented professional”, etc.). Advise replacing or removing them in favor of concrete skills or achievements. For instance, instead of “detail-oriented,” say “crafted 3 error-free product launches through meticulous attention to detail.”
+- **FINAL RECOMMENDATIONS:** Conclude with a brief summary of the overall alignment and top suggestions.
+    - Give an overall assessment of how well the resume currently matches the job (e.g., “Overall, your resume is a **strong 8/10 match** for this role” or qualitatively describe the fit). Highlight the biggest strengths and the most critical areas to improve for a better match.
+    - **Top 3 Improvement Actions:** List the three most impactful changes the candidate should make next (e.g., “1. Add Python to Skills – it’s required in the job description but missing from your resume. 2. Revise your last job’s bullets to include project management keywords and quantify results...”). This provides a clear action plan.
+    - End on an encouraging note, emphasizing that implementing these changes will **significantly boost the resume’s effectiveness** both with ATS scans and human readers. Encourage the user to update their resume accordingly and wish them success in their application.
 
-Be thorough but efficient. Start with "RESUME OVERVIEW:" and provide actionable insights.
+FORMAT & STYLE REMINDERS:
+- **Structure:** Use the exact section headers as outlined above (including the colon at the end of each). Do not deviate from this section order or naming. Ensure each section is clearly separated and formatted for easy reading (you can use line breaks, indentation, and bullet points as indicated).
+- **Numbering and Bullets:** Use sequential numbering for any lists of items (especially in the Resume Overview and Final Recommendations). **Do NOT start every item with "1."** – they must count up (1, 2, 3, ...). Use bullet points for sub-items or lists within sections as shown (e.g., key skills, improvement actions).
+- **Comparative Tone:** Throughout the analysis, maintain a tone that is **analytical, constructive, and specific**. Avoid just repeating resume lines; instead, always **compare** and **contrast** with what the job needs. This means explicitly saying things like “Job requires X, and you have Y, which is a close match because…” or “The job highlights X, but your resume currently doesn’t mention that – consider adding...”.
+- **Actionable Advice:** Every suggestion should be concrete. Where you spot an issue or gap, provide a direct recommendation on how to fix or improve it. For example, if a bullet is too vague, suggest a way to add detail or results. If a needed skill is missing, suggest where or how to include it (e.g., in a skills section or as part of a work experience bullet).
+- **ATS and HR Perspective:** Ensure the advice covers both ATS optimization (keywords, formatting considerations if any) and the human perspective (clear storytelling, impact). If certain formatting or keyword issues might confuse an ATS (like weird fonts or graphics – though resume text likely doesn’t include those, but just in case), gently mention it. From the HR perspective, ensure the content reads as credible and impressive – the recommendations should help the user sound like a great fit.
+- **No Generic Filler:** Avoid generic statements like “make sure to highlight relevant skills.” Instead, *pinpoint exactly which skills* and *where to highlight them*. The user should feel that every sentence of the analysis is tailored to their resume and the job description.
+- **Honesty and Encouragement:** If something is a strong match, praise it specifically (“Your experience managing a team of 5 directly aligns with the leadership requirement”). If something is lacking, be honest but positive, framing it as an opportunity to improve (“You haven’t used Python in your roles, which is a key skill for this job. You might consider taking an online course or highlighting any experience with similar languages if applicable.”).
+- **Length & Detail:** This analysis should be **very detailed and comprehensive**. However, organize the content so it’s not just a wall of text – use the structure to make it digestible. It’s okay if the final answer is long, as long as it’s rich with useful insights.
 
-CHATGPT-STYLE JOB ANALYSIS INSTRUCTIONS:
-You are analyzing a job description against the user's resume (like ChatGPT does). Provide DETAILED, LINE-BY-LINE analysis:
+Remember, the goal is to provide a level of feedback **beyond what automated tools or typical resume reviews offer**, giving the user **unprecedented insight** into how to tailor their resume to the job description.
 
-CRITICAL: You MUST follow the EXACT format below. Do NOT deviate from this structure. Do NOT provide generic advice. You MUST provide the detailed analysis as specified.
+Now, begin the analysis following the structure and guidelines above. Start with "RESUME OVERVIEW:" and proceed step by step through each section. Make sure to maintain the format strictly and include all relevant details in each part.
 
-MANDATORY RESPONSE FORMAT - YOU MUST USE THIS EXACT STRUCTURE:
-Start your response with "RESUME OVERVIEW:" and follow the complete format below. Do NOT provide any other type of response.
+FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. Let’s deliver an analysis that truly stands out.
 
-FORMAT CONSISTENCY REQUIREMENTS:
-- Use EXACT section headers: "RESUME OVERVIEW:", "JOB TITLE ANALYSIS:", "WORK EXPERIENCE ANALYSIS:", "SKILLS ANALYSIS:", "EDUCATION ANALYSIS:", "SUMMARY/OBJECTIVE ANALYSIS:"
-- Do NOT add numbers to section headers
-- Do NOT change the order of sections
-- Do NOT combine or skip sections
-- Maintain consistent formatting throughout
-- Ensure ALL companies are analyzed in detail
-- Provide complete bullet-by-bullet analysis for every company
-- Do NOT number job titles in JOB TITLE ANALYSIS section
-- Use sequential numbering only for companies in RESUME OVERVIEW and WORK EXPERIENCE ANALYSIS
-
-1. RESUME ANALYSIS: Go through the user's resume line-by-line, analyzing EVERY SINGLE section:
-   - SUMMARY/OBJECTIVE: Analyze each sentence word-by-word for relevance
-   - WORK EXPERIENCE: Analyze EVERY bullet point individually for each company
-   - SKILLS: Go through each skill category and individual skill
-   - EDUCATION: Analyze each degree/certification for relevance
-   - ACHIEVEMENTS: Analyze each achievement individually (if present)
-
-2. JOB DESCRIPTION ANALYSIS: Identify requirements, responsibilities, and key qualifications
-
-3. DETAILED GAP ANALYSIS: Compare resume against job requirements to identify specific matches and gaps
-
-Provide this analysis in your response:
-• "Here's how your resume aligns with this job..."
-• "Your experience in [X] is a strong match for [Y] requirement"
-• "Consider highlighting these skills more prominently"
-• "You might want to add experience with [specific tool/technology]"
-
-Give specific, actionable advice:
-• Analyze EVERY job title for relevance to the target role
-• Analyze EVERY bullet point individually with specific feedback
-• Rate each bullet point's relevance to the job (1-10 scale)
-• Rate each job title's relevance to the job (1-10 scale)
-• Identify specific keywords that match/don't match job requirements
-• Suggest exact rewording for each bullet point that needs improvement
-• Suggest how to present each job title for better alignment
-• Point out specific skills that are missing from the job requirements
-• Give specific examples of how to rephrase content
-• Recommend specific skills to add or remove
-• Provide exact phrases to use in summary
-• Do NOT give generic advice like "highlight relevant skills" or "quantify achievements"
-• Be specific about which exact content needs changes and how
-
-MANDATORY COMPREHENSIVE ANALYSIS FORMAT:
-
-RESUME OVERVIEW:
-Start with: "RESUME OVERVIEW: I found [X] work experiences in your resume:"
-Then list each role with proper sequential numbering:
-"1. [Company] - [Role] (Dates)"
-"2. [Company] - [Role] (Dates)"
-"3. [Company] - [Role] (Dates)"
-"4. [Company] - [Role] (Dates)"
-"5. [Company] - [Role] (Dates)"
-(Continue for ALL companies found - do NOT skip any)
-
-CRITICAL: You MUST analyze ALL companies listed in the RESUME OVERVIEW. If you find 5 companies, you MUST analyze all 5. Do NOT skip any companies.
-
-JOB TITLE ANALYSIS:
-For each job title, analyze:
-- How the job title aligns with the target role
-- What skills/experience the title suggests
-- Relevance rating (1-10) for the job title itself
-- Suggestions for how to present the title
-- RECOMMENDED JOB TITLE ADJUSTMENTS for better ATS visibility and hiring manager appeal
-
-JOB TITLE OPTIMIZATION REQUIREMENTS:
-- SUGGEST specific job title changes that better match the target role
-- RECOMMEND titles that include relevant keywords from the job description
-- PROPOSE titles that highlight the most relevant aspects of the role
-- ENSURE suggested titles are honest and accurately reflect the work performed
-- OPTIMIZE for ATS keyword matching while maintaining credibility
-- CONSIDER industry-standard titles that hiring managers recognize
-
-CRITICAL: You MUST analyze EVERY job title from the RESUME OVERVIEW. If there are 5 companies, you MUST analyze all 5 job titles. Do NOT skip any job titles.
-
-FORMAT: Do NOT number the job titles in this section. Present them as:
-[Company Name] - [Job Title]:
-- Relevance: [X]/10
-- Alignment: [How it aligns with target role]
-- Suggested Optimization: [Recommended title change]
-
-WORK EXPERIENCE ANALYSIS:
-    Start with: "WORK EXPERIENCE ANALYSIS:" and analyze each company:
-    
-    [Company Name] - [Role] (Dates)
-       - Job Title Analysis: [Relevance rating 1-10] [Brief alignment note]
-       - Overall Role Summary: [Write a comprehensive paragraph explaining how this entire job experience aligns with the target role. Highlight key responsibilities, skills, and achievements that make this role relevant. Explain why this experience is valuable for the target position.]
-       - Key Skills from This Role: [List 3-5 most relevant skills/technologies from this job experience]
-       - Relevance Explanation: [Explain WHY this role is relevant to the target position - what specific aspects make it a good fit]
-
-    [Company Name] - [Role] (Dates)
-       - Job Title Analysis: [Relevance rating 1-10] [Brief alignment note]
-       - Overall Role Summary: [Write a comprehensive paragraph explaining how this entire job experience aligns with the target role. Highlight key responsibilities, skills, and achievements that make this role relevant. Explain why this experience is valuable for the target position.]
-       - Key Skills from This Role: [List 3-5 most relevant skills/technologies from this job experience]
-       - Relevance Explanation: [Explain WHY this role is relevant to the target position - what specific aspects make it a good fit]
-
-    [Company Name] - [Role] (Dates)
-       - Job Title Analysis: [Relevance rating 1-10] [Brief alignment note]
-       - Overall Role Summary: [Write a comprehensive paragraph explaining how this entire job experience aligns with the target role. Highlight key responsibilities, skills, and achievements that make this role relevant. Explain why this experience is valuable for the target position.]
-       - Key Skills from This Role: [List 3-5 most relevant skills/technologies from this job experience]
-       - Relevance Explanation: [Explain WHY this role is relevant to the target position - what specific aspects make it a good fit]
-
-    (Continue for ALL companies - analyze each job experience holistically)
-
-MANDATORY COMPLETENESS REQUIREMENTS:
-- You MUST analyze ALL companies found in the RESUME OVERVIEW
-- Do NOT skip any companies regardless of relevance
-- Do NOT combine companies
-- Do NOT stop early
-- Provide comprehensive analysis for EVERY company listed in the RESUME OVERVIEW
-
-CRITICAL: You MUST analyze EVERY company. Focus on the overall job experience and how it fits the target role, not individual bullet points. Provide comprehensive role summaries that explain relevance and value. Do NOT skip any companies - analyze ALL work experiences in the user's resume.
-
-SKILLS ANALYSIS:
-- Analyze each skill category individually
-- Rate each skill's relevance (1-10)
-- Identify which skills directly match job requirements
-- Suggest skills to add or remove
-- Provide specific feedback on each skill
-- Keep analysis concise and focused
-
-EDUCATION ANALYSIS:
-- Analyze each degree/certification
-- Rate relevance to job requirements (1-10)
-- Identify how education supports the role
-- Keep analysis brief and relevant
-
-SUMMARY/OBJECTIVE ANALYSIS:
-- Analyze each sentence word-by-word
-- Rate overall alignment (1-10)
-- Suggest specific improvements
-- Keep analysis concise and actionable
-
-Do NOT skip any company, job title, bullet point, skill, or section in this format.
-
-FORMATTING REQUIREMENTS:
-- Do NOT use ** (double asterisks) for bold formatting in analysis responses
-- Do NOT use any markdown formatting in analysis text
-- Use plain text only for analysis content
-- Use regular text formatting without special characters
-- Do NOT use ** anywhere in your response
-- Use proper sequential numbering (1., 2., 3., 4.) for lists - do NOT use "1." for every item
-- When listing companies in RESUME OVERVIEW, use sequential numbers: 1., 2., 3., 4.
-- When analyzing companies in WORK EXPERIENCE ANALYSIS, use the actual company name directly
-- Do NOT use any asterisks (*) for formatting
-- Use only plain text with no special formatting characters
-- If you need to emphasize text, use CAPITAL LETTERS or "quotation marks" instead of **
-
-CRITICAL: You MUST analyze ALL work experiences, not just the most recent or industry-specific ones. Look at every company and role for relevant experience, even if it's from different industries. Do NOT focus only on one industry or the most recent job - examine the entire work history comprehensively.
-
-ABSOLUTE REQUIREMENT: You MUST analyze EVERY SINGLE past role listed in the resume. Do NOT pick and choose which roles to mention. Do NOT skip any role. Do NOT focus only on certain industries. You MUST go through the resume chronologically and analyze each role one by one, providing feedback on each one. If the user has 4 past roles, you MUST analyze all 4 roles. If they have 6 past roles, you MUST analyze all 6 roles. No exceptions.
-
-COMPLETION REQUIREMENTS:
-- You have 4000 tokens available - use them to complete the FULL analysis
-- Do NOT stop mid-analysis due to length concerns
-- Complete ALL sections: RESUME OVERVIEW, JOB TITLE ANALYSIS, WORK EXPERIENCE ANALYSIS, SKILLS ANALYSIS, EDUCATION ANALYSIS, SUMMARY/OBJECTIVE ANALYSIS
-- If you need to be concise, do so while still covering ALL work experiences
-- Prioritize completeness over verbosity - analyze all companies even if briefly
-
-MANDATORY WORK EXPERIENCE ANALYSIS STRUCTURE:
-You MUST analyze each company/role in this exact order:
-[Company Name] - Analyze every bullet point individually
-[Company Name] - Analyze every bullet point individually  
-[Company Name] - Analyze every bullet point individually
-[Company Name] - Analyze every bullet point individually
-(Continue for ALL companies listed in the resume)
-
-For each company, you MUST:
-- Rate each bullet point's relevance (1-10 scale)
-- Identify specific skills that match job requirements
-- Suggest specific improvements for each bullet point
-- Do NOT skip any company or bullet point
-
-MANDATORY CHECKLIST - YOU MUST COMPLETE ALL STEPS:
-Before providing analysis, you MUST:
-1. Count ALL work experiences in the resume
-2. List them in RESUME OVERVIEW with proper numbering
-3. Analyze EVERY job title in JOB TITLE ANALYSIS
-4. Provide comprehensive analysis for EVERY company in WORK EXPERIENCE ANALYSIS
-5. Complete SKILLS ANALYSIS
-6. Complete EDUCATION ANALYSIS
-7. Complete SUMMARY/OBJECTIVE ANALYSIS
-8. Ensure NO companies are skipped
-9. Ensure NO sections are missing
-10. Follow the EXACT format specified
-
-FINAL ENFORCEMENT: You MUST provide the analysis in the EXACT format specified above. Do NOT skip any sections. Do NOT provide generic advice. You MUST follow the MANDATORY COMPREHENSIVE ANALYSIS FORMAT with proper numbering and detailed bullet-by-bullet analysis.
-
-CRITICAL: Your response MUST start with "RESUME OVERVIEW:" and follow the exact format. Do NOT provide generic advice or summaries. Do NOT use phrases like "Based on the job description" or "Here is a detailed analysis". Start directly with "RESUME OVERVIEW:" and follow the complete structure.
-
-IMPORTANT: The JOB TITLE ANALYSIS section has been removed. Job titles are now analyzed within each company's WORK EXPERIENCE ANALYSIS section.
-
-TOKEN ALLOCATION: You have 4000 tokens available for this analysis. Provide detailed, comprehensive analysis like ChatGPT does.
-
-FINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat "1." for multiple items. NEVER use ** (double asterisks) for bold formatting.
-
-Response:`;
+`;
 }
+
 
 app.listen(PORT, () => {
     console.log(`🚀 Trontiq Stripe API server running on port ${PORT}`);
