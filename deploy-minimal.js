@@ -4193,7 +4193,7 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
     careerLevel: careerLevel,
     detectedCareerLevel: careerLevel
   });
-  return "Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be meticulously tailored to maximize ATS visibility and to impress human readers (hiring managers), far surpassing a generic resume.
+  return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be meticulously tailored to maximize ATS visibility and to impress human readers (hiring managers), far surpassing a generic resume.
 
 RESUME STRUCTURE AND FORMAT:
 - Use a professional, clean resume format with the following sections in order:
@@ -4237,7 +4237,7 @@ ADDITIONAL OUTPUT INSTRUCTIONS:
 - After writing the full resume, include a brief **ATS Optimization Summary** at the end of your answer (after all the resume sections). This should be a short paragraph (a few sentences) addressed to the user (not part of the resume itself) explaining how well the resume has been tailored to the job. For example, mention that the resume includes all critical keywords and skills from the job description, and perhaps give an estimated match percentage (e.g., "This resume is estimated to match over 95% of the job description keywords"). Highlight that all key requirements (such as specific tools, technologies, and qualifications like U.S. Citizenship) are included. This will reassure the user of the resume's effectiveness. Make sure this summary section is clearly separated from the actual resume content.
 - Finally, as a friendly follow-up, add one line after the ATS summary offering further help. For example: *Need a tailored cover letter as well? Let me know, and I can create one that complements this resume.* (This should be separate from the resume text as an offer of additional assistance.)
 
-Remember: Our goal is to produce a tailored resume that is 10 steps ahead of any competition. It should read as if it was expertly crafted specifically for this job, with absolutely no generic content. It must excite a hiring manager by demonstrating that the candidate not only fits every requirement but also brings quantifiable value. At the same time, it must rank at the very top of the ATS due to complete keyword optimization. Every detail from the job posting should be reflected in the resume. The end result should be a resume so excellent that it leaves both the algorithms and the human readers thoroughly impressed.";
+Remember: Our goal is to produce a tailored resume that is 10 steps ahead of any competition. It should read as if it was expertly crafted specifically for this job, with absolutely no generic content. It must excite a hiring manager by demonstrating that the candidate not only fits every requirement but also brings quantifiable value. At the same time, it must rank at the very top of the ATS due to complete keyword optimization. Every detail from the job posting should be reflected in the resume. The end result should be a resume so excellent that it leaves both the algorithms and the human readers thoroughly impressed.`;
 }
 
 // ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Parse AI Decision (exact copy from background.js)
