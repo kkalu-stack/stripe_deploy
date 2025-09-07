@@ -2857,77 +2857,42 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             mode
         } = req.body;
         
-        // ✅ DUPLICATE EXACT ORIGINAL TWO-PHASE SYSTEM
+        // ✅ RESTORE ORIGINAL SINGLE-CALL ARCHITECTURE
         let finalMessages = messages;
         
-        // PHASE 1: Intent Detection (exactly like original client-side)
-        if (message && userProfile && toggleState !== undefined && mode === 'natural') {
-            console.log('🔧 [PHASE 1] Intent Detection - Duplicating original client-side setup');
-            console.log('🔧 [PHASE 1] Mode:', mode, 'Toggle:', toggleState);
+        // SERVER-SIDE PROMPT BUILDING: Build complete prompt and return final response
+        if (message && userProfile && toggleState !== undefined) {
+            console.log('🔧 [SINGLE-CALL] Building complete prompt server-side for mode:', mode);
+            console.log('🔧 [SINGLE-CALL] Toggle state:', toggleState);
             
             try {
-                // ✅ DUPLICATE ORIGINAL CLIENT-SIDE LOGIC: Build intent detection prompt exactly like original
-                const prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
-                const systemMessage = SYSTEM_PROMPT;
-                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
-                
-                // ✅ DUPLICATE ORIGINAL CLIENT-SIDE MESSAGE STRUCTURE
-                finalMessages = [{
-                    role: 'system',
-                    content: systemMessage + '\n\n' + guard
-                }, {
-                    role: 'user',
-                    content: guard + '\n\n' + prompt
-                }];
-                
-                console.log('✅ [PHASE 1] Intent Detection - Duplicated original client-side message structure');
-            } catch (error) {
-                console.error('❌ [PHASE 1] Error duplicating client-side setup:', error);
-                return res.status(500).json({
-                    success: false,
-                    error: `Failed to duplicate client-side setup: ${error.message}`
-                });
-            }
-        } else if (message && userProfile && toggleState !== undefined && mode === 'analysis') {
-            // PHASE 2: Action Execution - Analysis Mode
-            console.log('🔧 [PHASE 2] Action Execution - Analysis Mode');
-            
-            try {
-                const prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
-                const systemMessage = SYSTEM_PROMPT;
-                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
-                
-                finalMessages = [{
-                    role: 'system',
-                    content: systemMessage + '\n\n' + guard
-                }, {
-                    role: 'user',
-                    content: guard + '\n\n' + prompt
-                }];
-                
-                console.log('✅ [PHASE 2] Analysis Mode - Duplicated original client-side message structure');
-            } catch (error) {
-                console.error('❌ [PHASE 2] Error in analysis mode:', error);
-                return res.status(500).json({
-                    success: false,
-                    error: `Failed to execute analysis: ${error.message}`
-                });
-            }
-        } else if (message && userProfile && toggleState !== undefined && mode === 'generate') {
-            // PHASE 2: Action Execution - Generate Mode
-            console.log('🔧 [PHASE 2] Action Execution - Generate Mode');
-            
-            try {
-                let prompt = '';
-                if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('coverletter')) {
-                    prompt = buildCoverLetterPrompt(message, userProfile, jobContext);
+                // Build the complete prompt based on mode (like original client-side)
+                let prompt;
+                if (mode === 'natural') {
+                    // For natural mode, build the complete conversation prompt (not just intent detection)
+                    prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                } else if (mode === 'analysis') {
+                    // For analysis mode, build the detailed analysis prompt
+                    prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                } else if (mode === 'generate') {
+                    // For generate mode, determine what to generate based on message content
+                    if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
+                        prompt = buildResumePrompt(message, userProfile, jobContext, userProfile.resumeText, message);
+                    } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
+                        prompt = buildCoverLetterPrompt(message, userProfile, jobContext);
+                    } else {
+                        // Default to resume generation
+                        prompt = buildResumePrompt(message, userProfile, jobContext, userProfile.resumeText, message);
+                    }
                 } else {
-                    prompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
+                    // Default to natural conversation
+                    prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
                 }
                 
                 const systemMessage = SYSTEM_PROMPT;
                 const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
                 
+                // Build the complete message structure (like original client-side)
                 finalMessages = [{
                     role: 'system',
                     content: systemMessage + '\n\n' + guard
@@ -2936,12 +2901,12 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     content: guard + '\n\n' + prompt
                 }];
                 
-                console.log('✅ [PHASE 2] Generate Mode - Duplicated original client-side message structure');
+                console.log('✅ [SINGLE-CALL] Complete prompt built server-side, returning final response');
             } catch (error) {
-                console.error('❌ [PHASE 2] Error in generate mode:', error);
+                console.error('❌ [SINGLE-CALL] Error building complete prompt:', error);
                 return res.status(500).json({
                     success: false,
-                    error: `Failed to execute generation: ${error.message}`
+                    error: `Failed to build complete prompt: ${error.message}`
                 });
             }
         } else {
@@ -3050,46 +3015,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
 });
 
 // ✅ NEW ENDPOINT: Execute AI Decision (Phase 2 of the two-phase system)
-app.post('/api/execute-decision', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
-    try {
-        console.log('🔍 [API/EXECUTE-DECISION] Request received for user:', req.userId);
-        
-        const { 
-            decision,
-            message,
-            userProfile,
-            jobContext,
-            chatHistory
-        } = req.body;
-        
-        if (!decision || !message || !userProfile) {
-            return res.status(400).json({
-                success: false,
-                error: 'Decision, message, and userProfile are required'
-            });
-        }
-        
-        console.log('🔧 [PHASE 2] Executing AI decision:', decision.type);
-        
-        // Execute the AI decision (exactly like original client-side)
-        const result = await executeAIDecision(decision, message, chatHistory, userProfile, jobContext);
-        
-        console.log('✅ [PHASE 2] AI decision executed successfully, mode:', result.mode);
-        
-        res.json({
-            success: true,
-            response: result.response,
-            mode: result.mode
-        });
-        
-    } catch (error) {
-        console.error('❌ [API/EXECUTE-DECISION] Error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+// REMOVED: /api/execute-decision endpoint - no longer needed with single-call architecture
 
 // Error handling middleware
 app.use((error, req, res, next) => {
@@ -4078,119 +4004,11 @@ function parseAIDecision(response) {
 }
 
 // ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Execute AI Decision (exact copy from background.js)
-async function executeAIDecision(decision, message, chatHistory, userProfile, jobContext) {
-    console.log('🎯 [SERVER] Executing AI decision:', decision.type);
-    
-    switch (decision.type) {
-        case 'ANALYSIS':
-            // Use detailed structured analysis
-            const detailedAnalysisPrompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, 'on');
-            const analysisResponse = await callOpenAIDirect(detailedAnalysisPrompt);
-            return {
-                response: analysisResponse,
-                mode: 'analysis'
-            };
-            
-        case 'RESUME_GENERATION':
-            // Generate tailored resume
-            const resumePrompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
-            const resumeResponse = await callOpenAIDirect(resumePrompt);
-            return {
-                response: resumeResponse,
-                mode: 'generate'
-            };
-            
-        case 'COVER_LETTER_GENERATION':
-            // Generate cover letter
-            const coverLetterPrompt = buildCoverLetterPrompt(message, userProfile, jobContext);
-            const coverLetterResponse = await callOpenAIDirect(coverLetterPrompt);
-            return {
-                response: coverLetterResponse,
-                mode: 'generate'
-            };
-            
-        case 'SHOW_RESUME':
-            // Show formatted resume
-            const formattedResume = await formatResumeForDisplay(userProfile.resumeText);
-            return {
-                response: formattedResume,
-                mode: 'show_resume'
-            };
-            
-        case 'CLARIFICATION':
-            // Ask for clarification
-            return {
-                response: decision.response,
-                mode: 'clarification'
-            };
-            
-        case 'CONVERSATION':
-        default:
-            // Regular conversation
-            return {
-                response: decision.response,
-                mode: 'conversation'
-            };
-    }
-}
+// REMOVED: executeAIDecision function - no longer needed with single-call architecture
 
-// ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Direct OpenAI call (exact copy from background.js)
-async function callOpenAIDirect(prompt) {
-    const systemMessage = SYSTEM_PROMPT;
-    const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
-    
-    const messages = [{
-        role: 'system',
-        content: systemMessage + '\n\n' + guard
-    }, {
-        role: 'user',
-        content: guard + '\n\n' + prompt
-    }];
-    
-    // Use the same API key rotation system as the main endpoint
-    const apiKey = getNextApiKey();
-    if (!apiKey) {
-        throw new Error('No API keys available');
-    }
-    
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: messages,
-            max_tokens: 4000,
-            temperature: 0.7
-        })
-    });
-    
-    if (!openaiResponse.ok) {
-        const errorData = await openaiResponse.text();
-        console.error('❌ OpenAI API error in callOpenAIDirect:', openaiResponse.status, errorData);
-        throw new Error(`OpenAI API error: ${openaiResponse.status} - ${errorData}`);
-    }
-    
-    const data = await openaiResponse.json();
-    return data.choices[0].message.content;
-}
+// REMOVED: callOpenAIDirect function - no longer needed with single-call architecture
 
-// ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Format resume for display (exact copy from background.js)
-async function formatResumeForDisplay(resumeText) {
-    const formattingPrompt = `Please format this resume text to make it clear and professional. Preserve ALL content exactly as provided. Use ## for sections, **bold** for company names and job titles only, and • for bullet points. Return ONLY the formatted text.
-
-RESUME TEXT:
-${resumeText}`;
-    
-    const formattedResume = await callOpenAIDirect(formattingPrompt);
-    return `\`\`\`
-${formattedResume}
-\`\`\`
-
-*This is your stored resume text, intelligently formatted for clarity. To tailor it for a specific job, highlight a job description and ask me to tailor your resume.*`;
-}
+// REMOVED: formatResumeForDisplay function - no longer needed with single-call architecture
 
 // Build detailed analysis prompt (exact copy from background.js)
 function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
