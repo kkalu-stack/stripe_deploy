@@ -2885,6 +2885,8 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             try {
                 // Build the complete prompt based on mode (like original client-side)
                 let prompt;
+                console.log('🔍 [DEBUG] Building prompt for mode:', mode);
+                
                 if (mode === 'natural') {
                     // For natural mode, build the complete conversation prompt (not just intent detection)
                     prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
@@ -2905,6 +2907,12 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     // Default to natural conversation
                     prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
                 }
+                
+                console.log('🔍 [DEBUG] Prompt built:', {
+                    hasPrompt: !!prompt,
+                    promptLength: prompt ? prompt.length : 0,
+                    promptType: typeof prompt
+                });
                 
                 const systemMessage = SYSTEM_PROMPT;
                 const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
@@ -2971,6 +2979,14 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         }
         
         // Call OpenAI API with rotated key
+        console.log('🔍 [DEBUG] Making OpenAI API call with:', {
+            model,
+            messagesCount: finalMessages ? finalMessages.length : 0,
+            maxTokens: max_tokens || 3000,
+            temperature: temperature || 0.7,
+            hasApiKey: !!apiKey
+        });
+        
         const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -3002,6 +3018,14 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         const data = await openaiResponse.json();
         
+        console.log('🔍 [DEBUG] OpenAI API response data structure:', {
+            hasData: !!data,
+            dataKeys: data ? Object.keys(data) : [],
+            hasChoices: !!data.choices,
+            choicesLength: data.choices ? data.choices.length : 0,
+            rawData: data
+        });
+        
         // Log the request (but don't count regenerates against monthly limit)
         if (data.usage) {
             const requestType = isRegenerateRequest ? 'regenerate' : 'chat';
@@ -3015,9 +3039,25 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         }
         
         console.log('✅ OpenAI API call successful for user:', req.userId);
+        console.log('🔍 [DEBUG] OpenAI response structure:', {
+            hasChoices: !!data.choices,
+            choicesLength: data.choices ? data.choices.length : 0,
+            choices: data.choices,
+            hasUsage: !!data.usage,
+            usage: data.usage
+        });
         
-        // Extract the response content from OpenAI
-        const responseContent = data.choices[0]?.message?.content || '';
+        // Extract the response content from OpenAI with better error handling
+        let responseContent = '';
+        if (data.choices && data.choices.length > 0 && data.choices[0] && data.choices[0].message) {
+            responseContent = data.choices[0].message.content || '';
+        } else {
+            console.error('❌ [ERROR] Invalid OpenAI response structure:', data);
+            return res.status(500).json({
+                success: false,
+                error: 'Invalid response from OpenAI API'
+            });
+        }
         
         res.json({
             success: true,
@@ -3027,9 +3067,23 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
     } catch (error) {
         console.error('❌ Generate API error:', error);
+        console.error('❌ Error stack:', error.stack);
+        
+        // Provide more specific error messages
+        let errorMessage = 'Failed to generate response';
+        if (error.message.includes('Cannot read properties of undefined')) {
+            errorMessage = 'Failed to generate response: Invalid data structure received';
+        } else if (error.message.includes('API key')) {
+            errorMessage = 'Failed to generate response: API key issue';
+        } else if (error.message.includes('rate limit')) {
+            errorMessage = 'Failed to generate response: Rate limit exceeded';
+        } else {
+            errorMessage = `Failed to generate response: ${error.message}`;
+        }
+        
         res.status(500).json({
             success: false,
-            error: error.message
+            error: errorMessage
         });
     }
 });
