@@ -2836,7 +2836,7 @@ async function checkUserRequestLimit(userId) {
     }
 }
 
-// OpenAI API proxy endpoint
+// OpenAI API proxy endpoint - PHASE 1: Intent Detection
 app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
         console.log('🔍 [API/GENERATE] Request received for user:', req.userId);
@@ -2857,46 +2857,19 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             mode
         } = req.body;
         
-        // ✅ DUPLICATE ORIGINAL CLIENT-SIDE SETUP: Server now works exactly like original client
+        // ✅ DUPLICATE EXACT ORIGINAL TWO-PHASE SYSTEM
         let finalMessages = messages;
         
-        // If we have raw parameters (like original client-side), build complete messages server-side
-        if (message && userProfile && toggleState !== undefined && mode) {
-            console.log('🔧 [API/GENERATE] Duplicating original client-side setup');
-            console.log('🔧 [API/GENERATE] Mode:', mode, 'Toggle:', toggleState);
+        // PHASE 1: Intent Detection (exactly like original client-side)
+        if (message && userProfile && toggleState !== undefined && mode === 'natural') {
+            console.log('🔧 [PHASE 1] Intent Detection - Duplicating original client-side setup');
+            console.log('🔧 [PHASE 1] Mode:', mode, 'Toggle:', toggleState);
             
             try {
-                // ✅ DUPLICATE ORIGINAL CLIENT-SIDE LOGIC: Build complete messages exactly like original client
-                let prompt = '';
-                let systemMessage = SYSTEM_PROMPT;
-                let guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
-                
-                // Build the appropriate prompt based on mode (exactly like original client)
-                if (mode === 'natural' || mode === 'advise') {
-                    prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
-                } else if (mode === 'generate') {
-                    if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('coverletter')) {
-                        prompt = buildCoverLetterPrompt(message, userProfile, jobContext);
-                    } else {
-                        prompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
-                    }
-                } else if (mode === 'analysis') {
-                    console.log('🔍 [ANALYSIS MODE] Building detailed analysis prompt...');
-                    console.log('🔍 [ANALYSIS MODE] Parameters:', {
-                        messageLength: message ? message.length : 0,
-                        chatHistoryLength: chatHistory ? chatHistory.length : 0,
-                        hasUserProfile: !!userProfile,
-                        hasResumeText: !!(userProfile && userProfile.resumeText),
-                        resumeLength: userProfile && userProfile.resumeText ? userProfile.resumeText.length : 0,
-                        toggleState: toggleState,
-                        hasJobContext: !!jobContext
-                    });
-                    prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
-                    console.log('🔍 [ANALYSIS MODE] Prompt built, length:', prompt ? prompt.length : 0);
-                } else {
-                    // Fallback
-                    prompt = message;
-                }
+                // ✅ DUPLICATE ORIGINAL CLIENT-SIDE LOGIC: Build intent detection prompt exactly like original
+                const prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                const systemMessage = SYSTEM_PROMPT;
+                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
                 
                 // ✅ DUPLICATE ORIGINAL CLIENT-SIDE MESSAGE STRUCTURE
                 finalMessages = [{
@@ -2907,12 +2880,68 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     content: guard + '\n\n' + prompt
                 }];
                 
-                console.log('✅ [API/GENERATE] Duplicated original client-side message structure');
+                console.log('✅ [PHASE 1] Intent Detection - Duplicated original client-side message structure');
             } catch (error) {
-                console.error('❌ [API/GENERATE] Error duplicating client-side setup:', error);
+                console.error('❌ [PHASE 1] Error duplicating client-side setup:', error);
                 return res.status(500).json({
                     success: false,
                     error: `Failed to duplicate client-side setup: ${error.message}`
+                });
+            }
+        } else if (message && userProfile && toggleState !== undefined && mode === 'analysis') {
+            // PHASE 2: Action Execution - Analysis Mode
+            console.log('🔧 [PHASE 2] Action Execution - Analysis Mode');
+            
+            try {
+                const prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                const systemMessage = SYSTEM_PROMPT;
+                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
+                
+                finalMessages = [{
+                    role: 'system',
+                    content: systemMessage + '\n\n' + guard
+                }, {
+                    role: 'user',
+                    content: guard + '\n\n' + prompt
+                }];
+                
+                console.log('✅ [PHASE 2] Analysis Mode - Duplicated original client-side message structure');
+            } catch (error) {
+                console.error('❌ [PHASE 2] Error in analysis mode:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: `Failed to execute analysis: ${error.message}`
+                });
+            }
+        } else if (message && userProfile && toggleState !== undefined && mode === 'generate') {
+            // PHASE 2: Action Execution - Generate Mode
+            console.log('🔧 [PHASE 2] Action Execution - Generate Mode');
+            
+            try {
+                let prompt = '';
+                if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('coverletter')) {
+                    prompt = buildCoverLetterPrompt(message, userProfile, jobContext);
+                } else {
+                    prompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
+                }
+                
+                const systemMessage = SYSTEM_PROMPT;
+                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
+                
+                finalMessages = [{
+                    role: 'system',
+                    content: systemMessage + '\n\n' + guard
+                }, {
+                    role: 'user',
+                    content: guard + '\n\n' + prompt
+                }];
+                
+                console.log('✅ [PHASE 2] Generate Mode - Duplicated original client-side message structure');
+            } catch (error) {
+                console.error('❌ [PHASE 2] Error in generate mode:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: `Failed to execute generation: ${error.message}`
                 });
             }
         } else {
@@ -3013,6 +3042,48 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
     } catch (error) {
         console.error('❌ Generate API error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ✅ NEW ENDPOINT: Execute AI Decision (Phase 2 of the two-phase system)
+app.post('/api/execute-decision', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
+    try {
+        console.log('🔍 [API/EXECUTE-DECISION] Request received for user:', req.userId);
+        
+        const { 
+            decision,
+            message,
+            userProfile,
+            jobContext,
+            chatHistory
+        } = req.body;
+        
+        if (!decision || !message || !userProfile) {
+            return res.status(400).json({
+                success: false,
+                error: 'Decision, message, and userProfile are required'
+            });
+        }
+        
+        console.log('🔧 [PHASE 2] Executing AI decision:', decision.type);
+        
+        // Execute the AI decision (exactly like original client-side)
+        const result = await executeAIDecision(decision, message, chatHistory, userProfile, jobContext);
+        
+        console.log('✅ [PHASE 2] AI decision executed successfully, mode:', result.mode);
+        
+        res.json({
+            success: true,
+            response: result.response,
+            mode: result.mode
+        });
+        
+    } catch (error) {
+        console.error('❌ [API/EXECUTE-DECISION] Error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -3986,6 +4057,120 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
     detectedCareerLevel: careerLevel
   });
   return "Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be fine-tuned to maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.\n\nCRITICAL ATS OPTIMIZATION REQUIREMENTS:\n- EVERY bullet point must contain keywords from the job description\n- EVERY skill mentioned in the job description must appear in the resume\n- EVERY requirement must be addressed through experience or skills\n- Use EXACT terminology from the job description throughout\n- Match the job title and role requirements precisely\n- Include ALL technical skills, tools, and technologies mentioned in the job posting\n- Optimize for ATS keyword matching while maintaining readability for humans\n\nCRITICAL: You MUST rewrite EVERY SINGLE LINE of the user's work experience. Do NOT copy any bullet points verbatim from their original resume. Every achievement, responsibility, and bullet point must be completely rewritten to match the job description.\n\nCRITICAL BULLET POINT KEYWORD INTEGRATION:\n- EVERY SINGLE bullet point must contain at least 2-3 keywords from the job description\n- EVERY bullet point must use the exact terminology from the job posting\n- EVERY bullet point must demonstrate how the experience relates to the job requirements\n- NO generic bullet points - every line must be tailored with job-specific keywords\n- INCORPORATE job description keywords naturally into every achievement and responsibility\n- USE the same action verbs and phrases as the job description\n- MATCH the job's language and terminology in every bullet point\n\nIMPORTANT: Use the user's original resume ONLY as a reference for their actual work history, companies, dates, and education. Do NOT copy any of the original wording, descriptions, or achievements. Create completely new content that matches the job description while using their real work experience as the foundation.\n\nCRITICAL: You MUST include ALL job titles and work experiences from the user's resume. Do NOT skip any jobs, regardless of relevance or recency. Include every single work experience with its original job title, company, and dates. Show the complete career progression by including all roles, even if they seem less relevant to the target position.\n\nIMPORTANT: If the job description requires specific abilities like mathematical reasoning, logic testing, chatbot training, AI model evaluation, or problem-solving using math, you MUST reflect these in the resume summary and throughout ALL bullet points. Explicitly reframe EVERY relevant experience to highlight these capabilities.\n\nIf the job includes:\n- AI chatbot evaluation\n- Complex math reasoning  \n- Model output testing\n- Prompt design or response review\n\nThen the tailored resume MUST reflect:\n- Mathematical thinking and problem-solving in EVERY bullet point\n- Logic-based evaluation experience throughout\n- Hands-on AI or model QA involvement (even if implicit in other roles)\n- ALL bullet points should be reframed to show relevance to the specific job requirements\n\nCRITICAL: Do not leave any bullet points generic. Every single achievement and responsibility must be reframed to explicitly show how it relates to the job requirements (mathematical reasoning, AI evaluation, logic testing, etc.).\n\nCRITICAL FORMATTING RULE: Do NOT use ** (double asterisks) for bold formatting in EDUCATION or SKILLS sections. Write all text in these sections as plain text only.\n\nSKILLS SECTION ENHANCEMENT:\n- ANALYZE the job description for required technical skills, tools, and technologies\n- ADD missing skills that are relevant to the job requirements\n- INCLUDE both hard skills (technical tools, programming languages) and soft skills (leadership, communication)\n- ADD industry-specific skills that are commonly used in the target role\n- INCLUDE transferable skills that can be applied to the job requirements\n- ENSURE all added skills are realistic for someone with the user's background and experience\n- ORGANIZE skills by categories (Technical Skills, Soft Skills, Tools & Technologies, etc.)\n- PRIORITIZE skills that directly match the job description requirements\n- ADD skills that can be reasonably inferred from the user's work experience and education\n\n\n\nUSER PROFILE:\n".concat(profileText, "\n\nFULL JOB DESCRIPTION:\n").concat(fullJobDescription, "\n\nFULL RESUME (VERBATIM):\n").concat(currentResume || 'No current resume provided', "\n\nUSER PREFERENCES:\nDisplay Name: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.displayName) || (userProfile === null || userProfile === void 0 ? void 0 : userProfile.name) || 'User', "\nPreferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\nLanguage: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n").concat(requestedLines ? "RESUME LENGTH: Create exactly ".concat(requestedLines, " bullet points total across all work experiences") : '', "\n\nCRITICAL INSTRUCTIONS:\n- Write in first person (as the applicant)\n- Output the full tailored resume only (no tips, advice, or meta commentary)\n- COMPLETELY REWRITE the user's original resume using their content but tailoring it to the job description\n- Do NOT copy the original resume verbatim - actively rewrite every section\n- Use the user's actual experiences but completely rephrase them to align with job requirements\n- Incorporate keywords and terminology from the job description throughout\n- Create a NEW resume that's specifically tailored to this job\n- REWRITE EVERY SINGLE ACHIEVEMENT and bullet point completely - do not keep any original wording\n- WRITE THE ENTIRE RESUME IN THE USER'S PREFERRED LANGUAGE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- If language is French, write in French; if Spanish, write in Spanish; if German, write in German\n- Adapt resume formatting and terminology to the target language's business conventions\n- MATCH THE USER'S PREFERRED TONE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- If tone is \"professional\": Use formal, business-like language\n- If tone is \"casual\": Use friendly, conversational language\n- If tone is \"enthusiastic\": Use energetic, positive language\n- If tone is \"confident\": Use assertive, self-assured language\n- If tone is \"friendly\": Use warm, approachable language\n- ADAPT TO USER'S EDUCATION LEVEL: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n- Adjust vocabulary complexity and technical depth based on education level\n- Use appropriate language sophistication for the user's background\n\n\n\nRESUME TAILORING REQUIREMENTS:\n- COMPLETELY REWRITE EVERY SINGLE BULLET POINT under each work experience\n- REWRITE EVERY ACHIEVEMENT and responsibility line to match the job description\n- Do NOT keep any original bullet points - rewrite them all completely\n- Use keywords from the job description in your bullet points\n- Reorder experiences to highlight the most relevant ones first\n- OPTIMIZE job titles to better align with the target role and improve ATS visibility\n- Add or emphasize skills that match the job requirements\n- Quantify achievements with specific numbers and percentages\n- Focus on transferable skills that apply to the target position\n- Use action verbs that match the job description's language\n- REWRITE the summary/objective to specifically target this job\n- REWRITE the skills section to highlight relevant skills for this position\n- REWRITE the achievements section completely to align with job requirements\n- Create a completely new resume that's optimized for this specific job\n\nJOB TITLE PRESERVATION REQUIREMENTS:\n- INCLUDE ALL job titles from the user's original resume\n- Do NOT skip any work experiences\n- Do NOT omit any job titles\n- PRESERVE the original job titles while optimizing them for the target role\n- SHOW complete career progression by including all roles\n- ENSURE every work experience from the original resume is represented\n\nJOB TITLE OPTIMIZATION STRATEGY:\n- ANALYZE each job title against the target role requirements\n- SUGGEST specific title changes that better match the job description\n- RECOMMEND titles that include relevant keywords from the job posting\n- PROPOSE titles that highlight the most relevant aspects of the work performed\n- ENSURE suggested titles are honest and accurately reflect the actual role\n- OPTIMIZE for ATS keyword matching while maintaining credibility\n- CONSIDER industry-standard titles that hiring managers recognize\n- BALANCE keyword optimization with professional accuracy\n\nATS OPTIMIZATION STRATEGY:\n- EXTRACT every keyword, skill, and requirement from the job description\n- INCORPORATE every extracted keyword into the resume naturally\n- MATCH the exact job title and role requirements\n- INCLUDE every technical skill, tool, and technology mentioned\n- USE the same terminology and phrasing as the job posting\n- ENSURE every bullet point contains relevant keywords\n- OPTIMIZE the summary to include key job requirements\n- ADD missing skills that are mentioned in the job description\n- CREATE bullet points that directly address job requirements\n- MAXIMIZE keyword density while maintaining readability\n\nEXPERIENCE ALIGNMENT REQUIREMENTS:\n- STAY WITHIN the user's actual experience and background\n- Do NOT overextend into fields or industries the user has no experience in\n- Do NOT claim expertise in areas not supported by the user's resume\n- REFRAME existing experience to match job requirements, but do not fabricate new experience\n- Use transferable skills from the user's actual work history\n- Focus on skills and achievements that can be reasonably extrapolated from their real experience\n- Do NOT add experience in fields, technologies, or industries the user has never worked in\n- Maintain honesty and accuracy based on the user's actual background\n\nGAP FILLING AND SKILL ADDITION REQUIREMENTS:\n- ANALYZE the job description for required skills and experience that are missing from the user's resume\n- IDENTIFY transferable skills from the user's existing experience that can be reframed to match missing requirements\n- ADD new bullet points to existing work experiences that demonstrate missing skills (based on realistic extrapolation from their actual work)\n- ENHANCE the skills section by adding relevant skills that the job requires but aren't explicitly mentioned in the user's resume\n- CREATE new achievements or responsibilities that logically fit within the user's actual roles but address job requirements\n- USE the user's existing experience as a foundation to demonstrate missing capabilities through creative reframing\n- ENSURE all additions are realistic and believable based on the user's actual work history and education\n- FOCUS on transferable skills that can be applied to the target role (e.g., problem-solving, analysis, communication)\n- ADD specific technical skills or tools that the job requires, even if not explicitly mentioned in the original resume\n- MAINTAIN honesty by only adding skills/experience that could reasonably be developed in the user's actual roles\n\nBULLET POINT TAILORING RULES:\n- EVERY bullet point must explicitly mention how it relates to the job requirements\n- EVERY bullet point must contain specific keywords from the job description\n- EVERY bullet point must use the exact terminology from the job posting\n- If the job requires mathematical reasoning, EVERY bullet should mention math, logic, or problem-solving\n- If the job requires AI evaluation, EVERY bullet should mention AI, model testing, or evaluation\n- If the job requires logic testing, EVERY bullet should mention logic, reasoning, or analysis\n- NO generic bullet points allowed - every achievement must be reframed for the specific role\n- EVERY bullet point must demonstrate specific skills mentioned in the job description\n- EVERY bullet point must use action verbs that match the job's language\n- EVERY bullet point must reference specific tools, technologies, or methodologies from the job posting\n\nKEYWORD MATCHING REQUIREMENTS:\n- EXTRACT every technical skill, tool, and technology from the job description\n- EXTRACT every soft skill and competency mentioned in the job posting\n- EXTRACT every responsibility and duty listed in the job requirements\n- EXTRACT every qualification and requirement mentioned\n- INCORPORATE every extracted keyword naturally into bullet points\n- USE the exact same terminology as the job description\n- MATCH the job title and role requirements precisely\n- INCLUDE every skill mentioned in the job posting in the skills section\n- CREATE bullet points that directly demonstrate each requirement\n- ENSURE maximum keyword alignment for ATS optimization\n\nEXAMPLE OF PROPER KEYWORD INTEGRATION:\nIf the job description mentions \"data analysis\", \"SQL queries\", \"Tableau dashboards\", and \"cross-functional collaboration\", then EVERY bullet point should include these keywords naturally:\n- \"Conducted comprehensive data analysis using SQL queries to identify operational inefficiencies\"\n- \"Developed Tableau dashboards for cross-functional collaboration with stakeholders\"\n- \"Performed data analysis on large datasets to support cross-functional decision-making\"\n- \"Created SQL queries and Tableau visualizations for cross-functional reporting\"\n\nNOT like this (generic, no keywords):\n- \"Analyzed data and created reports\"\n- \"Worked with teams to improve processes\"\n- \"Developed solutions for business problems\"\n\nMISSING SKILLS AND EXPERIENCE HANDLING:\n- IDENTIFY skills in the job description that are not explicitly mentioned in the user's resume\n- ADD these missing skills to the skills section if they could reasonably be developed in the user's roles\n- CREATE new bullet points that demonstrate missing capabilities through transferable experience\n- REFRAME existing responsibilities to show how they relate to missing job requirements\n- USE the user's education and background to justify adding relevant skills\n- ADD technical skills that are commonly used in the user's industry or role\n- INCLUDE soft skills that are transferable across roles (leadership, communication, problem-solving)\n- ENSURE all additions are honest and based on realistic extrapolation from actual experience\n- FOCUS on skills that can be reasonably inferred from the user's work history and education\n- MAINTAIN credibility by only adding skills that someone in the user's position could realistically have\n").concat(requestedLines ? "\nBULLET POINT COUNT REQUIREMENTS:\n- Create EXACTLY ".concat(requestedLines, " bullet points total across all work experiences\n- Distribute bullet points based on relevance to the job description\n- Most relevant jobs should get more bullet points\n- Less relevant jobs should get fewer bullet points\n- Do not exceed or fall short of ").concat(requestedLines, " total bullet points\n- Count only work experience bullet points (not summary, education, or skills)\n\nALTERNATIVE DISTRIBUTION OPTIONS:\n- If user requests \"5 lines per job\" or \"equal distribution\": Give each work experience exactly 5 bullet points\n- If user requests \"focus on relevant jobs\": Use relevance-based distribution (current default)\n- If user requests \"equal representation\": Give each job equal bullet points regardless of relevance\n\nINTELLIGENT BULLET POINT DISTRIBUTION:\nBased on career level analysis (").concat(careerLevel, " level), adjust bullet points per work experience:\n\nENTRY-LEVEL (").concat(careerLevel === 'entry' ? 'DETECTED' : 'NOT DETECTED', "):\n- 3-4 bullet points per work experience (entry-level roles have fewer complex achievements)\n- Focus on learning, growth, and foundational skills\n- Emphasize education, internships, and basic responsibilities\n- Avoid over-inflating entry-level experience\n\nMID-LEVEL (").concat(careerLevel === 'mid' ? 'DETECTED' : 'NOT DETECTED', "):\n- 4-6 bullet points per work experience (standard professional level)\n- Balance technical skills with business impact\n- Include quantifiable achievements and project leadership\n- Show progression and increasing responsibility\n\nSENIOR-LEVEL (").concat(careerLevel === 'senior' ? 'DETECTED' : 'NOT DETECTED', "):\n- 5-7 bullet points per work experience (complex achievements require more detail)\n- Emphasize leadership, strategy, and high-impact results\n- Include team management, budget responsibility, and strategic initiatives\n- Show industry expertise and thought leadership\n\nEXPERIENCE DURATION ADJUSTMENTS:\n- Short-term roles (<6 months): 2-3 bullet points to avoid filler\n- Medium-term roles (6 months - 2 years): Standard bullet point count\n- Long-term roles (>2 years): Can justify additional bullet points for growth/progression\n\nBULLET POINT LIMITS:\n- Maximum 8 bullet points per work experience (to maintain resume quality)\n- Minimum 1 bullet point per work experience (to ensure representation)\n- If user requests more than 8 per job, cap at 8 and inform them\n- If user requests more than 25 total bullet points, suggest reducing for better impact") : '', "\n\nRESUME FORMATTING REQUIREMENTS:\n- Use proper resume structure with these sections: CONTACT INFORMATION, SUMMARY, WORK EXPERIENCE, EDUCATION, SKILLS\n- Each work experience must have: Company Name, Job Title, Dates, and bullet points\n- Use clear section headers in ALL CAPS and BOLD (e.g., \"WORK EXPERIENCE\", \"EDUCATION\", \"SKILLS\")\n- Every list item MUST have a bullet point (•) at the beginning and be in its seperate line.\n- Maintain consistent indentation for all bullet points\n- Use proper spacing between sections (blank line after each section header)\n- Keep bullet points concise and action-oriented\n- Use strong action verbs to start each bullet point\n- Quantify achievements with specific numbers and percentages when possible\n- Ensure all contact information is properly formatted\n- Use professional, clean formatting throughout\n- Do NOT mix skills and achievements in the same section\n- Put achievements under each specific work experience, not in a general skills section\n- Do NOT use \"**\" formatting in education or skills sections - use plain text only\n- CRITICAL: In EDUCATION section, write degrees as plain text without any ** formatting\n- CRITICAL: In SKILLS section, write skill categories as plain text without any ** formatting\n- Example: Write \"Applied Data Science\" NOT \"**Applied Data Science**\"\n- Example: Write \"Data Analytics & Modeling:\" NOT \"**Data Analytics & Modeling:**\"\n\nPlease create a professional, tailored resume that:\n1. COMPLETELY REWRITES the user's original resume content to match this specific job\n2. Uses keywords and terminology from the job description throughout\n3. Emphasizes experiences and skills that align with the job requirements\n4. Reorders content to highlight the most relevant experience first\n5. COMPLETELY REWRITES EVERY SINGLE BULLET POINT under each work experience\n6. REWRITES EVERY ACHIEVEMENT and responsibility line to match the job description\n7. REWRITES the summary/objective to specifically target this job\n8. Incorporates ALL relevant work experiences but completely rewrites them for this job\n9. Uses consistent formatting with bullet points for ALL list items\n10. Focuses on transferable skills and achievements that apply to this position\n11. REWRITES the achievements section completely to align with job requirements\n12. Creates a completely NEW resume optimized for this specific job posting\n13. Uses proper resume structure: CONTACT INFO, SUMMARY, WORK EXPERIENCE (with company names, titles, dates), EDUCATION, SKILLS\n14. Places achievements under each specific work experience, not in a general section\n15. Creates completely new content that doesn't copy any original wording\n16. Uses proper Markdown formatting with bullet points (- or •) for all list items\n17. Uses clean formatting without \"**\" formatting in education and skills sections\n18. EVERY bullet point must be explicitly tailored to the job requirements - no generic bullets allowed\n").concat(requestedLines ? "19. Creates exactly ".concat(requestedLines, " bullet points total across all work experiences") : '19. Creates appropriate number of bullet points based on experience relevance', "\n20. FINAL WARNING TO AI:Do not reuse any sentence, bullet point, or phrase from the user's original resume. Every line MUST be rewritten using new wording, action verbs, and structure to fit the job description. If you repeat even one original line, this will be rejected.\n\nFINAL ATS OPTIMIZATION CHECKLIST:\n- Every keyword from the job description appears in the resume\n- Every skill requirement is addressed in skills section or experience\n- Every responsibility is demonstrated through bullet points\n- Job title and role requirements are precisely matched\n- Technical skills and tools are prominently featured\n- Summary includes key job requirements and keywords\n- Bullet points contain relevant keywords naturally\n- Resume is optimized for both ATS systems and human readers\n- Maximum keyword density while maintaining readability\n- 99% alignment with job description requirements\n- ALL job titles from original resume are included\n- ALL work experiences are represented\n- Complete career progression is shown");
+}
+
+// ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Parse AI Decision (exact copy from background.js)
+function parseAIDecision(response) {
+    // Extract the decision tag from the AI's response
+    const decisionMatch = response.match(/^\[(ANALYSIS|RESUME_GENERATION|COVER_LETTER_GENERATION|SHOW_RESUME|CONVERSATION|CLARIFICATION)\]/);
+    if (decisionMatch) {
+        return {
+            type: decisionMatch[1],
+            response: response.replace(/^\[(ANALYSIS|RESUME_GENERATION|COVER_LETTER_GENERATION|SHOW_RESUME|CONVERSATION|CLARIFICATION)\]\s*/, '')
+        };
+    }
+
+    // Default to conversation if no tag found
+    return {
+        type: 'CONVERSATION',
+        response: response
+    };
+}
+
+// ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Execute AI Decision (exact copy from background.js)
+async function executeAIDecision(decision, message, chatHistory, userProfile, jobContext) {
+    console.log('🎯 [SERVER] Executing AI decision:', decision.type);
+    
+    switch (decision.type) {
+        case 'ANALYSIS':
+            // Use detailed structured analysis
+            const detailedAnalysisPrompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, 'on');
+            const analysisResponse = await callOpenAIDirect(detailedAnalysisPrompt);
+            return {
+                response: analysisResponse,
+                mode: 'analysis'
+            };
+            
+        case 'RESUME_GENERATION':
+            // Generate tailored resume
+            const resumePrompt = buildResumePrompt(message, userProfile, jobContext, userProfile?.resumeText);
+            const resumeResponse = await callOpenAIDirect(resumePrompt);
+            return {
+                response: resumeResponse,
+                mode: 'generate'
+            };
+            
+        case 'COVER_LETTER_GENERATION':
+            // Generate cover letter
+            const coverLetterPrompt = buildCoverLetterPrompt(message, userProfile, jobContext);
+            const coverLetterResponse = await callOpenAIDirect(coverLetterPrompt);
+            return {
+                response: coverLetterResponse,
+                mode: 'generate'
+            };
+            
+        case 'SHOW_RESUME':
+            // Show formatted resume
+            const formattedResume = await formatResumeForDisplay(userProfile.resumeText);
+            return {
+                response: formattedResume,
+                mode: 'show_resume'
+            };
+            
+        case 'CLARIFICATION':
+            // Ask for clarification
+            return {
+                response: decision.response,
+                mode: 'clarification'
+            };
+            
+        case 'CONVERSATION':
+        default:
+            // Regular conversation
+            return {
+                response: decision.response,
+                mode: 'conversation'
+            };
+    }
+}
+
+// ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Direct OpenAI call (exact copy from background.js)
+async function callOpenAIDirect(prompt) {
+    const systemMessage = SYSTEM_PROMPT;
+    const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
+    
+    const messages = [{
+        role: 'system',
+        content: systemMessage + '\n\n' + guard
+    }, {
+        role: 'user',
+        content: guard + '\n\n' + prompt
+    }];
+    
+    // Use the same OpenAI API call logic as the main endpoint
+    const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: messages,
+        max_tokens: 4000,
+        temperature: 0.7
+    });
+    
+    return response.choices[0].message.content;
+}
+
+// ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Format resume for display (exact copy from background.js)
+async function formatResumeForDisplay(resumeText) {
+    const formattingPrompt = `Please format this resume text to make it clear and professional. Preserve ALL content exactly as provided. Use ## for sections, **bold** for company names and job titles only, and • for bullet points. Return ONLY the formatted text.
+
+RESUME TEXT:
+${resumeText}`;
+    
+    const formattedResume = await callOpenAIDirect(formattingPrompt);
+    return `\`\`\`
+${formattedResume}
+\`\`\`
+
+*This is your stored resume text, intelligently formatted for clarity. To tailor it for a specific job, highlight a job description and ask me to tailor your resume.*`;
 }
 
 // Build detailed analysis prompt (exact copy from background.js)
