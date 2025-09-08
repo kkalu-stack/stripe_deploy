@@ -4170,7 +4170,120 @@ function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, chatHis
     });
   }
   
-  return "Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED cover letter for this specific job. This cover letter must be fine-tuned to maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.${conversationContext}\n\nCRITICAL ATS OPTIMIZATION REQUIREMENTS:\n- EVERY paragraph must contain keywords from the job description\n- EVERY skill mentioned in the job description must be referenced\n- EVERY requirement must be addressed through experience examples\n- Use EXACT terminology from the job description throughout\n- Match the job title and role requirements precisely\n- Include ALL technical skills, tools, and technologies mentioned in the job posting\n- Optimize for ATS keyword matching while maintaining readability for humans\n\nUSER'S RESUME:\n".concat(resumeText, "\n\nFULL JOB DESCRIPTION:\n").concat(fullJobDescription, "\n\nUSER PREFERENCES:\nFull Name: ").concat(userFullName, "\nEmail: ").concat(userEmail, "\nCurrent Date: ").concat(currentDate, "\nPreferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\nLanguage: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n\n       CRITICAL INSTRUCTIONS:\n       - Write in first person (as the applicant)\n       - Output the full cover letter only (no tips, advice, or meta commentary)\n       - Use the user's ACTUAL experience and skills from their RESUME TEXT above - DO NOT make up generic experience\n       - Reference the user's REAL companies, job titles, and achievements from their RESUME TEXT\n       - Tailor the content specifically to the job description provided\n       - Include specific examples from the user's ACTUAL work experience (use real company names, not \"Company A\")\n       - Include specific examples from at least 2-3 different jobs in the user's past experience. Do not rely only on the most recent job. Show career progression and diverse experience across multiple roles and companies.\n       - Use the current date (today's date) automatically - do not use [Date] placeholder\n\nEXPERIENCE ALIGNMENT REQUIREMENTS:\n- STAY WITHIN the user's actual experience and background from their resume\n- Do NOT overextend into fields or industries the user has no experience in\n- Do NOT claim expertise in areas not supported by the user's resume\n- Use only the companies, job titles, and achievements listed in the user's resume\n- Focus on transferable skills from the user's actual work history\n- Do NOT add experience in fields, technologies, or industries the user has never worked in\n- Maintain honesty and accuracy based on the user's actual background\n       - WRITE THE ENTIRE COVER LETTER IN THE USER'S PREFERRED LANGUAGE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n       - If language is French, write in French; if Spanish, write in Spanish; if German, write in German\n       - Adapt cover letter formatting and business conventions to the target language\n       - MATCH THE USER'S PREFERRED TONE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n       - If tone is \"professional\": Use formal, business-like language\n       - If tone is \"casual\": Use friendly, conversational language\n       - If tone is \"enthusiastic\": Use energetic, positive language\n       - If tone is \"confident\": Use assertive, self-assured language\n       - If tone is \"friendly\": Use warm, approachable language\n       - ADAPT TO USER'S EDUCATION LEVEL: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n       - Adjust vocabulary complexity and technical depth based on education level\n       - Use appropriate language sophistication for the user's background\n       - Do not include any placeholder text like [Recipient's Name], [Company Name], or [Company Address]\n       \n       COMPANY NAME REQUIREMENTS:\n       - Use the ACTUAL company names from the user's resume/profile\n       - DO NOT use generic placeholders like [First Company Name], [Second Company Name], [Company A], etc.\n       - Extract and use the real company names from the user's work experience\n       - If company names are not available, use professional placeholders like [Your Previous Company] or [Your Previous Role]\n       - If the job involves AI chatbot training, math-based reasoning, or logic evaluation, the cover letter must clearly highlight the user's capabilities in those areas. Do not assume the reader will infer this — spell it out using examples from the user's past roles.\n       - ALWAYS include the user's full name and email at the top of the cover letter\n       - Use the exact format: ").concat(userFullName, " on first line, ").concat(userEmail, " on second line, ").concat(currentDate, " on third line\n       - Use the current date (").concat(currentDate, ") - do not use any other date\n       - Use the user's full name (").concat(userFullName, ") - do not use display name or nickname\n       \n       ATS OPTIMIZATION STRATEGY:\n       - EXTRACT every keyword, skill, and requirement from the job description\n       - INCORPORATE every extracted keyword into the cover letter naturally\n       - MATCH the exact job title and role requirements\n       - INCLUDE every technical skill, tool, and technology mentioned\n       - USE the same terminology and phrasing as the job posting\n       - ENSURE every paragraph contains relevant keywords\n       - OPTIMIZE the opening to include key job requirements\n       - ADD specific examples that demonstrate job requirements\n       - CREATE content that directly addresses job requirements\n       - MAXIMIZE keyword density while maintaining readability\n       \n       COVER LETTER CONTENT REQUIREMENTS:\n       - Use the user's ACTUAL companies from their resume (Amgen, Bayer, Ford, etc.) - DO NOT use generic \"Company A, B, C\"\n       - Reference the user's REAL job titles and roles from their resume\n       - Use the user's ACTUAL achievements and responsibilities from their resume\n       - DO NOT create generic or fictional experience - only use what's in the user's profile\n       - If the user's resume shows pharmaceutical experience, reference that specifically\n       - If the user's resume shows automotive experience, reference that specifically\n       - Use the user's REAL skills and technologies from their resume\n       - Make the cover letter personal and specific to the user's actual background\n       \n       JOB TITLE OPTIMIZATION IN COVER LETTER:\n       - CONSIDER suggesting optimized job titles that better match the target role\n       - RECOMMEND title changes that include relevant keywords from the job description\n       - PROPOSE titles that highlight the most relevant aspects of the user's experience\n       - ENSURE suggested titles are honest and accurately reflect the work performed\n       - OPTIMIZE for ATS keyword matching while maintaining credibility\n       - BALANCE keyword optimization with professional accuracy\n       \n       KEYWORD INTEGRATION REQUIREMENTS:\n       - EXTRACT every technical skill, tool, and technology from the job description\n       - EXTRACT every soft skill and competency mentioned in the job posting\n       - EXTRACT every responsibility and duty listed in the job requirements\n       - EXTRACT every qualification and requirement mentioned\n       - INCORPORATE every extracted keyword naturally into paragraphs\n       - USE the exact same terminology as the job description\n       - MATCH the job title and role requirements precisely\n       - INCLUDE every skill mentioned in the job posting in examples\n       - CREATE examples that directly demonstrate each requirement\n       - ENSURE maximum keyword alignment for ATS optimization\n       \n       NAME AND EMAIL REQUIREMENTS:\n       - You MUST use the exact full name: ").concat(userFullName, "\n       - You MUST use the exact email: ").concat(userEmail, "\n       - Do NOT use any display name, nickname, or alternative name\n       - Do NOT use placeholder emails like \"user@email.com\"\n       - The name and email at the top must match exactly what is provided above\n\nCOVER LETTER FORMATTING REQUIREMENTS:\n- Use proper business letter format with current date, salutation, and signature\n- Start with a strong opening that states the position and shows enthusiasm\n- Body paragraphs should link user's experience to job requirements\n- Use specific examples and achievements from the user's background\n- Maintain professional yet enthusiastic tone\n- Include a clear call to action and proper closing\n- Use the user's display name in the signature\n- Use proper paragraph breaks (double line breaks between paragraphs)\n- Format with clear structure: Current Date, Salutation, Body (2-3 paragraphs), Closing, Signature\n- DO NOT include placeholder text like [Recipient's Name], [Company Name], or [Company Address]\n- Use the current date automatically - do not use [Date] placeholder\n\nCOVER LETTER STRUCTURE (MUST FOLLOW):\n").concat(userFullName, "\n").concat(userEmail, "\n").concat(currentDate, "\n\nCRITICAL: The above three lines MUST appear exactly as shown above. Do NOT change ").concat(userFullName, " to any other name. Do NOT change ").concat(userEmail, " to any other email. Do NOT change ").concat(currentDate, " to any other date.\n\nDear Hiring Manager,\n\n[Opening paragraph with position and enthusiasm]\n\n[Body paragraph 1 - experience from user's ACTUAL first company (use real company name, not \"Company A\")]\n\n[Body paragraph 2 - experience from user's ACTUAL second company (use real company name, not \"Company B\")]\n\n[Body paragraph 3 - experience from user's ACTUAL third company (use real company name, not \"Company C\")]\n\n[Closing paragraph with call to action]\n\n       Sincerely,\n       ").concat(userFullName, "\n       \n       FINAL NAME CHECK:\n       - The signature must use: ").concat(userFullName, "\n       - Do NOT use any display name or nickname in the signature\n       - Do NOT use \"[Your Full Name]\" - use the exact name: ").concat(userFullName, "\n       - Do NOT use \"[Your Email]\" - use the exact email: ").concat(userEmail, "\n\nPlease create a compelling cover letter that:\n1. Addresses the specific job requirements from the job description\n2. Shows genuine interest in the company and role\n3. Highlights relevant skills and experience from the user's ACTUAL profile (use real companies, job titles, achievements)\n4. Explains why the user is a good fit using specific examples from their REAL work experience\n5. Maintains a professional yet enthusiastic tone\n6. Is personalized to the specific company and position\n7. Includes a clear call to action\n8. Uses the user's ACTUAL companies from their resume (Amgen, Bayer, Ford, etc.) - DO NOT use generic \"Company A, B, C\"\n9. References the user's REAL job titles and achievements from their resume\n10. Makes the cover letter personal and specific to the user's actual background\n11. Incorporates EVERY keyword from the job description naturally\n12. Demonstrates EVERY skill requirement through specific examples\n13. Addresses EVERY responsibility mentioned in the job posting\n14. Uses EXACT terminology from the job description\n15. Optimizes for ATS keyword matching while maintaining readability\n\nFormat as a professional business letter with proper salutation and closing.\n\nFINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:\n- Every keyword from the job description appears in the cover letter\n- Every skill requirement is demonstrated through examples\n- Every responsibility is addressed in the content\n- Job title and role requirements are precisely matched\n- Technical skills and tools are prominently featured\n- Opening paragraph includes key job requirements and keywords\n- Body paragraphs contain relevant keywords naturally\n- Cover letter is optimized for both ATS systems and human readers\n- Maximum keyword density while maintaining readability\n- 99% alignment with job description requirements");
+  return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED cover letter for this specific job. 
+This cover letter must maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.
+${conversationContext}
+
+CRITICAL ATS OPTIMIZATION REQUIREMENTS:
+- EVERY paragraph must contain keywords from the job description.
+- EVERY skill mentioned in the job description must be referenced.
+- EVERY requirement must be addressed through concrete experience examples.
+- Use EXACT terminology from the job description throughout.
+- Match the job title and role requirements precisely.
+- Include ALL technical skills, tools, and technologies mentioned in the job posting.
+- Optimize for ATS keyword matching while maintaining human readability.
+
+USER'S RESUME:
+${resumeText}
+
+FULL JOB DESCRIPTION:
+${fullJobDescription}
+
+USER PREFERENCES:
+Full Name: ${userFullName}
+Email: ${userEmail}
+Current Date: ${currentDate}
+Preferred Tone: ${(userProfile?.preferredTone) || 'professional'}
+Language: ${(userProfile?.language) || 'english'}
+
+CRITICAL INSTRUCTIONS:
+- Write in first person (as the applicant).
+- Output the full cover letter only (no meta notes or commentary).
+- Use the user’s ACTUAL experience, companies, job titles, and achievements from the resume text. Do NOT invent or fabricate.
+- Tailor content specifically to the provided job description.
+- Include examples from at least 2–3 different roles to show progression and breadth.
+- Use today’s date automatically (not a placeholder).
+- Maintain honesty and accuracy based on the real background.
+
+EXPERIENCE ALIGNMENT:
+- Stay within the user’s actual work history.
+- Do not add expertise not supported by the resume.
+- Highlight transferable skills truthfully.
+- Adapt vocabulary to user’s education level and preferred tone.
+- Do not include placeholder text like [Recipient’s Name].
+
+COMPANY NAME REQUIREMENTS:
+- Use real company names (Amgen, Bayer, Ford, Brightly, etc.).
+- Never use placeholders like [Company A].
+- If company names are missing, fallback to professional placeholders (e.g., “Your Previous Company”).
+- Always include the user’s full name and email at the top in this exact format:
+  ${userFullName}
+  ${userEmail}
+  ${currentDate}
+
+ATS OPTIMIZATION STRATEGY:
+- Extract every keyword, skill, responsibility, and qualification from the JD.
+- Incorporate each keyword naturally into the cover letter.
+- Mirror job description phrasing for duties and tools (SQL, Excel, Azure, Power BI, JIRA, healthcare claims, etc.).
+- Ensure maximum keyword alignment without awkward stuffing.
+- Quantify achievements with numbers/percentages where possible.
+
+COVER LETTER STRUCTURE (MUST FOLLOW):
+${userFullName}
+${userEmail}
+${currentDate}
+
+Dear Hiring Manager,
+
+[Opening paragraph: state the position and show enthusiasm]
+
+[Body paragraph 1 - experience from user's ACTUAL first company (use real company name, not "Company A")]
+
+[Body paragraph 2 - experience from user's ACTUAL second company (use real company name, not "Company B")]
+
+[Body paragraph 3 - experience from user's ACTUAL third company (use real company name, not "Company C")]
+
+[Closing paragraph with call to action]
+
+Sincerely,
+${userFullName}
+
+FINAL NAME CHECK:
+- The signature must use: ${userFullName}
+- Do NOT use any display name or nickname in the signature
+- Do NOT use "[Your Full Name]" - use the exact name: ${userFullName}
+- Do NOT use "[Your Email]" - use the exact email: ${userEmail}
+
+Please create a compelling cover letter that:
+1. Addresses the specific job requirements from the job description
+2. Shows genuine interest in the company and role
+3. Highlights relevant skills and experience from the user's ACTUAL profile (use real companies, job titles, achievements)
+4. Explains why the user is a good fit using specific examples from their REAL work experience
+5. Maintains a professional yet enthusiastic tone
+6. Is personalized to the specific company and position
+7. Includes a clear call to action
+8. Uses the user's ACTUAL companies from their resume (Amgen, Bayer, Ford, etc.) - DO NOT use generic "Company A, B, C"
+9. References the user's REAL job titles and achievements from their resume
+10. Makes the cover letter personal and specific to the user's actual background
+11. Incorporates EVERY keyword from the job description naturally
+12. Demonstrates EVERY skill requirement through specific examples
+13. Addresses EVERY responsibility mentioned in the job posting
+14. Uses EXACT terminology from the job description
+15. Optimizes for ATS keyword matching while maintaining readability
+
+Format as a professional business letter with proper salutation and closing.
+
+FINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:
+- Every keyword from the job description appears in the cover letter
+- Every skill requirement is demonstrated through examples
+- Every responsibility is addressed in the content
+- Job title and role requirements are precisely matched
+- Technical skills and tools are prominently featured
+- Opening paragraph includes key job requirements and keywords
+- Body paragraphs contain relevant keywords naturally
+- Cover letter is optimized for both ATS systems and human readers
+- Maximum keyword density while maintaining readability
+- 99% alignment with job description requirements`;
 }
 
 // Build resume prompt (exact copy from background.js)
