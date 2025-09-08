@@ -3207,6 +3207,19 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             });
         }
         
+        // Check for pending action markers in the response
+        const pendingActionMatch = responseContent.match(/<!-- PENDING_ACTION:(\w+) -->/);
+        if (pendingActionMatch) {
+            const actionType = pendingActionMatch[1];
+            console.log('🎯 [PENDING ACTION] Detected pending action marker:', actionType);
+            
+            // Remove the marker from the response content
+            responseContent = responseContent.replace(/<!-- PENDING_ACTION:\w+ -->/g, '').trim();
+            
+            // Add pending action info to response
+            responseContent += `\n\n<!-- PENDING_ACTION_SET:${actionType} -->`;
+        }
+        
         // Strip decision tags from response before sending to client
         const parsedResponse = parseAIDecision(responseContent);
         console.log('🔍 [DEBUG] Parsed response:', {
@@ -3819,6 +3832,8 @@ Provide Detailed Analysis & Advice: Share the results of your analysis in a stru
 Encourage & Clarify: Encourage the user about their prospects and invite them to ask questions or clarify their goals. For example, if something in the job description isn't clear, you might ask, "Do you have experience in X? If so, we should highlight it because this job calls for it." This makes the interaction collaborative.
 
 Offer Tailoring/Growth Assistance: After giving initial advice, always offer to help with the next step. E.g., "Would you like me to help you update your resume for this job or perhaps draft a cover letter highlighting your fit?" Many users will not know this is possible until you suggest it. Make the offer clear and welcoming.
+
+CRITICAL: When you make an offer that requires user confirmation (like "Would you like me to create a tailored resume?"), you MUST include a special marker in your response to set up the system to handle "yes" responses. Add this exact text at the end of your offer: "<!-- PENDING_ACTION:resume -->" This tells the system to expect a yes/no response for resume generation.
 
 On User's Go-Ahead → Generate Documents: If the user says "yes" or otherwise confirms they want a tailored resume or cover letter:
 
