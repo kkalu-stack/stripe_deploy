@@ -2982,6 +2982,19 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             mode
         } = req.body;
         
+        console.log('🔍 [API/GENERATE] Extracted parameters:', {
+            hasModel: !!model,
+            hasMessages: !!messages,
+            hasMessage: !!message,
+            hasUserProfile: !!userProfile,
+            hasJobContext: !!jobContext,
+            hasChatHistory: !!chatHistory,
+            toggleState: toggleState,
+            mode: mode,
+            isRegenerate: isRegenerate,
+            messagePreview: message ? message.substring(0, 100) : 'No message'
+        });
+        
         // ✅ RESTORE ORIGINAL SINGLE-CALL ARCHITECTURE
         let finalMessages = messages;
         
@@ -3100,7 +3113,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         console.log('🔍 [DEBUG] Making OpenAI API call with:', {
             model,
             messagesCount: finalMessages ? finalMessages.length : 0,
-            maxTokens: max_tokens || 3000,
+            maxTokens: max_tokens || 6000,
             temperature: temperature || 0.7,
             hasApiKey: !!apiKey
         });
@@ -3115,7 +3128,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             body: JSON.stringify({
                 model: model,
                 messages: finalMessages,
-                max_tokens: max_tokens || 3000,
+                max_tokens: max_tokens || 6000,
                 temperature: temperature || 0.7
             })
         });
@@ -3947,19 +3960,15 @@ function buildUserPromptServerSide(message, userProfile, jobContext, chatHistory
     const isProfileToggleOff = toggleState === 'off';
     const isProfileEnabled = !isProfileToggleOff;
     
-    // Build conversation context with smart truncation to prevent token limit exceeded
+    // Build conversation context with full history
     let conversationContext = '';
     if (chatHistory && Array.isArray(chatHistory) && chatHistory.length > 0) {
-        // ✅ CRITICAL FIX: Limit conversation history to prevent token limit exceeded
-        // Keep only the last 6 messages (3 turns) to ensure we stay under token limits
-        const truncatedHistory = chatHistory.slice(-6);
-        conversationContext = '\n\nCONVERSATION HISTORY:\n' + truncatedHistory.map(msg => 
+        conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(msg => 
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content || ''}`
         ).join('\n');
         
-        console.log('📊 [TOKEN MANAGEMENT] Conversation history truncated:', {
-            originalLength: chatHistory.length,
-            truncatedLength: truncatedHistory.length,
+        console.log('📊 [TOKEN MANAGEMENT] Full conversation history included:', {
+            chatHistoryLength: chatHistory.length,
             conversationContextLength: conversationContext.length
         });
     }
@@ -4151,15 +4160,12 @@ function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, chatHis
   // Build conversation context from chat history
   var conversationContext = '';
   if (chatHistory && chatHistory.length > 0) {
-    // Keep only the last 6 messages (3 turns) to ensure we stay under token limits
-    var truncatedHistory = chatHistory.slice(-6);
-    conversationContext = '\n\nCONVERSATION HISTORY:\n' + truncatedHistory.map(function(msg) {
+    conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(function(msg) {
       return "".concat(msg.role === 'user' ? 'User' : 'Assistant', ": ").concat(msg.content);
     }).join('\n');
     
-    console.log('🔍 [BUILD COVER LETTER PROMPT] Conversation history included:', {
+    console.log('🔍 [BUILD COVER LETTER PROMPT] Full conversation history included:', {
       chatHistoryLength: chatHistory.length,
-      truncatedLength: truncatedHistory.length,
       conversationContextLength: conversationContext.length
     });
   }
@@ -4234,15 +4240,12 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
   // Build conversation context from chat history
   var conversationContext = '';
   if (chatHistory && chatHistory.length > 0) {
-    // Keep only the last 6 messages (3 turns) to ensure we stay under token limits
-    var truncatedHistory = chatHistory.slice(-6);
-    conversationContext = '\n\nCONVERSATION HISTORY:\n' + truncatedHistory.map(function(msg) {
+    conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(function(msg) {
       return "".concat(msg.role === 'user' ? 'User' : 'Assistant', ": ").concat(msg.content);
     }).join('\n');
     
-    console.log('🔍 [BUILD RESUME PROMPT] Conversation history included:', {
+    console.log('🔍 [BUILD RESUME PROMPT] Full conversation history included:', {
       chatHistoryLength: chatHistory.length,
-      truncatedLength: truncatedHistory.length,
       conversationContextLength: conversationContext.length
     });
   }
