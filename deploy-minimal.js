@@ -3960,7 +3960,8 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     
     // Get conversation context from server-side chat history management
     const resumeText = isProfileEnabled ? userProfile?.resumeText : null;
-    const chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
+    const jobDescription = jobContext?.jobDescription || null;
+    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
     const conversationContext = chatHistoryData.conversationContext;
     
     console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
@@ -4051,7 +4052,8 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
 
   // Get conversation context from server-side chat history management
   var resumeText = isProfileEnabled ? userProfile?.resumeText : null;
-  var chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
+  var jobDescription = jobContext?.jobDescription || null;
+  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
   var conversationContext = chatHistoryData.conversationContext;
   
   // ✅ DEBUG: Log server-side conversation context
@@ -4148,7 +4150,8 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, s
   
   // Get conversation context from server-side chat history management
   var resumeText = userProfile?.resumeText;
-  var chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
+  var jobDescription = jobContext?.jobDescription || null;
+  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
@@ -4339,7 +4342,8 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
   });
   // Get conversation context from server-side chat history management
   var resumeText = userProfile?.resumeText;
-  var chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
+  var jobDescription = jobContext?.jobDescription || null;
+  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
@@ -4453,7 +4457,8 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     
     // Get conversation context from server-side chat history management
     const resumeText = !isProfileToggleOff ? userProfile?.resumeText : null;
-    const chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
+    const jobDescription = jobContext?.jobDescription || null;
+    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
     const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
@@ -4651,7 +4656,7 @@ Provide **comprehensive, step-by-step analysis** with the following sections (in
     - **Overall Fit Assessment:** Provide a clear overall assessment of how well the resume currently matches the job, expressed in the format “X/10 match” (e.g., “Overall, your resume is a strong 8/10 match for this role”). This score must be based on the full analysis of the resume and job description — never arbitrary.
     - **ATS Compatibility Score:** Provide an ATS Compatibility Score on a 0–100% scale. Break down this score briefly into keyword coverage, job title alignment, education match, format compatibility, and domain relevance. Ensure the percentages are logical and tied back to the earlier analysis.
     - **Top 3 Improvement Actions:** List the three most impactful changes the candidate should make next (e.g., “1. Add Python to Skills – it’s required in the job description but missing from your resume. 2. Revise your last job’s bullets to include project management keywords and quantify results…”). Keep this section actionable and precise.
-    - End with an uplifting note that boosts the candidate’s confidence. Make it motivational and supportive, reinforcing that they are close to securing their target role. Conclude with a friendly, proactive question that invites them to continue (e.g., “Would you like me to create a tailored cover letter that pairs perfectly with this resume to maximize your chances?”).
+    - End with an uplifting note that boosts the candidate’s confidence. Make it motivational and supportive, reinforcing that they are close to securing their target role. Conclude with a friendly, proactive question that invites them to continue (e.g., “Would you like me to create a tailored cover letter or tailored resume that pairs perfectly with this resume to maximize your chances?”).
 
 FORMAT & STYLE REMINDERS:
 - **Structure:** Use the exact section headers as outlined above (including the colon at the end of each). Do not deviate from this section order or naming. Ensure each section is clearly separated and formatted for easy reading (you can use line breaks, indentation, and bullet points as indicated).
