@@ -3113,7 +3113,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         console.log('🔍 [DEBUG] Making OpenAI API call with:', {
             model,
             messagesCount: finalMessages ? finalMessages.length : 0,
-            maxTokens: max_tokens || 6000,
+            maxTokens: max_tokens || 3500,
             temperature: temperature || 0.7,
             hasApiKey: !!apiKey
         });
@@ -3128,7 +3128,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             body: JSON.stringify({
                 model: model,
                 messages: finalMessages,
-                max_tokens: max_tokens || 6000,
+                max_tokens: max_tokens || 3500,
                 temperature: temperature || 0.7
             })
         });
@@ -3901,10 +3901,8 @@ Language: ${profile.language || 'english'}
 Education Level: ${profile.educationLevel || 'not specified'}
     `.trim();
     
-    if (includeRaw && profile.resumeText) {
-        const formattedResumeText = formatResumeText(profile.resumeText);
-        profileText += `\n\nFULL RESUME TEXT:\n${formattedResumeText}`;
-    }
+    // Resume text is now managed by the conversation history system
+    // No need to include it here as it will be added to conversation context when needed
     
     return profileText;
 }
@@ -3961,7 +3959,8 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     const isProfileEnabled = !isProfileToggleOff;
     
     // Get conversation context from server-side chat history management
-    const chatHistoryData = await manageChatHistory(sessionId);
+    const resumeText = isProfileEnabled ? userProfile?.resumeText : null;
+    const chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
     const conversationContext = chatHistoryData.conversationContext;
     
     console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
@@ -4051,7 +4050,8 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
   var isProfileEnabled = !isProfileToggleOff;
 
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var resumeText = isProfileEnabled ? userProfile?.resumeText : null;
+  var chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
   var conversationContext = chatHistoryData.conversationContext;
   
   // ✅ DEBUG: Log server-side conversation context
@@ -4147,7 +4147,8 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, s
   });
   
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var resumeText = userProfile?.resumeText;
+  var chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
@@ -4337,7 +4338,8 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
     detectedCareerLevel: careerLevel
   });
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var resumeText = userProfile?.resumeText;
+  var chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
@@ -4450,7 +4452,8 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     const contextText = formatJobContext(jobContext);
     
     // Get conversation context from server-side chat history management
-    const chatHistoryData = await manageChatHistory(sessionId);
+    const resumeText = !isProfileToggleOff ? userProfile?.resumeText : null;
+    const chatHistoryData = await manageChatHistory(sessionId, [], null, resumeText);
     const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
@@ -4691,7 +4694,7 @@ const CHAT_CONFIG = {
  * @param {string} jobDescription - Job description to preserve (optional)
  * @returns {Object} { summary, recentMessages, totalMessages, conversationContext }
  */
-async function manageChatHistory(sessionId, newMessages = [], jobDescription = null) {
+async function manageChatHistory(sessionId, newMessages = [], jobDescription = null, resumeText = null) {
     // Initialize session if it doesn't exist
     if (!chatSessions.has(sessionId)) {
         chatSessions.set(sessionId, {
@@ -4699,6 +4702,7 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
             messages: [],
             summary: null,
             jobDescription: jobDescription,
+            resumeText: null, // Store resume text in session
             lastActivity: new Date().toISOString(),
             createdAt: new Date().toISOString()
         });
@@ -4706,9 +4710,30 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
     
     const session = chatSessions.get(sessionId);
     
-    // Update job description if provided
+    // Update job description if provided - RESET CONVERSATION for new job
     if (jobDescription) {
+        // Check if this is a new job description (different from current one)
+        if (session.jobDescription && session.jobDescription !== jobDescription) {
+            console.log('🔄 [JOB RESET] New job description detected, resetting conversation history');
+            // Reset conversation history for new job
+            session.messages = [];
+            session.summary = null;
+            session.lastActivity = new Date().toISOString();
+        }
         session.jobDescription = jobDescription;
+    }
+    
+    // Update resume text if provided - RESET CONVERSATION for new resume
+    if (resumeText) {
+        // Check if this is a new resume (different from current one)
+        if (session.resumeText && session.resumeText !== resumeText) {
+            console.log('🔄 [RESUME RESET] New resume detected, resetting conversation history');
+            // Reset conversation history for new resume
+            session.messages = [];
+            session.summary = null;
+            session.lastActivity = new Date().toISOString();
+        }
+        session.resumeText = resumeText;
     }
     
     // Add new messages if provided
@@ -4738,17 +4763,24 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
         recentMessages = session.messages.slice(-CHAT_CONFIG.MAX_RECENT_MESSAGES);
     }
     
-    // Build conversation context
+    // Build conversation context - prioritize summary over full job description
     let conversationContext = '';
     
-    // Add job description if available
-    if (session.jobDescription) {
+    // Add summary if available (this should contain the essential context)
+    if (session.summary) {
+        conversationContext += `\n\nCONVERSATION SUMMARY:\n${session.summary}`;
+    }
+    
+    // Only add job description if we don't have a summary (first few messages)
+    // or if the job description is relatively short
+    if (session.jobDescription && (!session.summary || session.jobDescription.length < 2000)) {
         conversationContext += `\n\nJOB DESCRIPTION:\n${session.jobDescription}`;
     }
     
-    // Add summary if available
-    if (session.summary) {
-        conversationContext += `\n\nCONVERSATION SUMMARY:\n${session.summary}`;
+    // Only add resume text if we don't have a summary (first few messages)
+    // or if the resume is relatively short
+    if (session.resumeText && (!session.summary || session.resumeText.length < 2000)) {
+        conversationContext += `\n\nUSER RESUME:\n${session.resumeText}`;
     }
     
     // Add recent messages
@@ -4763,7 +4795,8 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
         recentMessages,
         totalMessages,
         conversationContext,
-        jobDescription: session.jobDescription
+        jobDescription: session.jobDescription,
+        resumeText: session.resumeText
     };
 }
 
