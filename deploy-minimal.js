@@ -63,7 +63,7 @@ function authenticateSession(req, res, next) {
     next();
 }
 
-// OpenAI API Key Rotation System (10 keys)
+// OpenAI API Key Rotation System (10 keys + fallback to single key)
 const openaiApiKeys = [
     process.env.OPENAI_API_KEY_1,
     process.env.OPENAI_API_KEY_2,
@@ -77,15 +77,30 @@ const openaiApiKeys = [
     process.env.OPENAI_API_KEY_10
 ].filter(key => key && key.trim() !== ''); // Filter out empty keys
 
-console.log(`🔑 Loaded ${openaiApiKeys.length} OpenAI API keys`);
+// Fallback to single API key if no rotation keys are found
+if (openaiApiKeys.length === 0 && process.env.OPENAI_API_KEY) {
+    openaiApiKeys.push(process.env.OPENAI_API_KEY);
+    console.log('🔑 Using fallback single API key');
+}
 
-// Key rotation system
+console.log(`🔑 Loaded ${openaiApiKeys.length} OpenAI API keys`);
+if (openaiApiKeys.length === 0) {
+    console.error('❌ CRITICAL: No OpenAI API keys found! Please set either:');
+    console.error('❌ - OPENAI_API_KEY_1 through OPENAI_API_KEY_10 for rotation system, OR');
+    console.error('❌ - OPENAI_API_KEY for single key fallback');
+    console.error('❌ Available environment variables:', Object.keys(process.env).filter(key => key.includes('OPENAI')));
+}
+
+// Key rotation system - Initialize AFTER all keys are loaded
 let currentKeyIndex = 0;
 let keyUsageCount = new Array(openaiApiKeys.length).fill(0);
+console.log(`🔑 Initialized keyUsageCount array with ${keyUsageCount.length} slots`);
 
 function getNextApiKey() {
     if (openaiApiKeys.length === 0) {
         console.error('❌ No OpenAI API keys configured');
+        console.error('❌ Please set either OPENAI_API_KEY_1 through OPENAI_API_KEY_10 OR OPENAI_API_KEY');
+        console.error('❌ Current environment variables with OPENAI:', Object.keys(process.env).filter(key => key.includes('OPENAI')));
         return null;
     }
     
@@ -104,7 +119,8 @@ function getNextApiKey() {
     // Increment usage count
     keyUsageCount[currentKeyIndex]++;
     
-    console.log(`🔑 Using API key ${currentKeyIndex + 1} (usage: ${keyUsageCount[currentKeyIndex]})`);
+    console.log(`🔑 [ROTATION] Using API key ${currentKeyIndex + 1} (usage: ${keyUsageCount[currentKeyIndex]})`);
+    console.log(`🔑 [ROTATION] Key preview: ${openaiApiKeys[currentKeyIndex].substring(0, 8)}...`);
     return openaiApiKeys[currentKeyIndex];
 }
 
@@ -542,6 +558,94 @@ app.post('/api/auth/logout', (req, res) => {
 // Simple test endpoint
 app.get('/api/simple-test', (req, res) => {
     res.json({ message: 'Simple test endpoint working!' });
+});
+
+// API Key status endpoint
+app.get('/api/api-key-status', (req, res) => {
+    const keyCount = openaiApiKeys.length;
+    const hasKeys = keyCount > 0;
+    const keyStatus = openaiApiKeys.map((key, index) => ({
+        index: index + 1,
+        hasKey: !!key,
+        keyLength: key ? key.length : 0,
+        keyPrefix: key ? key.substring(0, 8) + '...' : 'none'
+    }));
+    
+    res.json({
+        hasApiKeys: hasKeys,
+        keyCount: keyCount,
+        keyStatus: keyStatus,
+        environment: process.env.NODE_ENV || 'production',
+        hasFallbackKey: !!process.env.OPENAI_API_KEY,
+        supabaseUrl: SUPABASE_URL,
+        supabaseUrlPrefix: SUPABASE_URL ? SUPABASE_URL.substring(0, 30) + '...' : 'undefined',
+        message: hasKeys ? 'API keys are configured' : 'No API keys found - please set OPENAI_API_KEY_1 through OPENAI_API_KEY_10 OR OPENAI_API_KEY'
+    });
+});
+
+// Test OpenAI API endpoint (no authentication required for testing)
+app.post('/api/test-openai', async (req, res) => {
+    try {
+        console.log('🧪 [TEST] Testing OpenAI API connection...');
+        
+        const apiKey = getNextApiKey();
+        if (!apiKey) {
+            return res.status(500).json({
+                success: false,
+                error: 'No API keys available',
+                message: 'Please set OPENAI_API_KEY environment variable'
+            });
+        }
+        
+        console.log('🧪 [TEST] API key obtained, making test call...');
+        
+        const testResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo',
+                messages: [
+                    { role: 'user', content: 'Say "Hello, API test successful!"' }
+                ],
+                max_tokens: 50,
+                temperature: 0.7
+            })
+        });
+        
+        console.log('🧪 [TEST] OpenAI response status:', testResponse.status);
+        
+        if (!testResponse.ok) {
+            const errorData = await testResponse.text();
+            console.error('🧪 [TEST] OpenAI API error:', errorData);
+            return res.status(500).json({
+                success: false,
+                error: 'OpenAI API error',
+                status: testResponse.status,
+                details: errorData
+            });
+        }
+        
+        const data = await testResponse.json();
+        console.log('🧪 [TEST] OpenAI API success:', data);
+        
+        res.json({
+            success: true,
+            message: 'OpenAI API test successful',
+            response: data.choices[0].message.content,
+            usage: data.usage
+        });
+        
+    } catch (error) {
+        console.error('🧪 [TEST] Test error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Test failed',
+            message: error.message
+        });
+    }
 });
 
 // Test Supabase connection
@@ -1890,7 +1994,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             
             user = await userResponse.json();
             fullName = user.user_metadata?.full_name || 'Not provided';
-            displayName = user.user_metadata?.display_name || fullName || 'User';
+            // Only use display_name from metadata, don't fall back to fullName (which might be email prefix)
+            displayName = user.user_metadata?.display_name || 'User';
             
             // Debug: Log resume data availability
             const resumeText = user.user_metadata?.resume_text || '';
@@ -2877,6 +2982,19 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             mode
         } = req.body;
         
+        console.log('🔍 [API/GENERATE] Extracted parameters:', {
+            hasModel: !!model,
+            hasMessages: !!messages,
+            hasMessage: !!message,
+            hasUserProfile: !!userProfile,
+            hasJobContext: !!jobContext,
+            hasChatHistory: !!chatHistory,
+            toggleState: toggleState,
+            mode: mode,
+            isRegenerate: isRegenerate,
+            messagePreview: message ? message.substring(0, 100) : 'No message'
+        });
+        
         // ✅ RESTORE ORIGINAL SINGLE-CALL ARCHITECTURE
         let finalMessages = messages;
         
@@ -2898,13 +3016,20 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
                 } else if (mode === 'generate') {
                     // For generate mode, determine what to generate based on message content
+                    console.log('🔍 [GENERATE MODE] Job context check:', {
+                        hasJobContext: !!jobContext,
+                        hasJobDescription: !!(jobContext && jobContext.jobDescription),
+                        jobDescriptionLength: jobContext && jobContext.jobDescription ? jobContext.jobDescription.length : 0,
+                        messagePreview: message.substring(0, 100)
+                    });
+                    
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
-                        prompt = buildResumePrompt(message, userProfile, jobContext, userProfile.resumeText, message);
+                        prompt = buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, chatHistory, message);
                     } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
-                        prompt = buildCoverLetterPrompt(message, userProfile, jobContext);
+                        prompt = buildCoverLetterPrompt(jobContext?.jobDescription || '', userProfile, jobContext, chatHistory);
                     } else {
                         // Default to resume generation
-                        prompt = buildResumePrompt(message, userProfile, jobContext, userProfile.resumeText, message);
+                        prompt = buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, chatHistory, message);
                     }
                 } else {
                     // Default to natural conversation
@@ -2982,12 +3107,13 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             });
         }
         console.log('✅ [DEBUG] API key obtained successfully');
+        console.log(`🔑 [DEBUG] Using key: ${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}`);
         
         // Call OpenAI API with rotated key
         console.log('🔍 [DEBUG] Making OpenAI API call with:', {
             model,
             messagesCount: finalMessages ? finalMessages.length : 0,
-            maxTokens: max_tokens || 3000,
+            maxTokens: max_tokens || 3500,
             temperature: temperature || 0.7,
             hasApiKey: !!apiKey
         });
@@ -3002,7 +3128,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             body: JSON.stringify({
                 model: model,
                 messages: finalMessages,
-                max_tokens: max_tokens || 3000,
+                max_tokens: max_tokens || 3500,
                 temperature: temperature || 0.7
             })
         });
@@ -3059,6 +3185,11 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         let responseContent = '';
         if (data.choices && data.choices.length > 0 && data.choices[0] && data.choices[0].message) {
             responseContent = data.choices[0].message.content || '';
+            console.log('🔍 [DEBUG] Response content extracted:', {
+                hasContent: !!responseContent,
+                contentLength: responseContent ? responseContent.length : 0,
+                contentPreview: responseContent ? responseContent.substring(0, 100) + '...' : 'empty'
+            });
         } else {
             console.error('❌ [ERROR] Invalid OpenAI response structure:', data);
             return res.status(500).json({
@@ -3067,9 +3198,27 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             });
         }
         
+        // Check if response content is empty
+        if (!responseContent || responseContent.trim() === '') {
+            console.error('❌ [ERROR] Empty response content from OpenAI');
+            return res.status(500).json({
+                success: false,
+                error: 'Empty response from OpenAI API'
+            });
+        }
+        
+        // Strip decision tags from response before sending to client
+        const parsedResponse = parseAIDecision(responseContent);
+        console.log('🔍 [DEBUG] Parsed response:', {
+            type: parsedResponse.type,
+            hasTags: responseContent.includes('[') && responseContent.includes(']'),
+            originalLength: responseContent.length,
+            cleanedLength: parsedResponse.response.length
+        });
+        
         res.json({
             success: true,
-            content: responseContent,
+            content: parsedResponse.response, // Send cleaned response without tags
             usage: data.usage
         });
         
@@ -3388,7 +3537,8 @@ app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        const displayName = user.user_metadata?.display_name || user.user_metadata?.full_name || 'User';
+        // Only use display_name from metadata, don't fall back to full_name (which might be email prefix)
+        const displayName = user.user_metadata?.display_name || 'User';
         
         console.log('✅ [SUPABASE_USER] User found via fallback:', { userId: user.id, displayName });
         
@@ -3709,7 +3859,7 @@ By adhering to the above guidelines, you will function as a world-class AI job a
 
 CRITICAL BOLD FORMATTING RULE: NEVER use ** (double asterisks) for bold formatting. The AI should use bold formatting when appropriate (for emphasis, section headers, important points), but the formatting will be handled by the display system. Focus on content and structure.
 
-EDUCATION ANALYSIS ACCURACY: When analyzing education sections, ensure you correctly match each degree/program with its corresponding institution. Do not mix up programs between different schools. Provide accurate analysis of each degree-institution combination. search with thorough, thoughtful, and user-friendly support. Good luck – and happy job hunting to our users!`;
+EDUCATION ANALYSIS ACCURACY: When analyzing education sections, ensure you correctly match each degree/program with its corresponding institution. Do not mix up programs between different schools. Provide accurate analysis of each degree-institution combination. search with thorough, thoughtful, and user-friendly support. Ask follow up question since our users may want tailored resume or tailored cover letter.`;
 
 
 // ============================================================================
@@ -3810,19 +3960,15 @@ function buildUserPromptServerSide(message, userProfile, jobContext, chatHistory
     const isProfileToggleOff = toggleState === 'off';
     const isProfileEnabled = !isProfileToggleOff;
     
-    // Build conversation context with smart truncation to prevent token limit exceeded
+    // Build conversation context with full history
     let conversationContext = '';
     if (chatHistory && Array.isArray(chatHistory) && chatHistory.length > 0) {
-        // ✅ CRITICAL FIX: Limit conversation history to prevent token limit exceeded
-        // Keep only the last 6 messages (3 turns) to ensure we stay under token limits
-        const truncatedHistory = chatHistory.slice(-6);
-        conversationContext = '\n\nCONVERSATION HISTORY:\n' + truncatedHistory.map(msg => 
+        conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(msg => 
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content || ''}`
         ).join('\n');
         
-        console.log('📊 [TOKEN MANAGEMENT] Conversation history truncated:', {
-            originalLength: chatHistory.length,
-            truncatedLength: truncatedHistory.length,
+        console.log('📊 [TOKEN MANAGEMENT] Full conversation history included:', {
+            chatHistoryLength: chatHistory.length,
             conversationContextLength: conversationContext.length
         });
     }
@@ -3900,9 +4046,10 @@ const PORT = process.env.PORT || 3000;
 // These functions were moved from background.js to protect IP
 
 // Build natural intent prompt (exact copy from background.js)
-function buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, isProfileToggleOff) {
-  // ✅ Use the isProfileToggleOff parameter passed from the calling function
+function buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
+  // ✅ Use the toggleState parameter passed from the calling function
   // ❌ DO NOT override with profile data logic - this was the bug!
+  var isProfileToggleOff = toggleState === 'off';
   var isProfileEnabled = !isProfileToggleOff;
 
   // Build comprehensive context
@@ -3946,7 +4093,7 @@ function buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext,
 }
 
 // Build cover letter prompt (exact copy from background.js)
-function buildCoverLetterPrompt(jobDescription, userProfile, jobContext) {
+function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, chatHistory) {
   // Use the raw resume text directly - this is what we want for cover letter generation
   var resumeText = (userProfile === null || userProfile === void 0 ? void 0 : userProfile.resumeText) || 'No resume data available';
 
@@ -4009,18 +4156,157 @@ function buildCoverLetterPrompt(jobDescription, userProfile, jobContext) {
     },
     trontiqUserData: userProfile !== null && userProfile !== void 0 && userProfile.trontiq_user ? typeof userProfile.trontiq_user === 'string' ? JSON.parse(userProfile.trontiq_user) : userProfile.trontiq_user : null
   });
-  return "Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED cover letter for this specific job. This cover letter must be fine-tuned to maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.\n\nCRITICAL ATS OPTIMIZATION REQUIREMENTS:\n- EVERY paragraph must contain keywords from the job description\n- EVERY skill mentioned in the job description must be referenced\n- EVERY requirement must be addressed through experience examples\n- Use EXACT terminology from the job description throughout\n- Match the job title and role requirements precisely\n- Include ALL technical skills, tools, and technologies mentioned in the job posting\n- Optimize for ATS keyword matching while maintaining readability for humans\n\nUSER'S RESUME:\n".concat(resumeText, "\n\nFULL JOB DESCRIPTION:\n").concat(fullJobDescription, "\n\nUSER PREFERENCES:\nFull Name: ").concat(userFullName, "\nEmail: ").concat(userEmail, "\nCurrent Date: ").concat(currentDate, "\nPreferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\nLanguage: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n\n       CRITICAL INSTRUCTIONS:\n       - Write in first person (as the applicant)\n       - Output the full cover letter only (no tips, advice, or meta commentary)\n       - Use the user's ACTUAL experience and skills from their RESUME TEXT above - DO NOT make up generic experience\n       - Reference the user's REAL companies, job titles, and achievements from their RESUME TEXT\n       - Tailor the content specifically to the job description provided\n       - Include specific examples from the user's ACTUAL work experience (use real company names, not \"Company A\")\n       - Include specific examples from at least 2-3 different jobs in the user's past experience. Do not rely only on the most recent job. Show career progression and diverse experience across multiple roles and companies.\n       - Use the current date (today's date) automatically - do not use [Date] placeholder\n\nEXPERIENCE ALIGNMENT REQUIREMENTS:\n- STAY WITHIN the user's actual experience and background from their resume\n- Do NOT overextend into fields or industries the user has no experience in\n- Do NOT claim expertise in areas not supported by the user's resume\n- Use only the companies, job titles, and achievements listed in the user's resume\n- Focus on transferable skills from the user's actual work history\n- Do NOT add experience in fields, technologies, or industries the user has never worked in\n- Maintain honesty and accuracy based on the user's actual background\n       - WRITE THE ENTIRE COVER LETTER IN THE USER'S PREFERRED LANGUAGE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n       - If language is French, write in French; if Spanish, write in Spanish; if German, write in German\n       - Adapt cover letter formatting and business conventions to the target language\n       - MATCH THE USER'S PREFERRED TONE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n       - If tone is \"professional\": Use formal, business-like language\n       - If tone is \"casual\": Use friendly, conversational language\n       - If tone is \"enthusiastic\": Use energetic, positive language\n       - If tone is \"confident\": Use assertive, self-assured language\n       - If tone is \"friendly\": Use warm, approachable language\n       - ADAPT TO USER'S EDUCATION LEVEL: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n       - Adjust vocabulary complexity and technical depth based on education level\n       - Use appropriate language sophistication for the user's background\n       - Do not include any placeholder text like [Recipient's Name], [Company Name], or [Company Address]\n       \n       COMPANY NAME REQUIREMENTS:\n       - Use the ACTUAL company names from the user's resume/profile\n       - DO NOT use generic placeholders like [First Company Name], [Second Company Name], [Company A], etc.\n       - Extract and use the real company names from the user's work experience\n       - If company names are not available, use professional placeholders like [Your Previous Company] or [Your Previous Role]\n       - If the job involves AI chatbot training, math-based reasoning, or logic evaluation, the cover letter must clearly highlight the user's capabilities in those areas. Do not assume the reader will infer this — spell it out using examples from the user's past roles.\n       - ALWAYS include the user's full name and email at the top of the cover letter\n       - Use the exact format: ").concat(userFullName, " on first line, ").concat(userEmail, " on second line, ").concat(currentDate, " on third line\n       - Use the current date (").concat(currentDate, ") - do not use any other date\n       - Use the user's full name (").concat(userFullName, ") - do not use display name or nickname\n       \n       ATS OPTIMIZATION STRATEGY:\n       - EXTRACT every keyword, skill, and requirement from the job description\n       - INCORPORATE every extracted keyword into the cover letter naturally\n       - MATCH the exact job title and role requirements\n       - INCLUDE every technical skill, tool, and technology mentioned\n       - USE the same terminology and phrasing as the job posting\n       - ENSURE every paragraph contains relevant keywords\n       - OPTIMIZE the opening to include key job requirements\n       - ADD specific examples that demonstrate job requirements\n       - CREATE content that directly addresses job requirements\n       - MAXIMIZE keyword density while maintaining readability\n       \n       COVER LETTER CONTENT REQUIREMENTS:\n       - Use the user's ACTUAL companies from their resume (Amgen, Bayer, Ford, etc.) - DO NOT use generic \"Company A, B, C\"\n       - Reference the user's REAL job titles and roles from their resume\n       - Use the user's ACTUAL achievements and responsibilities from their resume\n       - DO NOT create generic or fictional experience - only use what's in the user's profile\n       - If the user's resume shows pharmaceutical experience, reference that specifically\n       - If the user's resume shows automotive experience, reference that specifically\n       - Use the user's REAL skills and technologies from their resume\n       - Make the cover letter personal and specific to the user's actual background\n       \n       JOB TITLE OPTIMIZATION IN COVER LETTER:\n       - CONSIDER suggesting optimized job titles that better match the target role\n       - RECOMMEND title changes that include relevant keywords from the job description\n       - PROPOSE titles that highlight the most relevant aspects of the user's experience\n       - ENSURE suggested titles are honest and accurately reflect the work performed\n       - OPTIMIZE for ATS keyword matching while maintaining credibility\n       - BALANCE keyword optimization with professional accuracy\n       \n       KEYWORD INTEGRATION REQUIREMENTS:\n       - EXTRACT every technical skill, tool, and technology from the job description\n       - EXTRACT every soft skill and competency mentioned in the job posting\n       - EXTRACT every responsibility and duty listed in the job requirements\n       - EXTRACT every qualification and requirement mentioned\n       - INCORPORATE every extracted keyword naturally into paragraphs\n       - USE the exact same terminology as the job description\n       - MATCH the job title and role requirements precisely\n       - INCLUDE every skill mentioned in the job posting in examples\n       - CREATE examples that directly demonstrate each requirement\n       - ENSURE maximum keyword alignment for ATS optimization\n       \n       NAME AND EMAIL REQUIREMENTS:\n       - You MUST use the exact full name: ").concat(userFullName, "\n       - You MUST use the exact email: ").concat(userEmail, "\n       - Do NOT use any display name, nickname, or alternative name\n       - Do NOT use placeholder emails like \"user@email.com\"\n       - The name and email at the top must match exactly what is provided above\n\nCOVER LETTER FORMATTING REQUIREMENTS:\n- Use proper business letter format with current date, salutation, and signature\n- Start with a strong opening that states the position and shows enthusiasm\n- Body paragraphs should link user's experience to job requirements\n- Use specific examples and achievements from the user's background\n- Maintain professional yet enthusiastic tone\n- Include a clear call to action and proper closing\n- Use the user's display name in the signature\n- Use proper paragraph breaks (double line breaks between paragraphs)\n- Format with clear structure: Current Date, Salutation, Body (2-3 paragraphs), Closing, Signature\n- DO NOT include placeholder text like [Recipient's Name], [Company Name], or [Company Address]\n- Use the current date automatically - do not use [Date] placeholder\n\nCOVER LETTER STRUCTURE (MUST FOLLOW):\n").concat(userFullName, "\n").concat(userEmail, "\n").concat(currentDate, "\n\nCRITICAL: The above three lines MUST appear exactly as shown above. Do NOT change ").concat(userFullName, " to any other name. Do NOT change ").concat(userEmail, " to any other email. Do NOT change ").concat(currentDate, " to any other date.\n\nDear Hiring Manager,\n\n[Opening paragraph with position and enthusiasm]\n\n[Body paragraph 1 - experience from user's ACTUAL first company (use real company name, not \"Company A\")]\n\n[Body paragraph 2 - experience from user's ACTUAL second company (use real company name, not \"Company B\")]\n\n[Body paragraph 3 - experience from user's ACTUAL third company (use real company name, not \"Company C\")]\n\n[Closing paragraph with call to action]\n\n       Sincerely,\n       ").concat(userFullName, "\n       \n       FINAL NAME CHECK:\n       - The signature must use: ").concat(userFullName, "\n       - Do NOT use any display name or nickname in the signature\n       - Do NOT use \"[Your Full Name]\" - use the exact name: ").concat(userFullName, "\n       - Do NOT use \"[Your Email]\" - use the exact email: ").concat(userEmail, "\n\nPlease create a compelling cover letter that:\n1. Addresses the specific job requirements from the job description\n2. Shows genuine interest in the company and role\n3. Highlights relevant skills and experience from the user's ACTUAL profile (use real companies, job titles, achievements)\n4. Explains why the user is a good fit using specific examples from their REAL work experience\n5. Maintains a professional yet enthusiastic tone\n6. Is personalized to the specific company and position\n7. Includes a clear call to action\n8. Uses the user's ACTUAL companies from their resume (Amgen, Bayer, Ford, etc.) - DO NOT use generic \"Company A, B, C\"\n9. References the user's REAL job titles and achievements from their resume\n10. Makes the cover letter personal and specific to the user's actual background\n11. Incorporates EVERY keyword from the job description naturally\n12. Demonstrates EVERY skill requirement through specific examples\n13. Addresses EVERY responsibility mentioned in the job posting\n14. Uses EXACT terminology from the job description\n15. Optimizes for ATS keyword matching while maintaining readability\n\nFormat as a professional business letter with proper salutation and closing.\n\nFINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:\n- Every keyword from the job description appears in the cover letter\n- Every skill requirement is demonstrated through examples\n- Every responsibility is addressed in the content\n- Job title and role requirements are precisely matched\n- Technical skills and tools are prominently featured\n- Opening paragraph includes key job requirements and keywords\n- Body paragraphs contain relevant keywords naturally\n- Cover letter is optimized for both ATS systems and human readers\n- Maximum keyword density while maintaining readability\n- 99% alignment with job description requirements");
+  
+  // Build conversation context from chat history
+  var conversationContext = '';
+  if (chatHistory && chatHistory.length > 0) {
+    conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(function(msg) {
+      return "".concat(msg.role === 'user' ? 'User' : 'Assistant', ": ").concat(msg.content);
+    }).join('\n');
+    
+    console.log('🔍 [BUILD COVER LETTER PROMPT] Full conversation history included:', {
+      chatHistoryLength: chatHistory.length,
+      conversationContextLength: conversationContext.length
+    });
+  }
+  
+  return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED cover letter for this specific job. 
+This cover letter must maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.
+${conversationContext}
+
+CRITICAL ATS OPTIMIZATION REQUIREMENTS:
+- EVERY paragraph must contain keywords from the job description.
+- EVERY skill mentioned in the job description must be referenced.
+- EVERY requirement must be addressed through concrete experience examples.
+- Use EXACT terminology from the job description throughout.
+- Match the job title and role requirements precisely.
+- Include ALL technical skills, tools, and technologies mentioned in the job posting.
+- Optimize for ATS keyword matching while maintaining human readability.
+
+USER'S RESUME:
+${resumeText}
+
+FULL JOB DESCRIPTION:
+${fullJobDescription}
+
+USER PREFERENCES:
+Full Name: ${userFullName}
+Email: ${userEmail}
+Current Date: ${currentDate}
+Preferred Tone: ${(userProfile?.preferredTone) || 'professional'}
+Language: ${(userProfile?.language) || 'english'}
+
+CRITICAL INSTRUCTIONS:
+- Write in first person (as the applicant).
+- Output the full cover letter only (no meta notes or commentary).
+- Use the user’s ACTUAL experience, companies, job titles, and achievements from the resume text. Do NOT invent or fabricate.
+- Tailor content specifically to the provided job description.
+- Include examples from at least 2–3 different roles to show progression and breadth.
+- Use today’s date automatically (not a placeholder).
+- Maintain honesty and accuracy based on the real background.
+
+EXPERIENCE ALIGNMENT:
+- Stay within the user’s actual work history.
+- Do not add expertise not supported by the resume.
+- Highlight transferable skills truthfully.
+- Adapt vocabulary to user’s education level and preferred tone.
+- Do not include placeholder text like [Recipient’s Name].
+
+COMPANY NAME REQUIREMENTS:
+- Use real company names (Amgen, Bayer, Ford, Brightly, etc.).
+- Never use placeholders like [Company A].
+- If company names are missing, fallback to professional placeholders (e.g., “Your Previous Company”).
+- Always include the user’s full name and email at the top in this exact format:
+  ${userFullName}
+  ${userEmail}
+  ${currentDate}
+
+ATS OPTIMIZATION STRATEGY:
+- Extract every keyword, skill, responsibility, and qualification from the JD.
+- Incorporate each keyword naturally into the cover letter.
+- Mirror job description phrasing for duties and tools (SQL, Excel, Azure, Power BI, JIRA, healthcare claims, etc.).
+- Ensure maximum keyword alignment without awkward stuffing.
+- Quantify achievements with numbers/percentages where possible.
+
+COVER LETTER STRUCTURE (MUST FOLLOW):
+${userFullName}
+${userEmail}
+${currentDate}
+
+Dear Hiring Manager,
+
+[Opening paragraph: state the position and show enthusiasm]
+
+[Body paragraph 1 - experience from user's ACTUAL first company (use real company name, not "Company A")]
+
+[Body paragraph 2 - experience from user's ACTUAL second company (use real company name, not "Company B")]
+
+[Body paragraph 3 - experience from user's ACTUAL third company (use real company name, not "Company C")]
+
+[Closing paragraph with call to action]
+
+Sincerely,
+${userFullName}
+
+FINAL NAME CHECK:
+- The signature must use: ${userFullName}
+- Do NOT use any display name or nickname in the signature
+- Do NOT use "[Your Full Name]" - use the exact name: ${userFullName}
+- Do NOT use "[Your Email]" - use the exact email: ${userEmail}
+
+Please create a compelling cover letter that:
+1. Addresses the specific job requirements from the job description
+2. Shows genuine interest in the company and role
+3. Highlights relevant skills and experience from the user's ACTUAL profile (use real companies, job titles, achievements)
+4. Explains why the user is a good fit using specific examples from their REAL work experience
+5. Maintains a professional yet enthusiastic tone
+6. Is personalized to the specific company and position
+7. Includes a clear call to action
+8. Uses the user's ACTUAL companies from their resume (Amgen, Bayer, Ford, etc.) - DO NOT use generic "Company A, B, C"
+9. References the user's REAL job titles and achievements from their resume
+10. Makes the cover letter personal and specific to the user's actual background
+11. Incorporates EVERY keyword from the job description naturally
+12. Demonstrates EVERY skill requirement through specific examples
+13. Addresses EVERY responsibility mentioned in the job posting
+14. Uses EXACT terminology from the job description
+15. Optimizes for ATS keyword matching while maintaining readability
+
+Format as a professional business letter with proper salutation and closing.
+
+FINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:
+- Every keyword from the job description appears in the cover letter
+- Every skill requirement is demonstrated through examples
+- Every responsibility is addressed in the content
+- Job title and role requirements are precisely matched
+- Technical skills and tools are prominently featured
+- Opening paragraph includes key job requirements and keywords
+- Body paragraphs contain relevant keywords naturally
+- Cover letter is optimized for both ATS systems and human readers
+- Maximum keyword density while maintaining readability
+- 99% alignment with job description requirements`;
 }
 
 // Build resume prompt (exact copy from background.js)
-function buildResumePrompt(jobDescription, userProfile, jobContext, currentResume) {
-  var userRequest = arguments.length > 4 && arguments[4] !== undefined ? arguments[4] : '';
+function buildResumePrompt(jobDescription, userProfile, jobContext, currentResume, chatHistory) {
+  var userRequest = arguments.length > 5 && arguments[5] !== undefined ? arguments[5] : '';
   var profileText = formatUserProfile(userProfile, {
     includeRaw: true
   });
 
   // Use full job description, not truncated context
   var fullJobDescription = (jobContext === null || jobContext === void 0 ? void 0 : jobContext.jobDescription) || jobDescription;
+  
+  console.log('🔍 [BUILD RESUME PROMPT] Job description check:', {
+    hasJobDescription: !!jobDescription,
+    jobDescriptionLength: jobDescription ? jobDescription.length : 0,
+    hasJobContext: !!jobContext,
+    hasJobContextDescription: !!(jobContext && jobContext.jobDescription),
+    jobContextDescriptionLength: jobContext && jobContext.jobDescription ? jobContext.jobDescription.length : 0,
+    fullJobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
+    fullJobDescriptionPreview: fullJobDescription ? fullJobDescription.substring(0, 200) + '...' : 'EMPTY',
+    hasChatHistory: !!chatHistory,
+    chatHistoryLength: chatHistory ? chatHistory.length : 0
+  });
 
   // Extract line count request from user request
   var lineCountMatch = userRequest.match(/(\d+)\s*(?:lines?|bullet\s*points?)/i);
@@ -4064,7 +4350,66 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
     careerLevel: careerLevel,
     detectedCareerLevel: careerLevel
   });
-  return "Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be fine-tuned to maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.\n\nCRITICAL ATS OPTIMIZATION REQUIREMENTS:\n- EVERY bullet point must contain keywords from the job description\n- EVERY skill mentioned in the job description must appear in the resume\n- EVERY requirement must be addressed through experience or skills\n- Use EXACT terminology from the job description throughout\n- Match the job title and role requirements precisely\n- Include ALL technical skills, tools, and technologies mentioned in the job posting\n- Optimize for ATS keyword matching while maintaining readability for humans\n\nCRITICAL: You MUST rewrite EVERY SINGLE LINE of the user's work experience. Do NOT copy any bullet points verbatim from their original resume. Every achievement, responsibility, and bullet point must be completely rewritten to match the job description.\n\nCRITICAL BULLET POINT KEYWORD INTEGRATION:\n- EVERY SINGLE bullet point must contain at least 2-3 keywords from the job description\n- EVERY bullet point must use the exact terminology from the job posting\n- EVERY bullet point must demonstrate how the experience relates to the job requirements\n- NO generic bullet points - every line must be tailored with job-specific keywords\n- INCORPORATE job description keywords naturally into every achievement and responsibility\n- USE the same action verbs and phrases as the job description\n- MATCH the job's language and terminology in every bullet point\n\nIMPORTANT: Use the user's original resume ONLY as a reference for their actual work history, companies, dates, and education. Do NOT copy any of the original wording, descriptions, or achievements. Create completely new content that matches the job description while using their real work experience as the foundation.\n\nCRITICAL: You MUST include ALL job titles and work experiences from the user's resume. Do NOT skip any jobs, regardless of relevance or recency. Include every single work experience with its original job title, company, and dates. Show the complete career progression by including all roles, even if they seem less relevant to the target position.\n\nIMPORTANT: If the job description requires specific abilities like mathematical reasoning, logic testing, chatbot training, AI model evaluation, or problem-solving using math, you MUST reflect these in the resume summary and throughout ALL bullet points. Explicitly reframe EVERY relevant experience to highlight these capabilities.\n\nIf the job includes:\n- AI chatbot evaluation\n- Complex math reasoning  \n- Model output testing\n- Prompt design or response review\n\nThen the tailored resume MUST reflect:\n- Mathematical thinking and problem-solving in EVERY bullet point\n- Logic-based evaluation experience throughout\n- Hands-on AI or model QA involvement (even if implicit in other roles)\n- ALL bullet points should be reframed to show relevance to the specific job requirements\n\nCRITICAL: Do not leave any bullet points generic. Every single achievement and responsibility must be reframed to explicitly show how it relates to the job requirements (mathematical reasoning, AI evaluation, logic testing, etc.).\n\nCRITICAL FORMATTING RULE: Do NOT use ** (double asterisks) for bold formatting in EDUCATION or SKILLS sections. Write all text in these sections as plain text only.\n\nSKILLS SECTION ENHANCEMENT:\n- ANALYZE the job description for required technical skills, tools, and technologies\n- ADD missing skills that are relevant to the job requirements\n- INCLUDE both hard skills (technical tools, programming languages) and soft skills (leadership, communication)\n- ADD industry-specific skills that are commonly used in the target role\n- INCLUDE transferable skills that can be applied to the job requirements\n- ENSURE all added skills are realistic for someone with the user's background and experience\n- ORGANIZE skills by categories (Technical Skills, Soft Skills, Tools & Technologies, etc.)\n- PRIORITIZE skills that directly match the job description requirements\n- ADD skills that can be reasonably inferred from the user's work experience and education\n\n\n\nUSER PROFILE:\n".concat(profileText, "\n\nFULL JOB DESCRIPTION:\n").concat(fullJobDescription, "\n\nFULL RESUME (VERBATIM):\n").concat(currentResume || 'No current resume provided', "\n\nUSER PREFERENCES:\nDisplay Name: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.displayName) || (userProfile === null || userProfile === void 0 ? void 0 : userProfile.name) || 'User', "\nPreferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\nLanguage: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n").concat(requestedLines ? "RESUME LENGTH: Create exactly ".concat(requestedLines, " bullet points total across all work experiences") : '', "\n\nCRITICAL INSTRUCTIONS:\n- Write in first person (as the applicant)\n- Output the full tailored resume only (no tips, advice, or meta commentary)\n- COMPLETELY REWRITE the user's original resume using their content but tailoring it to the job description\n- Do NOT copy the original resume verbatim - actively rewrite every section\n- Use the user's actual experiences but completely rephrase them to align with job requirements\n- Incorporate keywords and terminology from the job description throughout\n- Create a NEW resume that's specifically tailored to this job\n- REWRITE EVERY SINGLE ACHIEVEMENT and bullet point completely - do not keep any original wording\n- WRITE THE ENTIRE RESUME IN THE USER'S PREFERRED LANGUAGE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- If language is French, write in French; if Spanish, write in Spanish; if German, write in German\n- Adapt resume formatting and terminology to the target language's business conventions\n- MATCH THE USER'S PREFERRED TONE: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- If tone is \"professional\": Use formal, business-like language\n- If tone is \"casual\": Use friendly, conversational language\n- If tone is \"enthusiastic\": Use energetic, positive language\n- If tone is \"confident\": Use assertive, self-assured language\n- If tone is \"friendly\": Use warm, approachable language\n- ADAPT TO USER'S EDUCATION LEVEL: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n- Adjust vocabulary complexity and technical depth based on education level\n- Use appropriate language sophistication for the user's background\n\n\n\nRESUME TAILORING REQUIREMENTS:\n- COMPLETELY REWRITE EVERY SINGLE BULLET POINT under each work experience\n- REWRITE EVERY ACHIEVEMENT and responsibility line to match the job description\n- Do NOT keep any original bullet points - rewrite them all completely\n- Use keywords from the job description in your bullet points\n- Reorder experiences to highlight the most relevant ones first\n- OPTIMIZE job titles to better align with the target role and improve ATS visibility\n- Add or emphasize skills that match the job requirements\n- Quantify achievements with specific numbers and percentages\n- Focus on transferable skills that apply to the target position\n- Use action verbs that match the job description's language\n- REWRITE the summary/objective to specifically target this job\n- REWRITE the skills section to highlight relevant skills for this position\n- REWRITE the achievements section completely to align with job requirements\n- Create a completely new resume that's optimized for this specific job\n\nJOB TITLE PRESERVATION REQUIREMENTS:\n- INCLUDE ALL job titles from the user's original resume\n- Do NOT skip any work experiences\n- Do NOT omit any job titles\n- PRESERVE the original job titles while optimizing them for the target role\n- SHOW complete career progression by including all roles\n- ENSURE every work experience from the original resume is represented\n\nJOB TITLE OPTIMIZATION STRATEGY:\n- ANALYZE each job title against the target role requirements\n- SUGGEST specific title changes that better match the job description\n- RECOMMEND titles that include relevant keywords from the job posting\n- PROPOSE titles that highlight the most relevant aspects of the work performed\n- ENSURE suggested titles are honest and accurately reflect the actual role\n- OPTIMIZE for ATS keyword matching while maintaining credibility\n- CONSIDER industry-standard titles that hiring managers recognize\n- BALANCE keyword optimization with professional accuracy\n\nATS OPTIMIZATION STRATEGY:\n- EXTRACT every keyword, skill, and requirement from the job description\n- INCORPORATE every extracted keyword into the resume naturally\n- MATCH the exact job title and role requirements\n- INCLUDE every technical skill, tool, and technology mentioned\n- USE the same terminology and phrasing as the job posting\n- ENSURE every bullet point contains relevant keywords\n- OPTIMIZE the summary to include key job requirements\n- ADD missing skills that are mentioned in the job description\n- CREATE bullet points that directly address job requirements\n- MAXIMIZE keyword density while maintaining readability\n\nEXPERIENCE ALIGNMENT REQUIREMENTS:\n- STAY WITHIN the user's actual experience and background\n- Do NOT overextend into fields or industries the user has no experience in\n- Do NOT claim expertise in areas not supported by the user's resume\n- REFRAME existing experience to match job requirements, but do not fabricate new experience\n- Use transferable skills from the user's actual work history\n- Focus on skills and achievements that can be reasonably extrapolated from their real experience\n- Do NOT add experience in fields, technologies, or industries the user has never worked in\n- Maintain honesty and accuracy based on the user's actual background\n\nGAP FILLING AND SKILL ADDITION REQUIREMENTS:\n- ANALYZE the job description for required skills and experience that are missing from the user's resume\n- IDENTIFY transferable skills from the user's existing experience that can be reframed to match missing requirements\n- ADD new bullet points to existing work experiences that demonstrate missing skills (based on realistic extrapolation from their actual work)\n- ENHANCE the skills section by adding relevant skills that the job requires but aren't explicitly mentioned in the user's resume\n- CREATE new achievements or responsibilities that logically fit within the user's actual roles but address job requirements\n- USE the user's existing experience as a foundation to demonstrate missing capabilities through creative reframing\n- ENSURE all additions are realistic and believable based on the user's actual work history and education\n- FOCUS on transferable skills that can be applied to the target role (e.g., problem-solving, analysis, communication)\n- ADD specific technical skills or tools that the job requires, even if not explicitly mentioned in the original resume\n- MAINTAIN honesty by only adding skills/experience that could reasonably be developed in the user's actual roles\n\nBULLET POINT TAILORING RULES:\n- EVERY bullet point must explicitly mention how it relates to the job requirements\n- EVERY bullet point must contain specific keywords from the job description\n- EVERY bullet point must use the exact terminology from the job posting\n- If the job requires mathematical reasoning, EVERY bullet should mention math, logic, or problem-solving\n- If the job requires AI evaluation, EVERY bullet should mention AI, model testing, or evaluation\n- If the job requires logic testing, EVERY bullet should mention logic, reasoning, or analysis\n- NO generic bullet points allowed - every achievement must be reframed for the specific role\n- EVERY bullet point must demonstrate specific skills mentioned in the job description\n- EVERY bullet point must use action verbs that match the job's language\n- EVERY bullet point must reference specific tools, technologies, or methodologies from the job posting\n\nKEYWORD MATCHING REQUIREMENTS:\n- EXTRACT every technical skill, tool, and technology from the job description\n- EXTRACT every soft skill and competency mentioned in the job posting\n- EXTRACT every responsibility and duty listed in the job requirements\n- EXTRACT every qualification and requirement mentioned\n- INCORPORATE every extracted keyword naturally into bullet points\n- USE the exact same terminology as the job description\n- MATCH the job title and role requirements precisely\n- INCLUDE every skill mentioned in the job posting in the skills section\n- CREATE bullet points that directly demonstrate each requirement\n- ENSURE maximum keyword alignment for ATS optimization\n\nEXAMPLE OF PROPER KEYWORD INTEGRATION:\nIf the job description mentions \"data analysis\", \"SQL queries\", \"Tableau dashboards\", and \"cross-functional collaboration\", then EVERY bullet point should include these keywords naturally:\n- \"Conducted comprehensive data analysis using SQL queries to identify operational inefficiencies\"\n- \"Developed Tableau dashboards for cross-functional collaboration with stakeholders\"\n- \"Performed data analysis on large datasets to support cross-functional decision-making\"\n- \"Created SQL queries and Tableau visualizations for cross-functional reporting\"\n\nNOT like this (generic, no keywords):\n- \"Analyzed data and created reports\"\n- \"Worked with teams to improve processes\"\n- \"Developed solutions for business problems\"\n\nMISSING SKILLS AND EXPERIENCE HANDLING:\n- IDENTIFY skills in the job description that are not explicitly mentioned in the user's resume\n- ADD these missing skills to the skills section if they could reasonably be developed in the user's roles\n- CREATE new bullet points that demonstrate missing capabilities through transferable experience\n- REFRAME existing responsibilities to show how they relate to missing job requirements\n- USE the user's education and background to justify adding relevant skills\n- ADD technical skills that are commonly used in the user's industry or role\n- INCLUDE soft skills that are transferable across roles (leadership, communication, problem-solving)\n- ENSURE all additions are honest and based on realistic extrapolation from actual experience\n- FOCUS on skills that can be reasonably inferred from the user's work history and education\n- MAINTAIN credibility by only adding skills that someone in the user's position could realistically have\n").concat(requestedLines ? "\nBULLET POINT COUNT REQUIREMENTS:\n- Create EXACTLY ".concat(requestedLines, " bullet points total across all work experiences\n- Distribute bullet points based on relevance to the job description\n- Most relevant jobs should get more bullet points\n- Less relevant jobs should get fewer bullet points\n- Do not exceed or fall short of ").concat(requestedLines, " total bullet points\n- Count only work experience bullet points (not summary, education, or skills)\n\nALTERNATIVE DISTRIBUTION OPTIONS:\n- If user requests \"5 lines per job\" or \"equal distribution\": Give each work experience exactly 5 bullet points\n- If user requests \"focus on relevant jobs\": Use relevance-based distribution (current default)\n- If user requests \"equal representation\": Give each job equal bullet points regardless of relevance\n\nINTELLIGENT BULLET POINT DISTRIBUTION:\nBased on career level analysis (").concat(careerLevel, " level), adjust bullet points per work experience:\n\nENTRY-LEVEL (").concat(careerLevel === 'entry' ? 'DETECTED' : 'NOT DETECTED', "):\n- 3-4 bullet points per work experience (entry-level roles have fewer complex achievements)\n- Focus on learning, growth, and foundational skills\n- Emphasize education, internships, and basic responsibilities\n- Avoid over-inflating entry-level experience\n\nMID-LEVEL (").concat(careerLevel === 'mid' ? 'DETECTED' : 'NOT DETECTED', "):\n- 4-6 bullet points per work experience (standard professional level)\n- Balance technical skills with business impact\n- Include quantifiable achievements and project leadership\n- Show progression and increasing responsibility\n\nSENIOR-LEVEL (").concat(careerLevel === 'senior' ? 'DETECTED' : 'NOT DETECTED', "):\n- 5-7 bullet points per work experience (complex achievements require more detail)\n- Emphasize leadership, strategy, and high-impact results\n- Include team management, budget responsibility, and strategic initiatives\n- Show industry expertise and thought leadership\n\nEXPERIENCE DURATION ADJUSTMENTS:\n- Short-term roles (<6 months): 2-3 bullet points to avoid filler\n- Medium-term roles (6 months - 2 years): Standard bullet point count\n- Long-term roles (>2 years): Can justify additional bullet points for growth/progression\n\nBULLET POINT LIMITS:\n- Maximum 8 bullet points per work experience (to maintain resume quality)\n- Minimum 1 bullet point per work experience (to ensure representation)\n- If user requests more than 8 per job, cap at 8 and inform them\n- If user requests more than 25 total bullet points, suggest reducing for better impact") : '', "\n\nRESUME FORMATTING REQUIREMENTS:\n- Use proper resume structure with these sections: CONTACT INFORMATION, SUMMARY, WORK EXPERIENCE, EDUCATION, SKILLS\n- Each work experience must have: Company Name, Job Title, Dates, and bullet points\n- Use clear section headers in ALL CAPS and BOLD (e.g., \"WORK EXPERIENCE\", \"EDUCATION\", \"SKILLS\")\n- Every list item MUST have a bullet point (•) at the beginning and be in its seperate line.\n- Maintain consistent indentation for all bullet points\n- Use proper spacing between sections (blank line after each section header)\n- Keep bullet points concise and action-oriented\n- Use strong action verbs to start each bullet point\n- Quantify achievements with specific numbers and percentages when possible\n- Ensure all contact information is properly formatted\n- Use professional, clean formatting throughout\n- Do NOT mix skills and achievements in the same section\n- Put achievements under each specific work experience, not in a general skills section\n- Do NOT use \"**\" formatting in education or skills sections - use plain text only\n- CRITICAL: In EDUCATION section, write degrees as plain text without any ** formatting\n- CRITICAL: In SKILLS section, write skill categories as plain text without any ** formatting\n- Example: Write \"Applied Data Science\" NOT \"**Applied Data Science**\"\n- Example: Write \"Data Analytics & Modeling:\" NOT \"**Data Analytics & Modeling:**\"\n\nPlease create a professional, tailored resume that:\n1. COMPLETELY REWRITES the user's original resume content to match this specific job\n2. Uses keywords and terminology from the job description throughout\n3. Emphasizes experiences and skills that align with the job requirements\n4. Reorders content to highlight the most relevant experience first\n5. COMPLETELY REWRITES EVERY SINGLE BULLET POINT under each work experience\n6. REWRITES EVERY ACHIEVEMENT and responsibility line to match the job description\n7. REWRITES the summary/objective to specifically target this job\n8. Incorporates ALL relevant work experiences but completely rewrites them for this job\n9. Uses consistent formatting with bullet points for ALL list items\n10. Focuses on transferable skills and achievements that apply to this position\n11. REWRITES the achievements section completely to align with job requirements\n12. Creates a completely NEW resume optimized for this specific job posting\n13. Uses proper resume structure: CONTACT INFO, SUMMARY, WORK EXPERIENCE (with company names, titles, dates), EDUCATION, SKILLS\n14. Places achievements under each specific work experience, not in a general section\n15. Creates completely new content that doesn't copy any original wording\n16. Uses proper Markdown formatting with bullet points (- or •) for all list items\n17. Uses clean formatting without \"**\" formatting in education and skills sections\n18. EVERY bullet point must be explicitly tailored to the job requirements - no generic bullets allowed\n").concat(requestedLines ? "19. Creates exactly ".concat(requestedLines, " bullet points total across all work experiences") : '19. Creates appropriate number of bullet points based on experience relevance', "\n20. FINAL WARNING TO AI:Do not reuse any sentence, bullet point, or phrase from the user's original resume. Every line MUST be rewritten using new wording, action verbs, and structure to fit the job description. If you repeat even one original line, this will be rejected.\n\nFINAL ATS OPTIMIZATION CHECKLIST:\n- Every keyword from the job description appears in the resume\n- Every skill requirement is addressed in skills section or experience\n- Every responsibility is demonstrated through bullet points\n- Job title and role requirements are precisely matched\n- Technical skills and tools are prominently featured\n- Summary includes key job requirements and keywords\n- Bullet points contain relevant keywords naturally\n- Resume is optimized for both ATS systems and human readers\n- Maximum keyword density while maintaining readability\n- 99% alignment with job description requirements\n- ALL job titles from original resume are included\n- ALL work experiences are represented\n- Complete career progression is shown");
+  // Build conversation context from chat history
+  var conversationContext = '';
+  if (chatHistory && chatHistory.length > 0) {
+    conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(function(msg) {
+      return "".concat(msg.role === 'user' ? 'User' : 'Assistant', ": ").concat(msg.content);
+    }).join('\n');
+    
+    console.log('🔍 [BUILD RESUME PROMPT] Full conversation history included:', {
+      chatHistoryLength: chatHistory.length,
+      conversationContextLength: conversationContext.length
+    });
+  }
+
+  return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be meticulously tailored to maximize ATS visibility and to impress human readers (hiring managers), far surpassing a generic resume.${conversationContext}
+
+RESUME STRUCTURE AND FORMAT:
+- Use a professional, clean resume format with the following sections in order:
+  1. Header: Include the candidate's full name and contact information (email, phone). If the job requires U.S. Citizenship or security clearance, explicitly mention 'U.S. Citizen' (and clearance eligibility if applicable) in the header or summary. Ensure this information is easily readable (not hidden in headers/footers).
+  2. Professional Summary: A concise 2-4 sentence summary at the top that clearly aligns with the target job. Incorporate the exact job title (or a very close variant) and highlight key qualifications, experiences, and skills that match the job description. This should immediately demonstrate the candidate's fit for the role and grab the hiring manager's attention by mentioning high-impact achievements or critical skills (e.g., Data Analyst with 5+ years in healthcare data analysis using Excel, SQL, Azure, and Power BI...).
+  3. Core Skills / Key Skills: A bullet-point list or brief section of the candidate's key skills, tools, technologies, and areas of expertise that are relevant to the job description. Include EVERY skill and keyword from the job posting that the candidate possesses (e.g., Excel, SQL, Azure, Databricks, Power BI, JIRA, Agile, healthcare data, etc.). Ensure no critical skill from the job description is missing. Keep this section ATS-friendly (plain text, no graphics or tables) and easy to read.
+  4. Professional Experience: For each role in the user's work history, list the job title, the company, the location, and the dates (e.g., Jan 2020 – Present). Include EVERY job from the user's resume (do not omit any positions), and list them in reverse chronological order (most recent first). If a past job title is different from the target role but the experience is relevant, consider adding a parenthetical or modifier to align it with the target job. For example, if the original title was "Data Engineer" but the role was similar to a data analyst in healthcare, you could present it as "Data Engineer (Healthcare Data Analyst)" to highlight its relevance. Do this only when it reflects actual experience, to avoid misrepresentation. Under each job, provide bullet points detailing accomplishments and responsibilities.
+     - BULLET POINT COUNT: **CRITICAL REQUIREMENT - MINIMUM 5 BULLET POINTS PER JOB**: You MUST provide EXACTLY 5 or more bullet points for each job. This is NON-NEGOTIABLE. If the user's provided information for a job is very brief, you MUST expand on it creatively and infer relevant details to reach AT LEAST 5 bullets. For senior-level professionals, 2-3 bullets is completely inadequate and unprofessional. Every significant role MUST have sufficient detail (minimum 5 bullets) to demonstrate relevant experience. If you cannot think of 5 relevant bullets, you must use your expertise to infer logical responsibilities and achievements that align with the job description and the user's experience level.
+     - BULLET POINT CONTENT: Each bullet must be highly tailored to the job description:
+       - KEYWORD INTEGRATION: EVERY bullet should naturally incorporate at least 2-3 keywords or key phrases from the job description. Use the exact terminology from the posting (no synonyms for critical terms) to ensure ATS keyword matching. For instance, if the job description mentions "analyzes healthcare data to identify trends" and "SQL" and "Azure", a bullet might be: "Analyzed healthcare claims data to identify trends and variances using SQL on Azure, enabling proactive issue resolution." This way it uses multiple exact keywords in context.
+       - RELEVANCE: Ensure each bullet demonstrates how the candidate's experience meets the specific requirements of the job. Tailor the content so that it mirrors the duties and responsibilities outlined in the job posting. If the job description says the candidate will "compile, organize, and analyze data to identify trends," then a bullet under a past job should reflect a similar task (e.g., "Compiled, organized, and analyzed large datasets to identify key trends in patient care, informing strategic decisions").
+       - ACTION & IMPACT: Start each bullet with a strong action verb and emphasize achievements and outcomes. Wherever possible, quantify results to show scale or impact (e.g., improved data processing efficiency by 40%, reduced report turnaround time from 5 days to 2 days, managed a database of 1M+ records, saved $X or increased revenue by Y%, etc.). Numbers and concrete results make the impact clear and credible.
+       - CLARITY & SPECIFICITY: Make sure each bullet point is specific and avoids generic statements. Clearly state what you did, how you did it, and what the result or benefit was. Every bullet should answer the question: how did this experience prepare the candidate for the target job?
+       - JOB DESCRIPTION LANGUAGE: Mirror the language and phrasing of the job description for maximum alignment. Use the same verbs, nouns, and terminology that appear in the job posting. If the job description mentions tools or methodologies (e.g., JIRA for Agile project management, Power BI reports, data reconciliation), ensure those are mentioned in the relevant bullets as part of the experience.
+     - NO COPY-PASTING: You MUST rewrite every single bullet point from the user's original resume in new words. Use the original resume only to glean facts (what they did, where, when, technologies used, etc.), but then completely rephrase and enhance each achievement in a way that directly relates to the job description. Do NOT copy any text from the original resume. The wording must be fresh, unique, and tailored to the target job.
+  5. Education & Certifications: List the candidate's education (degree, field of study, school, graduation year) and any relevant certifications or training. Ensure that any education or certification specifically required or mentioned in the job posting (for example, a Bachelor's degree or a certification in a relevant field) is clearly included. If the job is in a regulated field like healthcare and the candidate has relevant coursework or knowledge (e.g., HIPAA, FDA regulations), it could be worth noting if not already mentioned.
+- Do not omit any detail from the user's profile that could be relevant. Include all employment history, and incorporate any additional experience, skills, or achievements the user has provided, aligning them with the job requirements as much as possible. The goal is to present the candidate as exceptionally well-qualified for the specific position.
+
+CRITICAL ATS OPTIMIZATION REQUIREMENTS:
+- Incorporate EVERY important keyword, skill, or requirement from the job description somewhere in the resume, especially in the Skills and Experience sections. If the job description lists a technology, skill, or qualification (e.g., specific software, tools, methodologies, domain knowledge), make sure it appears in the resume in a logical place. No skill from the job posting should be missing.
+- Match the job title and role requirements precisely in the resume. If the job description uses a specific job title or terminology, ensure the resume uses that exact phrasing (for example, in the Summary or in an experience bullet, or even adding a parenthetical as noted). This boosts ATS ranking by aligning with the employer's search terms.
+- Use the job description's exact wording for duties and skills to maximize keyword matching. However, do so in a way that reads naturally to a human. Avoid simply listing keywords; instead, integrate them into descriptions of accomplishments.
+- Maintain a balance: optimize for ATS and ensure the resume remains clear and compelling to a human reader. Do not sacrifice readability. The resume should not look like a keyword dump; it should tell a coherent story of the candidate's career that happens to be rich in relevant keywords.
+
+ADDRESS ALL JOB REQUIREMENTS AND PREFERENCES:
+- Make sure the resume explicitly confirms that the candidate meets any mandatory requirements from the job posting. For example, if U.S. citizenship and the ability to pass a DoD background check are required, include a mention like *U.S. Citizen eligible for DoD security clearance* (perhaps in the summary or header). If a Bachelor's degree is required, ensure the education section clearly shows the degree.
+- If the job description emphasizes domain-specific experience (for instance, experience with healthcare claims or payment systems), highlight any experience the candidate has in a related domain (healthcare, pharmaceuticals, clinical data, etc.) to show familiarity with the field. Even if the candidate's experience is slightly different, frame it in terms of the job's context. For example, if they've worked with pharmaceutical data or patient records, draw parallels to working with healthcare claims data.
+- Include mention of any methodologies or soft skills that appear in the job description. For example, if the posting mentions working in an Agile environment or using JIRA for task tracking, ensure the resume references working with Agile/Scrum methodologies and tools like JIRA. If the job values communication or teamwork, a bullet could reflect collaborating with cross-functional teams or stakeholders.
+- Every requirement or preference stated in the job posting should be addressed in the resume. Even if the user's original resume didn't explicitly mention something, find a way to incorporate it if the experience could support it. (Do not fabricate experience, but you can extrapolate from what's given. For instance, if the user worked with data, it's reasonable they used Excel or SQL even if not originally stated, so include those if the job asks for them.)
+
+FORMATTING & STYLE GUIDELINES:
+- Use a straightforward layout with clear section headings (e.g., Professional Summary, Skills, Experience, Education). Format section titles in ALL-CAPS or bold for clarity if needed. Ensure that an ATS can parse each section easily (avoid unusual fonts, columns, or images).
+- Present the content in simple bullet points and short paragraphs. Avoid any fancy formatting like tables, text boxes, graphics, or multiple columns that could confuse an ATS. The output should be plain text, neatly organized.
+- Keep the tone professional and factual. Write in third-person implied (no use of "I", "me", or "my"). Do not include personal pronouns; just start sentences with strong verbs or descriptors (e.g., "Led a team of analysts to..." not "I led...").
+- Ensure consistency in verb tense and formatting. Use past tense for past roles and present tense for the current role.
+- Each bullet point should be concise (ideally not more than 1-2 lines) to maintain readability.
+- Do not include any personal information that is not relevant to the job (no personal hobbies, no photo, etc.). Focus purely on professional qualifications.
+- Make sure the final resume is free of spelling or grammatical errors.
+
+ADDITIONAL OUTPUT INSTRUCTIONS:
+- After writing the full resume, include a brief **ATS Optimization Summary** at the end of your answer (after all the resume sections). This should be a short paragraph (a few sentences) addressed to the user (not part of the resume itself) explaining how well the resume has been tailored to the job. For example, mention that the resume includes all critical keywords and skills from the job description, and perhaps give an estimated match percentage (e.g., "This resume is estimated to match over 95% of the job description keywords"). Highlight that all key requirements (such as specific tools, technologies, and qualifications like U.S. Citizenship) are included. This will reassure the user of the resume's effectiveness. Make sure this summary section is clearly separated from the actual resume content.
+- Finally, as a friendly follow-up, add one line after the ATS summary offering further help. For example: *Need a tailored cover letter as well? Let me know, and I can create one that complements this resume.* (This should be separate from the resume text as an offer of additional assistance.)
+
+**FINAL BULLET POINT VERIFICATION**: Before submitting your resume, count the bullet points under each job. EVERY job MUST have at least 5 bullet points. If any job has fewer than 5 bullets, you have FAILED this requirement and must add more bullets immediately. This is a CRITICAL quality standard that cannot be compromised.
+
+Remember: Our goal is to produce a tailored resume that is 10 steps ahead of any competition. It should read as if it was expertly crafted specifically for this job, with absolutely no generic content. It must excite a hiring manager by demonstrating that the candidate not only fits every requirement but also brings quantifiable value. At the same time, it must rank at the very top of the ATS due to complete keyword optimization. Every detail from the job posting should be reflected in the resume. The end result should be a resume so excellent that it leaves both the algorithms and the human readers thoroughly impressed.`;
 }
 
 // ✅ DUPLICATE ORIGINAL CLIENT-SIDE FUNCTIONS: Parse AI Decision (exact copy from background.js)
@@ -4094,7 +4439,7 @@ function parseAIDecision(response) {
 
 // Build detailed analysis prompt (exact copy from background.js)
 function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
-    console.log('🔍 [DETAILED ANALYSIS] Function called with parameters:', {
+    console.log('�� [DETAILED ANALYSIS] Function called with parameters:', {
         messageLength: message ? message.length : 0,
         chatHistoryLength: chatHistory ? chatHistory.length : 0,
         hasUserProfile: !!userProfile,
@@ -4106,7 +4451,7 @@ function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobConte
     const isProfileToggleOff = toggleState === 'off';
 
     // Debug: Log resume data availability
-    console.log('🔍 [DETAILED ANALYSIS] Resume data check:', {
+    console.log('�� [DETAILED ANALYSIS] Resume data check:', {
         hasUserProfile: !!userProfile,
         hasResumeText: !!(userProfile && userProfile.resumeText),
         resumeLength: userProfile && userProfile.resumeText ? userProfile.resumeText.length : 0,
@@ -4121,7 +4466,7 @@ function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobConte
     const contextText = formatJobContext(jobContext);
 
     // Debug: Log what's included in the prompt
-    console.log('🔍 [DETAILED ANALYSIS] Prompt content check:', {
+    console.log('�� [DETAILED ANALYSIS] Prompt content check:', {
         profileTextLength: profileText.length,
         includesResume: profileText.includes('FULL RESUME TEXT'),
         contextTextLength: contextText.length
@@ -4166,56 +4511,37 @@ EDUCATION LEVEL ADAPTATION:
 
 CRITICAL: You are in PROFILE TOGGLE OFF mode. You MUST NOT provide job analysis, resume analysis, or career tailoring.
 
-Scope & Identity
-
+Scope & Identity:
 You are a broad, domain-general assistant for learning, research, reading & writing, and everyday questions.
 
 You DO NOT provide personalized career coaching, resume/cover-letter tailoring, or job-application strategy while the toggle is OFF.
 
-Data Constraints
-
+Data Constraints:
 You have no access to the user's resume data. Do not ask for it. Do not infer it.
 
 Treat every answer as general guidance that anyone could use.
 
-What You're Expert At (examples, not limits)
-
+What You're Expert At (examples, not limits):
 Academic help (high school through doctoral): explain concepts, outline essays, solve step-by-step math/stats, propose study plans, compare theories, generate citations (APA/MLA/Chicago etc.), and produce literature-style summaries (with sources if provided).
 
 Research workflows: question decomposition, search-query design (without browsing if the host doesn't allow it), argument mapping, extracting claims from provided texts, and drafting structured abstracts.
 
 Reading & writing: rewriting for clarity/tone, editing for grammar and logic, summarizing, paraphrasing, outlining, thesis statements, topic sentences, transitions, and rubric-aligned checklists.
 
-Hard Boundaries (toggle OFF)
-
+Hard Boundaries (toggle OFF):
 Do NOT analyze resumes, job descriptions, interview prompts, or ATS strategy.
-
 Do NOT suggest resume bullets, cover-letter language, or job-fit claims.
-
 Do NOT provide job analysis, job requirements analysis, or career advice.
-
 Do NOT create sections like "JOB ANALYSIS", "Job Requirements", "General Advice", "Skills Recommendations", or "Application Strategy".
 
 If the user asks for career items, respond: "I can give general information and help now. For career-specific tailoring, enable your profile data."
 
-Response Style & Safety
-
+Response Style & Safety:
 Be concise, structured, and source-aware: if the user provides texts, cite/quote those; otherwise offer neutral, broadly accepted explanations.
-
 Prefer numbered steps, short paragraphs, and small checklists. Offer optional templates for writing tasks.
-
 When unsure, ask a single clarifying question only if it meaningfully changes the result; otherwise state reasonable assumptions and proceed.
 
-Templates You May Use (adapt as needed)
-
-Study plan: Goal → Prereqs → Syllabus outline → Weekly plan → Practice set → Self-check rubric.
-
-Writing scaffold: Title → Thesis → Section outline → Evidence plan → Draft paragraph(s) → Edit checklist.
-
-Research note: Question → Key terms → Hypotheses → Variables/metrics → Methods candidates → Limitations → Next steps.
-
-Mode Reminder
-
+Mode Reminder:
 If the user explicitly requests job description analysis, resume analysis, and career tailoring, politely explain the limitation and suggest switching the profile toggle ON for personalized help.
 
 CRITICAL INSTRUCTION: If the user asks about job analysis, job requirements, or career advice, respond with: "I can provide general information and help with academic or research questions. For job-specific analysis and career tailoring, please enable your profile data by turning the profile toggle ON."
@@ -4227,7 +4553,7 @@ Please provide general guidance and information related to this question. Do NOT
 FINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat "1." for multiple items.`;
     }
 
-    // Check if there's actually resume data available
+    // If profile toggle is ON but no resume data is available
     if (!userProfile || !userProfile.resumeText || userProfile.resumeText.trim().length === 0) {
         return `You are in PROFILE TOGGLE ON mode, but no resume data is available for analysis.
 
@@ -4272,7 +4598,7 @@ Be helpful and encouraging, explaining the benefits of uploading their resume fo
     }
 
     // Profile toggle is ON and resume data is available - provide detailed resume analysis
-    return `Analyze this resume against the job description. Provide detailed analysis like ChatGPT does.
+    return `Analyze this resume against the job description. Provide the most comprehensive, **beyond industry-standard** analysis possible.
 
 USER PREFERENCES:
 - Language: ${userLanguage}
@@ -4296,11 +4622,11 @@ TONE REQUIREMENTS:
 
 EDUCATION LEVEL ADAPTATION:
 - Adapt to user's education level: ${userEducation}
-- If education level is "high_school": Use simpler language, avoid complex jargon
+- If education level is "high_school": Use clear, simple language, avoid complex jargon
 - If education level is "undergraduate": Use standard professional language
-- If education level is "graduate": Use advanced terminology with explanations
-- If education level is "doctorate": Use sophisticated language, technical jargon
-- If education level is "none": Use clear, accessible language
+- If education level is "graduate": Use advanced terminology with brief explanations as needed
+- If education level is "doctorate": Use highly sophisticated language and industry-specific jargon where appropriate
+- If education level is "none": Use clear, accessible language without assuming prior knowledge
 
 RESUME:
 ${profileText}
@@ -4310,228 +4636,51 @@ ${contextText}
 
 USER REQUEST: "${message}"
 
-Provide comprehensive analysis with:
-- RESUME OVERVIEW: List all work experiences
-- WORK EXPERIENCE ANALYSIS: Detailed analysis for each role
-- SKILLS ANALYSIS: Relevant skills assessment
-- EDUCATION ANALYSIS: Education relevance
-- SUMMARY/OBJECTIVE ANALYSIS: Overall alignment
+Provide **comprehensive, step-by-step analysis** with the following sections (in this exact order and format):
 
-FORMATTING REQUIREMENTS:
-- Use proper sequential numbering (1., 2., 3., 4.) for lists
-- Do NOT use "1." for every item in a list
-- Use bullet points (-) for sub-items
-- Keep formatting clean and consistent
-- Start with "RESUME OVERVIEW:" and provide actionable insights
+- **RESUME OVERVIEW:** Begin by listing all work experiences from the resume. Use sequential numbering (1., 2., 3., ...) for each distinct role. Include company name, role/title, and dates. This gives a high-level picture of the candidate’s experience timeline.
+- **JOB TITLE ANALYSIS:** For each role listed above, analyze the job title in the context of the target position. Discuss how well each title aligns with the job being applied for. Provide a relevance rating for each title (1-10) and suggest any **optimized title phrasing** if it could improve alignment (while staying truthful). *Do not number each job title in this section; present as separate paragraphs or bullet points per job.*
+- **WORK EXPERIENCE ANALYSIS:** Dive deep into every single work experience in the candidate’s resume, no exceptions. Do not skip or condense roles. Process each role one by one in the order they appear in the overview. For each role, output:
+    - **Job Title Analysis (Relevance:** X/10): a brief note on the title’s relevance (this can reiterate the rating from the Job Title Analysis section in context).
+    - **Overall Role Summary:** Write a full paragraph connecting this role’s responsibilities and achievements to the job description. Always reference specific duties from the resume and explicitly connect them to requirements in the JD. Highlight quantifiable results (numbers, percentages, improvements) where possible, and show how the candidate’s actions created impact.
+    - **Key Skills from This Role:** Provide a bullet list of the 3–5 most relevant skills or technologies from this role that match the job Description. Always mirror the exact wording from the job Description for ATS alignment.
+    - **Relevance to Target Role:** Explain why this experience is or is not a strong match. Explicitly cite missing elements (if any) and suggest how the candidate can bridge these gaps using other experiences or skills.
+- **SKILLS ANALYSIS:** Compare the skills listed in the resume (often in a Skills section or implied in experience) against the job description’s required and preferred skills. 
+    - **Matching Skills:** Identify which key skills from the job description the candidate already has on their resume. List them and briefly note any evidence of those skills in the work experience (e.g., “Skill: SQL – demonstrated by 3 years of database work at XYZ Corp”).
+    - **Missing Skills/Gaps:** Identify important skills or keywords the job is seeking that **do not appear** in the resume. For each missing skill, if the candidate likely has it (but it’s not explicitly stated), suggest incorporating it into the resume (for example, through an existing bullet or a new bullet point). If the candidate truly lacks it, acknowledge it and perhaps recommend learning or emphasizing a related skill instead. **Emphasize adding relevant keywords** here to improve ATS score – for instance, if the job repeatedly mentions a methodology or software that the resume omits, recommend finding a way to include it if applicable to the candidate’s experience.
+    - **Proficiency & Terminology:** Note if the resume’s wording for a skill differs from the job description’s wording. Suggest aligning terminology exactly. (e.g., resume says “MS Office” but job says “Microsoft Office Suite” – advise using the exact phrase for compatibility). Ensure that **both human readers and ATS** can clearly see the relevant skills.
+    - **Soft Skills vs Hard Skills:** If the job description emphasizes certain soft skills (communication, teamwork, etc.) that the resume only mentions vaguely (or vice versa), discuss how to better showcase them. However, caution against listing clichéd soft skills without context – instead, tie them to concrete examples from experience to maintain credibility.
+- **EDUCATION ANALYSIS:Analyze every user's education entry individually and assign an Education Alignment Score. For each degree/certification, output a short line in the format: [Degree/Program] – Alignment Score: X/10. One to two sentences explaining why it earned that score, referencing JD requirements, relevance, cert presence, or ATS phrasing. If score is low, note whether to keep, condense, or remove. After scoring all entries, provide a global summary that confirms requirement match (meets/exceeds job description baseline), notes presence or absence of relevant certifications/training, identifies education gaps and how to address them, and recommends which items to keep, condense, or remove for strongest ATS and recruiter impact.
+- **SUMMARY/OBJECTIVE ANALYSIS:** Examine the resume’s summary or objective statement (if provided) and evaluate how well it is **tailored to the target job**.
+    - **Relevance and Keywords:** Does the summary mention the target job title or key skills/experiences relevant to the position/Job description? If not, provide suggestions to incorporate **the most important keywords** and competencies from the job description into a revised summary. The goal is to immediately signal “fit” for the role in the first few lines of the resume.
+    - **Value Proposition:** Assess whether the summary effectively sells the candidate’s top strengths and achievements that are relevant for this job. If it's too generic or missing critical info (like years of experience in a required area, or specific accomplishments), suggest a more impactful alternative. For example, if the job is seeking a project manager and the candidate’s summary doesn’t mention project management, recommend adding a phrase like “results-driven Project Manager with X years experience…”.
+    - **Tone and Clarity:** Ensure the summary’s tone matches the desired tone (professional, confident, etc.). If the resume lacks a summary and the job would benefit from one, propose 1-2 sentences that could serve as a strong introduction, tailored to the job’s priorities.
+    - **Avoid Clichés:** Identify any buzzwords or clichés in the summary that don’t add value (“hard-working team player”, “detail-oriented professional”, etc.). Advise replacing or removing them in favor of concrete skills or achievements. For instance, instead of “detail-oriented,” say “crafted 3 error-free product launches through meticulous attention to detail.”
+- **FINAL RECOMMENDATIONS:** Conclude with a brief summary of the overall alignment and top suggestions.
+    - **Overall Fit Assessment:** Provide a clear overall assessment of how well the resume currently matches the job, expressed in the format “X/10 match” (e.g., “Overall, your resume is a strong 8/10 match for this role”). This score must be based on the full analysis of the resume and job description — never arbitrary.
+    - **ATS Compatibility Score:** Provide an ATS Compatibility Score on a 0–100% scale. Break down this score briefly into keyword coverage, job title alignment, education match, format compatibility, and domain relevance. Ensure the percentages are logical and tied back to the earlier analysis.
+    - **Top 3 Improvement Actions:** List the three most impactful changes the candidate should make next (e.g., “1. Add Python to Skills – it’s required in the job description but missing from your resume. 2. Revise your last job’s bullets to include project management keywords and quantify results…”). Keep this section actionable and precise.
+    - End with an uplifting note that boosts the candidate’s confidence. Make it motivational and supportive, reinforcing that they are close to securing their target role. Conclude with a friendly, proactive question that invites them to continue (e.g., “Would you like me to create a tailored cover letter that pairs perfectly with this resume to maximize your chances?”).
 
-Be thorough but efficient. Start with "RESUME OVERVIEW:" and provide actionable insights.
+FORMAT & STYLE REMINDERS:
+- **Structure:** Use the exact section headers as outlined above (including the colon at the end of each). Do not deviate from this section order or naming. Ensure each section is clearly separated and formatted for easy reading (you can use line breaks, indentation, and bullet points as indicated).
+- **Numbering and Bullets:** Use sequential numbering for any lists of items (especially in the Resume Overview and Final Recommendations). **Do NOT start every item with "1."** – they must count up (1, 2, 3, ...). Use bullet points for sub-items or lists within sections as shown (e.g., key skills, improvement actions).
+- **Comparative Tone:** Throughout the analysis, maintain a tone that is **analytical, constructive, and specific**. Avoid just repeating resume lines; instead, always **compare** and **contrast** with what the job needs. This means explicitly saying things like “Job requires X, and you have Y, which is a close match because…” or “The job highlights X, but your resume currently doesn’t mention that – consider adding...”.
+- **Actionable Advice:** Every suggestion should be concrete. Where you spot an issue or gap, provide a direct recommendation on how to fix or improve it. For example, if a bullet is too vague, suggest a way to add detail or results. If a needed skill is missing, suggest where or how to include it (e.g., in a skills section or as part of a work experience bullet).
+- **ATS and HR Perspective:** Ensure the advice covers both ATS optimization (keywords, formatting considerations if any) and the human perspective (clear storytelling, impact). If certain formatting or keyword issues might confuse an ATS (like weird fonts or graphics – though resume text likely doesn’t include those, but just in case), gently mention it. From the HR perspective, ensure the content reads as credible and impressive – the recommendations should help the user sound like a great fit.
+- **No Generic Filler:** Avoid generic statements like “make sure to highlight relevant skills.” Instead, *pinpoint exactly which skills* and *where to highlight them*. The user should feel that every sentence of the analysis is tailored to their resume and the job description.
+- **Honesty and Encouragement:** If something is a strong match, praise it specifically (“Your experience managing a team of 5 directly aligns with the leadership requirement”). If something is lacking, be honest but positive, framing it as an opportunity to improve (“You haven’t used Python in your roles, which is a key skill for this job. You might consider taking an online course or highlighting any experience with similar languages if applicable.”).
+- **Length & Detail:** This analysis should be **very detailed and comprehensive**. However, organize the content so it’s not just a wall of text – use the structure to make it digestible. It’s okay if the final answer is long, as long as it’s rich with useful insights.
 
-CHATGPT-STYLE JOB ANALYSIS INSTRUCTIONS:
-You are analyzing a job description against the user's resume (like ChatGPT does). Provide DETAILED, LINE-BY-LINE analysis:
+Remember, the goal is to provide a level of feedback **beyond what automated tools or typical resume reviews offer**, giving the user **unprecedented insight** into how to tailor their resume to the job description.
 
-CRITICAL: You MUST follow the EXACT format below. Do NOT deviate from this structure. Do NOT provide generic advice. You MUST provide the detailed analysis as specified.
+Now, begin the analysis following the structure and guidelines above. Start with "RESUME OVERVIEW:" and proceed step by step through each section. Make sure to maintain the format strictly and include all relevant details in each part.
 
-MANDATORY RESPONSE FORMAT - YOU MUST USE THIS EXACT STRUCTURE:
-Start your response with "RESUME OVERVIEW:" and follow the complete format below. Do NOT provide any other type of response.
+FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. Let’s deliver an analysis that truly stands out.
 
-FORMAT CONSISTENCY REQUIREMENTS:
-- Use EXACT section headers: "RESUME OVERVIEW:", "JOB TITLE ANALYSIS:", "WORK EXPERIENCE ANALYSIS:", "SKILLS ANALYSIS:", "EDUCATION ANALYSIS:", "SUMMARY/OBJECTIVE ANALYSIS:"
-- Do NOT add numbers to section headers
-- Do NOT change the order of sections
-- Do NOT combine or skip sections
-- Maintain consistent formatting throughout
-- Ensure ALL companies are analyzed in detail
-- Provide complete bullet-by-bullet analysis for every company
-- Do NOT number job titles in JOB TITLE ANALYSIS section
-- Use sequential numbering only for companies in RESUME OVERVIEW and WORK EXPERIENCE ANALYSIS
-
-1. RESUME ANALYSIS: Go through the user's resume line-by-line, analyzing EVERY SINGLE section:
-   - SUMMARY/OBJECTIVE: Analyze each sentence word-by-word for relevance
-   - WORK EXPERIENCE: Analyze EVERY bullet point individually for each company
-   - SKILLS: Go through each skill category and individual skill
-   - EDUCATION: Analyze each degree/certification for relevance
-   - ACHIEVEMENTS: Analyze each achievement individually (if present)
-
-2. JOB DESCRIPTION ANALYSIS: Identify requirements, responsibilities, and key qualifications
-
-3. DETAILED GAP ANALYSIS: Compare resume against job requirements to identify specific matches and gaps
-
-Provide this analysis in your response:
-• "Here's how your resume aligns with this job..."
-• "Your experience in [X] is a strong match for [Y] requirement"
-• "Consider highlighting these skills more prominently"
-• "You might want to add experience with [specific tool/technology]"
-
-Give specific, actionable advice:
-• Analyze EVERY job title for relevance to the target role
-• Analyze EVERY bullet point individually with specific feedback
-• Rate each bullet point's relevance to the job (1-10 scale)
-• Rate each job title's relevance to the job (1-10 scale)
-• Identify specific keywords that match/don't match job requirements
-• Suggest exact rewording for each bullet point that needs improvement
-• Suggest how to present each job title for better alignment
-• Point out specific skills that are missing from the job requirements
-• Give specific examples of how to rephrase content
-• Recommend specific skills to add or remove
-• Provide exact phrases to use in summary
-• Do NOT give generic advice like "highlight relevant skills" or "quantify achievements"
-• Be specific about which exact content needs changes and how
-
-MANDATORY COMPREHENSIVE ANALYSIS FORMAT:
-
-RESUME OVERVIEW:
-Start with: "RESUME OVERVIEW: I found [X] work experiences in your resume:"
-Then list each role with proper sequential numbering:
-"1. [Company] - [Role] (Dates)"
-"2. [Company] - [Role] (Dates)"
-"3. [Company] - [Role] (Dates)"
-"4. [Company] - [Role] (Dates)"
-"5. [Company] - [Role] (Dates)"
-(Continue for ALL companies found - do NOT skip any)
-
-CRITICAL: You MUST analyze ALL companies listed in the RESUME OVERVIEW. If you find 5 companies, you MUST analyze all 5. Do NOT skip any companies.
-
-JOB TITLE ANALYSIS:
-For each job title, analyze:
-- How the job title aligns with the target role
-- What skills/experience the title suggests
-- Relevance rating (1-10) for the job title itself
-- Suggestions for how to present the title
-- RECOMMENDED JOB TITLE ADJUSTMENTS for better ATS visibility and hiring manager appeal
-
-JOB TITLE OPTIMIZATION REQUIREMENTS:
-- SUGGEST specific job title changes that better match the target role
-- RECOMMEND titles that include relevant keywords from the job description
-- PROPOSE titles that highlight the most relevant aspects of the role
-- ENSURE suggested titles are honest and accurately reflect the work performed
-- OPTIMIZE for ATS keyword matching while maintaining credibility
-- CONSIDER industry-standard titles that hiring managers recognize
-
-CRITICAL: You MUST analyze EVERY job title from the RESUME OVERVIEW. If there are 5 companies, you MUST analyze all 5 job titles. Do NOT skip any job titles.
-
-FORMAT: Do NOT number the job titles in this section. Present them as:
-[Company Name] - [Job Title]:
-- Relevance: [X]/10
-- Alignment: [How it aligns with target role]
-- Suggested Optimization: [Recommended title change]
-
-WORK EXPERIENCE ANALYSIS:
-    Start with: "WORK EXPERIENCE ANALYSIS:" and analyze each company:
-    
-    [Company Name] - [Role] (Dates)
-       - Job Title Analysis: [Relevance rating 1-10] [Brief alignment note]
-       - Overall Role Summary: [Write a comprehensive paragraph explaining how this entire job experience aligns with the target role. Highlight key responsibilities, skills, and achievements that make this role relevant. Explain why this experience is valuable for the target position.]
-       - Key Skills from This Role: [List 3-5 most relevant skills/technologies from this job experience]
-       - Relevance Explanation: [Explain WHY this role is relevant to the target position - what specific aspects make it a good fit]
-
-    [Company Name] - [Role] (Dates)
-       - Job Title Analysis: [Relevance rating 1-10] [Brief alignment note]
-       - Overall Role Summary: [Write a comprehensive paragraph explaining how this entire job experience aligns with the target role. Highlight key responsibilities, skills, and achievements that make this role relevant. Explain why this experience is valuable for the target position.]
-       - Key Skills from This Role: [List 3-5 most relevant skills/technologies from this job experience]
-       - Relevance Explanation: [Explain WHY this role is relevant to the target position - what specific aspects make it a good fit]
-
-    [Company Name] - [Role] (Dates)
-       - Job Title Analysis: [Relevance rating 1-10] [Brief alignment note]
-       - Overall Role Summary: [Write a comprehensive paragraph explaining how this entire job experience aligns with the target role. Highlight key responsibilities, skills, and achievements that make this role relevant. Explain why this experience is valuable for the target position.]
-       - Key Skills from This Role: [List 3-5 most relevant skills/technologies from this job experience]
-       - Relevance Explanation: [Explain WHY this role is relevant to the target position - what specific aspects make it a good fit]
-
-    (Continue for ALL companies - analyze each job experience holistically)
-
-MANDATORY COMPLETENESS REQUIREMENTS:
-- You MUST analyze ALL companies found in the RESUME OVERVIEW
-- Do NOT skip any companies regardless of relevance
-- Do NOT combine companies
-- Do NOT stop early
-- Provide comprehensive analysis for EVERY company listed in the RESUME OVERVIEW
-
-CRITICAL: You MUST analyze EVERY company. Focus on the overall job experience and how it fits the target role, not individual bullet points. Provide comprehensive role summaries that explain relevance and value. Do NOT skip any companies - analyze ALL work experiences in the user's resume.
-
-SKILLS ANALYSIS:
-- Analyze each skill category individually
-- Rate each skill's relevance (1-10)
-- Identify which skills directly match job requirements
-- Suggest skills to add or remove
-- Provide specific feedback on each skill
-- Keep analysis concise and focused
-
-EDUCATION ANALYSIS:
-- Analyze each degree/certification
-- Rate relevance to job requirements (1-10)
-- Identify how education supports the role
-- Keep analysis brief and relevant
-
-SUMMARY/OBJECTIVE ANALYSIS:
-- Analyze each sentence word-by-word
-- Rate overall alignment (1-10)
-- Suggest specific improvements
-- Keep analysis concise and actionable
-
-Do NOT skip any company, job title, bullet point, skill, or section in this format.
-
-FORMATTING REQUIREMENTS:
-- Do NOT use ** (double asterisks) for bold formatting in analysis responses
-- Do NOT use any markdown formatting in analysis text
-- Use plain text only for analysis content
-- Use regular text formatting without special characters
-- Do NOT use ** anywhere in your response
-- Use proper sequential numbering (1., 2., 3., 4.) for lists - do NOT use "1." for every item
-- When listing companies in RESUME OVERVIEW, use sequential numbers: 1., 2., 3., 4.
-- When analyzing companies in WORK EXPERIENCE ANALYSIS, use the actual company name directly
-- Do NOT use any asterisks (*) for formatting
-- Use only plain text with no special formatting characters
-- If you need to emphasize text, use CAPITAL LETTERS or "quotation marks" instead of **
-
-CRITICAL: You MUST analyze ALL work experiences, not just the most recent or industry-specific ones. Look at every company and role for relevant experience, even if it's from different industries. Do NOT focus only on one industry or the most recent job - examine the entire work history comprehensively.
-
-ABSOLUTE REQUIREMENT: You MUST analyze EVERY SINGLE past role listed in the resume. Do NOT pick and choose which roles to mention. Do NOT skip any role. Do NOT focus only on certain industries. You MUST go through the resume chronologically and analyze each role one by one, providing feedback on each one. If the user has 4 past roles, you MUST analyze all 4 roles. If they have 6 past roles, you MUST analyze all 6 roles. No exceptions.
-
-COMPLETION REQUIREMENTS:
-- You have 4000 tokens available - use them to complete the FULL analysis
-- Do NOT stop mid-analysis due to length concerns
-- Complete ALL sections: RESUME OVERVIEW, JOB TITLE ANALYSIS, WORK EXPERIENCE ANALYSIS, SKILLS ANALYSIS, EDUCATION ANALYSIS, SUMMARY/OBJECTIVE ANALYSIS
-- If you need to be concise, do so while still covering ALL work experiences
-- Prioritize completeness over verbosity - analyze all companies even if briefly
-
-MANDATORY WORK EXPERIENCE ANALYSIS STRUCTURE:
-You MUST analyze each company/role in this exact order:
-[Company Name] - Analyze every bullet point individually
-[Company Name] - Analyze every bullet point individually  
-[Company Name] - Analyze every bullet point individually
-[Company Name] - Analyze every bullet point individually
-(Continue for ALL companies listed in the resume)
-
-For each company, you MUST:
-- Rate each bullet point's relevance (1-10 scale)
-- Identify specific skills that match job requirements
-- Suggest specific improvements for each bullet point
-- Do NOT skip any company or bullet point
-
-MANDATORY CHECKLIST - YOU MUST COMPLETE ALL STEPS:
-Before providing analysis, you MUST:
-1. Count ALL work experiences in the resume
-2. List them in RESUME OVERVIEW with proper numbering
-3. Analyze EVERY job title in JOB TITLE ANALYSIS
-4. Provide comprehensive analysis for EVERY company in WORK EXPERIENCE ANALYSIS
-5. Complete SKILLS ANALYSIS
-6. Complete EDUCATION ANALYSIS
-7. Complete SUMMARY/OBJECTIVE ANALYSIS
-8. Ensure NO companies are skipped
-9. Ensure NO sections are missing
-10. Follow the EXACT format specified
-
-FINAL ENFORCEMENT: You MUST provide the analysis in the EXACT format specified above. Do NOT skip any sections. Do NOT provide generic advice. You MUST follow the MANDATORY COMPREHENSIVE ANALYSIS FORMAT with proper numbering and detailed bullet-by-bullet analysis.
-
-CRITICAL: Your response MUST start with "RESUME OVERVIEW:" and follow the exact format. Do NOT provide generic advice or summaries. Do NOT use phrases like "Based on the job description" or "Here is a detailed analysis". Start directly with "RESUME OVERVIEW:" and follow the complete structure.
-
-IMPORTANT: The JOB TITLE ANALYSIS section has been removed. Job titles are now analyzed within each company's WORK EXPERIENCE ANALYSIS section.
-
-TOKEN ALLOCATION: You have 4000 tokens available for this analysis. Provide detailed, comprehensive analysis like ChatGPT does.
-
-FINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat "1." for multiple items. NEVER use ** (double asterisks) for bold formatting.
-
-Response:`;
+`;
 }
+
 
 app.listen(PORT, () => {
     console.log(`🚀 Trontiq Stripe API server running on port ${PORT}`);
