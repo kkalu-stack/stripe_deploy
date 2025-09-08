@@ -2977,7 +2977,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             message,
             userProfile,
             jobContext,
-            chatHistory,
+            sessionId,
             toggleState,
             mode
         } = req.body;
@@ -3010,10 +3010,10 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 
                 if (mode === 'natural') {
                     // For natural mode, build the complete conversation prompt (not just intent detection)
-                    prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState);
                 } else if (mode === 'analysis') {
                     // For analysis mode, build the detailed analysis prompt
-                    prompt = buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                    prompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState);
                 } else if (mode === 'generate') {
                     // For generate mode, determine what to generate based on message content
                     console.log('🔍 [GENERATE MODE] Job context check:', {
@@ -3024,16 +3024,16 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     });
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
-                        prompt = buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, chatHistory, message);
+                        prompt = await buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, sessionId, message);
                     } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
-                        prompt = buildCoverLetterPrompt(jobContext?.jobDescription || '', userProfile, jobContext, chatHistory);
+                        prompt = await buildCoverLetterPrompt(jobContext?.jobDescription || '', userProfile, jobContext, sessionId);
                     } else {
                         // Default to resume generation
-                        prompt = buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, chatHistory, message);
+                        prompt = await buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, sessionId, message);
                     }
                 } else {
                     // Default to natural conversation
-                    prompt = buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState);
                 }
                 
                 console.log('🔍 [DEBUG] Prompt built:', {
@@ -3945,7 +3945,7 @@ function buildSystemPromptServerSide(mode, toggleState) {
 }
 
 // Build user prompt server-side (exact copy from background.js logic)
-function buildUserPromptServerSide(message, userProfile, jobContext, chatHistory, toggleState, mode) {
+async function buildUserPromptServerSide(message, userProfile, jobContext, sessionId, toggleState, mode) {
     // Add null checks and default values
     if (!message) message = '';
     if (!userProfile) {
@@ -3960,18 +3960,16 @@ function buildUserPromptServerSide(message, userProfile, jobContext, chatHistory
     const isProfileToggleOff = toggleState === 'off';
     const isProfileEnabled = !isProfileToggleOff;
     
-    // Build conversation context with full history
-    let conversationContext = '';
-    if (chatHistory && Array.isArray(chatHistory) && chatHistory.length > 0) {
-        conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(msg => 
-            `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content || ''}`
-        ).join('\n');
-        
-        console.log('📊 [TOKEN MANAGEMENT] Full conversation history included:', {
-            chatHistoryLength: chatHistory.length,
-            conversationContextLength: conversationContext.length
-        });
-    }
+    // Get conversation context from server-side chat history management
+    const chatHistoryData = await manageChatHistory(sessionId);
+    const conversationContext = chatHistoryData.conversationContext;
+    
+    console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
+        hasSummary: !!chatHistoryData.summary,
+        recentMessagesCount: chatHistoryData.recentMessages.length,
+        totalMessages: chatHistoryData.totalMessages,
+        conversationContextLength: conversationContext.length
+    });
     
     // Build user context
     let userContext = '';
@@ -4031,7 +4029,7 @@ Based on the user's message, conversation history, and available context, determ
 Respond naturally and helpfully based on the user's request.`;
     } else if (mode === 'analysis') {
         // Use the specialized buildDetailedAnalysisPrompt function
-        return buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState);
+        return await buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState);
     }
     
     // ✅ CRITICAL FIX: Log total prompt length for token management
@@ -4046,32 +4044,23 @@ const PORT = process.env.PORT || 3000;
 // These functions were moved from background.js to protect IP
 
 // Build natural intent prompt (exact copy from background.js)
-function buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
+async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState) {
   // ✅ Use the toggleState parameter passed from the calling function
   // ❌ DO NOT override with profile data logic - this was the bug!
   var isProfileToggleOff = toggleState === 'off';
   var isProfileEnabled = !isProfileToggleOff;
 
-  // Build comprehensive context
-  var conversationContext = '';
-  if (chatHistory && chatHistory.length > 0) {
-    conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(function (msg) {
-      return "".concat(msg.role === 'user' ? 'User' : 'Assistant', ": ").concat(msg.content);
-    }).join('\n');
-    
-    // ✅ DEBUG: Log conversation history being included
-    console.log('🔍 [CONVERSATION HISTORY DEBUG] Including conversation history:', {
-      chatHistoryLength: chatHistory.length,
-      conversationContextLength: conversationContext.length,
-      firstMessage: chatHistory[0] ? chatHistory[0].content.substring(0, 100) + '...' : 'none',
-      lastMessage: chatHistory[chatHistory.length - 1] ? chatHistory[chatHistory.length - 1].content.substring(0, 100) + '...' : 'none'
-    });
-  } else {
-    console.log('🔍 [CONVERSATION HISTORY DEBUG] No conversation history provided:', {
-      chatHistory: chatHistory,
-      chatHistoryLength: chatHistory ? chatHistory.length : 'undefined'
-    });
-  }
+  // Get conversation context from server-side chat history management
+  var chatHistoryData = await manageChatHistory(sessionId);
+  var conversationContext = chatHistoryData.conversationContext;
+  
+  // ✅ DEBUG: Log server-side conversation context
+  console.log('🔍 [CONVERSATION HISTORY DEBUG] Server-side conversation context:', {
+    hasSummary: !!chatHistoryData.summary,
+    recentMessagesCount: chatHistoryData.recentMessages.length,
+    totalMessages: chatHistoryData.totalMessages,
+    conversationContextLength: conversationContext.length
+  });
 
   // Build user context
   var userContext = '';
@@ -4093,7 +4082,7 @@ function buildNaturalIntentPrompt(message, chatHistory, userProfile, jobContext,
 }
 
 // Build cover letter prompt (exact copy from background.js)
-function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, chatHistory) {
+async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, sessionId) {
   // Use the raw resume text directly - this is what we want for cover letter generation
   var resumeText = (userProfile === null || userProfile === void 0 ? void 0 : userProfile.resumeText) || 'No resume data available';
 
@@ -4157,18 +4146,16 @@ function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, chatHis
     trontiqUserData: userProfile !== null && userProfile !== void 0 && userProfile.trontiq_user ? typeof userProfile.trontiq_user === 'string' ? JSON.parse(userProfile.trontiq_user) : userProfile.trontiq_user : null
   });
   
-  // Build conversation context from chat history
-  var conversationContext = '';
-  if (chatHistory && chatHistory.length > 0) {
-    conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(function(msg) {
-      return "".concat(msg.role === 'user' ? 'User' : 'Assistant', ": ").concat(msg.content);
-    }).join('\n');
-    
-    console.log('🔍 [BUILD COVER LETTER PROMPT] Full conversation history included:', {
-      chatHistoryLength: chatHistory.length,
-      conversationContextLength: conversationContext.length
-    });
-  }
+  // Get conversation context from server-side chat history management
+  var chatHistoryData = await manageChatHistory(sessionId);
+  var conversationContext = chatHistoryData.conversationContext;
+  
+  console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
+    hasSummary: !!chatHistoryData.summary,
+    recentMessagesCount: chatHistoryData.recentMessages.length,
+    totalMessages: chatHistoryData.totalMessages,
+    conversationContextLength: conversationContext.length
+  });
   
   return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED cover letter for this specific job. 
 This cover letter must maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.
@@ -4287,7 +4274,7 @@ FINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:
 }
 
 // Build resume prompt (exact copy from background.js)
-function buildResumePrompt(jobDescription, userProfile, jobContext, currentResume, chatHistory) {
+async function buildResumePrompt(jobDescription, userProfile, jobContext, currentResume, sessionId) {
   var userRequest = arguments.length > 5 && arguments[5] !== undefined ? arguments[5] : '';
   var profileText = formatUserProfile(userProfile, {
     includeRaw: true
@@ -4304,8 +4291,7 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
     jobContextDescriptionLength: jobContext && jobContext.jobDescription ? jobContext.jobDescription.length : 0,
     fullJobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
     fullJobDescriptionPreview: fullJobDescription ? fullJobDescription.substring(0, 200) + '...' : 'EMPTY',
-    hasChatHistory: !!chatHistory,
-    chatHistoryLength: chatHistory ? chatHistory.length : 0
+    sessionId: sessionId
   });
 
   // Extract line count request from user request
@@ -4350,18 +4336,16 @@ function buildResumePrompt(jobDescription, userProfile, jobContext, currentResum
     careerLevel: careerLevel,
     detectedCareerLevel: careerLevel
   });
-  // Build conversation context from chat history
-  var conversationContext = '';
-  if (chatHistory && chatHistory.length > 0) {
-    conversationContext = '\n\nCONVERSATION HISTORY:\n' + chatHistory.map(function(msg) {
-      return "".concat(msg.role === 'user' ? 'User' : 'Assistant', ": ").concat(msg.content);
-    }).join('\n');
-    
-    console.log('🔍 [BUILD RESUME PROMPT] Full conversation history included:', {
-      chatHistoryLength: chatHistory.length,
-      conversationContextLength: conversationContext.length
-    });
-  }
+  // Get conversation context from server-side chat history management
+  var chatHistoryData = await manageChatHistory(sessionId);
+  var conversationContext = chatHistoryData.conversationContext;
+  
+  console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
+    hasSummary: !!chatHistoryData.summary,
+    recentMessagesCount: chatHistoryData.recentMessages.length,
+    totalMessages: chatHistoryData.totalMessages,
+    conversationContextLength: conversationContext.length
+  });
 
   return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be meticulously tailored to maximize ATS visibility and to impress human readers (hiring managers), far surpassing a generic resume.${conversationContext}
 
@@ -4438,10 +4422,10 @@ function parseAIDecision(response) {
 // REMOVED: formatResumeForDisplay function - no longer needed with single-call architecture
 
 // Build detailed analysis prompt (exact copy from background.js)
-function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobContext, toggleState) {
+async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState) {
     console.log('�� [DETAILED ANALYSIS] Function called with parameters:', {
         messageLength: message ? message.length : 0,
-        chatHistoryLength: chatHistory ? chatHistory.length : 0,
+        sessionId: sessionId,
         hasUserProfile: !!userProfile,
         hasJobContext: !!jobContext,
         toggleState: toggleState
@@ -4464,6 +4448,10 @@ function buildDetailedAnalysisPrompt(message, chatHistory, userProfile, jobConte
         includeRaw: !isProfileToggleOff // Only include resume when toggle is ON
     });
     const contextText = formatJobContext(jobContext);
+    
+    // Get conversation context from server-side chat history management
+    const chatHistoryData = await manageChatHistory(sessionId);
+    const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
     console.log('�� [DETAILED ANALYSIS] Prompt content check:', {
@@ -4676,15 +4664,200 @@ Remember, the goal is to provide a level of feedback **beyond what automated too
 
 Now, begin the analysis following the structure and guidelines above. Start with "RESUME OVERVIEW:" and proceed step by step through each section. Make sure to maintain the format strictly and include all relevant details in each part.
 
-FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. Let’s deliver an analysis that truly stands out.
+FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. Let's deliver an analysis that truly stands out.
+
+${conversationContext}
 
 `;
 }
 
+
+// ===== SERVER-SIDE CHAT HISTORY MANAGEMENT =====
+// Single function to handle all chat history management with summarization
+
+// In-memory storage for chat sessions (replace with database in production)
+const chatSessions = new Map();
+
+// Configuration for chat history management
+const CHAT_CONFIG = {
+    MAX_RECENT_MESSAGES: 10,        // Keep last 10 messages in full
+    SUMMARY_THRESHOLD: 20           // Start summarizing after 20 messages
+};
+
+/**
+ * Single function to manage chat history with automatic summarization
+ * @param {string} sessionId - The session identifier
+ * @param {Array} newMessages - New messages to add (optional)
+ * @param {string} jobDescription - Job description to preserve (optional)
+ * @returns {Object} { summary, recentMessages, totalMessages, conversationContext }
+ */
+async function manageChatHistory(sessionId, newMessages = [], jobDescription = null) {
+    // Initialize session if it doesn't exist
+    if (!chatSessions.has(sessionId)) {
+        chatSessions.set(sessionId, {
+            sessionId,
+            messages: [],
+            summary: null,
+            jobDescription: jobDescription,
+            lastActivity: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+    }
+    
+    const session = chatSessions.get(sessionId);
+    
+    // Update job description if provided
+    if (jobDescription) {
+        session.jobDescription = jobDescription;
+    }
+    
+    // Add new messages if provided
+    if (newMessages && newMessages.length > 0) {
+        newMessages.forEach(msg => {
+            session.messages.push({
+                role: msg.role,
+                content: msg.content,
+                timestamp: new Date().toISOString()
+            });
+        });
+        session.lastActivity = new Date().toISOString();
+        console.log(`💾 [CHAT HISTORY] Added ${newMessages.length} messages to session ${sessionId}`);
+    }
+    
+    // Auto-summarize if messages exceed threshold
+    if (session.messages.length > CHAT_CONFIG.SUMMARY_THRESHOLD) {
+        await summarizeMessages(session);
+    }
+    
+    // Determine what to return
+    const totalMessages = session.messages.length;
+    let recentMessages = session.messages;
+    
+    // If we have many messages, return only recent ones
+    if (totalMessages > CHAT_CONFIG.MAX_RECENT_MESSAGES) {
+        recentMessages = session.messages.slice(-CHAT_CONFIG.MAX_RECENT_MESSAGES);
+    }
+    
+    // Build conversation context
+    let conversationContext = '';
+    
+    // Add job description if available
+    if (session.jobDescription) {
+        conversationContext += `\n\nJOB DESCRIPTION:\n${session.jobDescription}`;
+    }
+    
+    // Add summary if available
+    if (session.summary) {
+        conversationContext += `\n\nCONVERSATION SUMMARY:\n${session.summary}`;
+    }
+    
+    // Add recent messages
+    if (recentMessages && recentMessages.length > 0) {
+        conversationContext += '\n\nRECENT CONVERSATION:\n' + recentMessages.map(msg => 
+            `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+        ).join('\n');
+    }
+    
+    return {
+        summary: session.summary,
+        recentMessages,
+        totalMessages,
+        conversationContext,
+        jobDescription: session.jobDescription
+    };
+}
+
+/**
+ * Summarize old messages to reduce token usage
+ * @param {Object} session - The session object
+ */
+async function summarizeMessages(session) {
+    if (session.messages.length <= CHAT_CONFIG.SUMMARY_THRESHOLD) {
+        return;
+    }
+    
+    const messagesToSummarize = session.messages.slice(0, -CHAT_CONFIG.MAX_RECENT_MESSAGES);
+    const recentMessages = session.messages.slice(-CHAT_CONFIG.MAX_RECENT_MESSAGES);
+    
+    try {
+        // Create summarization prompt
+        const conversationText = messagesToSummarize.map(msg => 
+            `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+        ).join('\n');
+        
+        const summaryPrompt = `Please provide a concise summary of this conversation history. Focus on key topics, decisions, and context that would be important for continuing the conversation. Keep it under 200 words.
+
+Conversation History:
+${conversationText}
+
+Summary:`;
+        
+        // Call OpenAI for summarization
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a helpful assistant that creates concise summaries of conversations. Focus on key topics, decisions, and context.'
+                    },
+                    {
+                        role: 'user',
+                        content: summaryPrompt
+                    }
+                ],
+                max_tokens: 200,
+                temperature: 0.3
+            })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const summary = data.choices[0].message.content.trim();
+            
+            // Update session with summary and keep only recent messages
+            session.summary = summary;
+            session.messages = recentMessages;
+            
+            console.log(`📝 [CHAT HISTORY] Summarized ${messagesToSummarize.length} messages for session ${session.sessionId}`);
+        } else {
+            throw new Error(`OpenAI API error: ${response.status}`);
+        }
+        
+    } catch (error) {
+        console.error('❌ [CHAT HISTORY] Failed to summarize messages:', error);
+        // Fallback: just keep recent messages without summary
+        session.messages = recentMessages;
+        session.summary = 'Previous conversation context available but not summarized.';
+    }
+}
+
+// Clean up old sessions every hour
+setInterval(() => {
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours
+    let cleanedCount = 0;
+    
+    for (const [sessionId, session] of chatSessions.entries()) {
+        if (new Date(session.lastActivity) < cutoffTime) {
+            chatSessions.delete(sessionId);
+            cleanedCount++;
+        }
+    }
+    
+    if (cleanedCount > 0) {
+        console.log(`🧹 [CHAT HISTORY] Cleaned up ${cleanedCount} old sessions`);
+    }
+}, 60 * 60 * 1000);
 
 app.listen(PORT, () => {
     console.log(`🚀 Trontiq Stripe API server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
     console.log(`🔒 Security: Rate limiting and CORS enabled`);
     console.log(`🔗 Supabase integration: Active`);
+    console.log(`💾 Chat history management: Active`);
 });
