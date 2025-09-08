@@ -3113,7 +3113,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         console.log('🔍 [DEBUG] Making OpenAI API call with:', {
             model,
             messagesCount: finalMessages ? finalMessages.length : 0,
-            maxTokens: max_tokens || 6000,
+            maxTokens: max_tokens || 3500,
             temperature: temperature || 0.7,
             hasApiKey: !!apiKey
         });
@@ -3128,7 +3128,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             body: JSON.stringify({
                 model: model,
                 messages: finalMessages,
-                max_tokens: max_tokens || 6000,
+                max_tokens: max_tokens || 3500,
                 temperature: temperature || 0.7
             })
         });
