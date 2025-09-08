@@ -3901,8 +3901,10 @@ Language: ${profile.language || 'english'}
 Education Level: ${profile.educationLevel || 'not specified'}
     `.trim();
     
-    // Resume text is now managed by the conversation history system
-    // No need to include it here as it will be added to conversation context when needed
+    if (includeRaw && profile.resumeText) {
+        const formattedResumeText = formatResumeText(profile.resumeText);
+        profileText += `\n\nFULL RESUME TEXT:\n${formattedResumeText}`;
+    }
     
     return profileText;
 }
@@ -3959,9 +3961,7 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     const isProfileEnabled = !isProfileToggleOff;
     
     // Get conversation context from server-side chat history management
-    const resumeText = isProfileEnabled ? userProfile?.resumeText : null;
-    const jobDescription = jobContext?.jobDescription || null;
-    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
+    const chatHistoryData = await manageChatHistory(sessionId);
     const conversationContext = chatHistoryData.conversationContext;
     
     console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
@@ -4051,9 +4051,7 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
   var isProfileEnabled = !isProfileToggleOff;
 
   // Get conversation context from server-side chat history management
-  var resumeText = isProfileEnabled ? userProfile?.resumeText : null;
-  var jobDescription = jobContext?.jobDescription || null;
-  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
+  var chatHistoryData = await manageChatHistory(sessionId);
   var conversationContext = chatHistoryData.conversationContext;
   
   // ✅ DEBUG: Log server-side conversation context
@@ -4149,9 +4147,7 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, s
   });
   
   // Get conversation context from server-side chat history management
-  var resumeText = userProfile?.resumeText;
-  var jobDescription = jobContext?.jobDescription || null;
-  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
+  var chatHistoryData = await manageChatHistory(sessionId);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
@@ -4341,9 +4337,7 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
     detectedCareerLevel: careerLevel
   });
   // Get conversation context from server-side chat history management
-  var resumeText = userProfile?.resumeText;
-  var jobDescription = jobContext?.jobDescription || null;
-  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
+  var chatHistoryData = await manageChatHistory(sessionId);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
@@ -4456,9 +4450,7 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     const contextText = formatJobContext(jobContext);
     
     // Get conversation context from server-side chat history management
-    const resumeText = !isProfileToggleOff ? userProfile?.resumeText : null;
-    const jobDescription = jobContext?.jobDescription || null;
-    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription, resumeText);
+    const chatHistoryData = await manageChatHistory(sessionId);
     const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
@@ -4656,7 +4648,7 @@ Provide **comprehensive, step-by-step analysis** with the following sections (in
     - **Overall Fit Assessment:** Provide a clear overall assessment of how well the resume currently matches the job, expressed in the format “X/10 match” (e.g., “Overall, your resume is a strong 8/10 match for this role”). This score must be based on the full analysis of the resume and job description — never arbitrary.
     - **ATS Compatibility Score:** Provide an ATS Compatibility Score on a 0–100% scale. Break down this score briefly into keyword coverage, job title alignment, education match, format compatibility, and domain relevance. Ensure the percentages are logical and tied back to the earlier analysis.
     - **Top 3 Improvement Actions:** List the three most impactful changes the candidate should make next (e.g., “1. Add Python to Skills – it’s required in the job description but missing from your resume. 2. Revise your last job’s bullets to include project management keywords and quantify results…”). Keep this section actionable and precise.
-    - End with an uplifting note that boosts the candidate’s confidence. Make it motivational and supportive, reinforcing that they are close to securing their target role. Conclude with a friendly, proactive question that invites them to continue (e.g., “Would you like me to create a tailored cover letter or tailored resume that pairs perfectly with this resume to maximize your chances?”).
+    - End with an uplifting note that boosts the candidate’s confidence. Make it motivational and supportive, reinforcing that they are close to securing their target role. Conclude with a friendly, proactive question that invites them to continue (e.g., “Would you like me to create a tailored cover letter that pairs perfectly with this resume to maximize your chances?”).
 
 FORMAT & STYLE REMINDERS:
 - **Structure:** Use the exact section headers as outlined above (including the colon at the end of each). Do not deviate from this section order or naming. Ensure each section is clearly separated and formatted for easy reading (you can use line breaks, indentation, and bullet points as indicated).
@@ -4699,7 +4691,7 @@ const CHAT_CONFIG = {
  * @param {string} jobDescription - Job description to preserve (optional)
  * @returns {Object} { summary, recentMessages, totalMessages, conversationContext }
  */
-async function manageChatHistory(sessionId, newMessages = [], jobDescription = null, resumeText = null) {
+async function manageChatHistory(sessionId, newMessages = [], jobDescription = null) {
     // Initialize session if it doesn't exist
     if (!chatSessions.has(sessionId)) {
         chatSessions.set(sessionId, {
@@ -4707,7 +4699,6 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
             messages: [],
             summary: null,
             jobDescription: jobDescription,
-            resumeText: null, // Store resume text in session
             lastActivity: new Date().toISOString(),
             createdAt: new Date().toISOString()
         });
@@ -4726,19 +4717,6 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
             session.lastActivity = new Date().toISOString();
         }
         session.jobDescription = jobDescription;
-    }
-    
-    // Update resume text if provided - RESET CONVERSATION for new resume
-    if (resumeText) {
-        // Check if this is a new resume (different from current one)
-        if (session.resumeText && session.resumeText !== resumeText) {
-            console.log('🔄 [RESUME RESET] New resume detected, resetting conversation history');
-            // Reset conversation history for new resume
-            session.messages = [];
-            session.summary = null;
-            session.lastActivity = new Date().toISOString();
-        }
-        session.resumeText = resumeText;
     }
     
     // Add new messages if provided
@@ -4782,12 +4760,6 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
         conversationContext += `\n\nJOB DESCRIPTION:\n${session.jobDescription}`;
     }
     
-    // Only add resume text if we don't have a summary (first few messages)
-    // or if the resume is relatively short
-    if (session.resumeText && (!session.summary || session.resumeText.length < 2000)) {
-        conversationContext += `\n\nUSER RESUME:\n${session.resumeText}`;
-    }
-    
     // Add recent messages
     if (recentMessages && recentMessages.length > 0) {
         conversationContext += '\n\nRECENT CONVERSATION:\n' + recentMessages.map(msg => 
@@ -4800,8 +4772,7 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
         recentMessages,
         totalMessages,
         conversationContext,
-        jobDescription: session.jobDescription,
-        resumeText: session.resumeText
+        jobDescription: session.jobDescription
     };
 }
 
