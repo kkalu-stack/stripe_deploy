@@ -2988,7 +2988,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             hasMessage: !!message,
             hasUserProfile: !!userProfile,
             hasJobContext: !!jobContext,
-            hasChatHistory: !!chatHistory,
+            hasSessionId: !!sessionId,
             toggleState: toggleState,
             mode: mode,
             isRegenerate: isRegenerate,
@@ -3953,7 +3953,7 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
         userProfile = {}; // Fallback for safety
     }
     if (!jobContext) jobContext = {};
-    if (!chatHistory) chatHistory = [];
+    // chatHistory is now managed server-side via sessionId
     if (!toggleState) toggleState = 'off';
     if (!mode) mode = 'natural';
     
