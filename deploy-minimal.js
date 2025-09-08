@@ -1994,7 +1994,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             
             user = await userResponse.json();
             fullName = user.user_metadata?.full_name || 'Not provided';
-            displayName = user.user_metadata?.display_name || fullName || 'User';
+            // Only use display_name from metadata, don't fall back to fullName (which might be email prefix)
+            displayName = user.user_metadata?.display_name || 'User';
             
             // Debug: Log resume data availability
             const resumeText = user.user_metadata?.resume_text || '';
@@ -3523,7 +3524,8 @@ app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        const displayName = user.user_metadata?.display_name || user.user_metadata?.full_name || 'User';
+        // Only use display_name from metadata, don't fall back to full_name (which might be email prefix)
+        const displayName = user.user_metadata?.display_name || 'User';
         
         console.log('✅ [SUPABASE_USER] User found via fallback:', { userId: user.id, displayName });
         
