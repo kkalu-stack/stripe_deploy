@@ -3976,7 +3976,8 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     const isProfileEnabled = !isProfileToggleOff;
     
     // Get conversation context from server-side chat history management
-    const chatHistoryData = await manageChatHistory(sessionId);
+    const jobDescription = jobContext?.jobDescription || null;
+    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
     const conversationContext = chatHistoryData.conversationContext;
     
     console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
@@ -4066,7 +4067,8 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
   var isProfileEnabled = !isProfileToggleOff;
 
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var jobDescription = jobContext?.jobDescription || null;
+  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
   var conversationContext = chatHistoryData.conversationContext;
   
   // ✅ DEBUG: Log server-side conversation context
@@ -4162,7 +4164,8 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, s
   });
   
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var jobDescription = jobContext?.jobDescription || null;
+  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
@@ -4352,7 +4355,8 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
     detectedCareerLevel: careerLevel
   });
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var jobDescription = jobContext?.jobDescription || null;
+  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
@@ -4465,7 +4469,8 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     const contextText = formatJobContext(jobContext);
     
     // Get conversation context from server-side chat history management
-    const chatHistoryData = await manageChatHistory(sessionId);
+    const jobDescription = jobContext?.jobDescription || null;
+    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
     const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
