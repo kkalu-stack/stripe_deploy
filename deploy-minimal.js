@@ -4547,21 +4547,15 @@ I'm here to help you create the perfect resume for your job application!`;
   console.log('🧠 Resume prompt being sent to GPT:', {
     profileLength: profileText.length,
     jobDescriptionLength: fullJobDescription.length,
-    resumeLength: currentResume ? currentResume.length : 0,
-    totalLength: profileText.length + fullJobDescription.length + (currentResume ? currentResume.length : 0),
+    resumeLength: profileText.length,
+    totalLength: profileText.length + fullJobDescription.length,
     requestedLines: requestedLines,
-    userRequest: userRequest,
+    userRequest: conversationContext,
     careerLevel: careerLevel,
     detectedCareerLevel: careerLevel
   });
-  // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
-  var conversationContext = chatHistoryData.conversationContext;
   
-  console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
-    hasSummary: !!chatHistoryData.summary,
-    recentMessagesCount: chatHistoryData.recentMessages.length,
-    totalMessages: chatHistoryData.totalMessages,
+  console.log('🔍 [BUILD RESUME PROMPT] Using conversation context:', {
     conversationContextLength: conversationContext.length
   });
 
