@@ -41,6 +41,15 @@ const SESSION_CONFIG = {
 function authenticateSession(req, res, next) {
     const sessionId = req.cookies.sid;
     
+    console.log('🔍 [AUTH] Authentication attempt:', {
+        hasSessionId: !!sessionId,
+        sessionId: sessionId ? sessionId.substring(0, 20) + '...' : 'none',
+        userAgent: req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 50) + '...' : 'none',
+        origin: req.headers.origin || 'none',
+        referer: req.headers.referer || 'none',
+        cookies: req.headers.cookie ? req.headers.cookie.substring(0, 100) + '...' : 'none'
+    });
+    
     if (!sessionId) {
         console.log('❌ [AUTH] No session cookie found');
         return res.status(401).json({
@@ -54,6 +63,7 @@ function authenticateSession(req, res, next) {
     
     if (!session) {
         console.log('❌ [AUTH] Invalid or expired session:', sessionId);
+        console.log('🔍 [AUTH] Available sessions:', Array.from(sessions.keys()).map(id => id.substring(0, 20) + '...'));
         return res.status(401).json({
             success: false,
             error: 'SESSION_EXPIRED',
@@ -511,7 +521,12 @@ app.post('/api/auth/exchange', async (req, res) => {
         // Set HttpOnly cookie
         res.cookie('sid', sessionId, SESSION_CONFIG);
         
-        console.log('✅ Session created and cookie set');
+        console.log('✅ Session created and cookie set:', {
+            sessionId: sessionId.substring(0, 20) + '...',
+            userId: user.id,
+            cookieConfig: SESSION_CONFIG,
+            userAgent: req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 50) + '...' : 'none'
+        });
         
         res.json({ 
             success: true, 
@@ -3574,6 +3589,30 @@ app.post('/api/test-endpoint', cors(SECURITY_CONFIG.cors), (req, res) => {
 app.post('/api/test-no-auth', cors(SECURITY_CONFIG.cors), (req, res) => {
     console.log('🧪 [TEST] Test endpoint without auth called');
     return res.json({ success: true, message: 'Test endpoint without auth working' });
+});
+
+// Debug endpoint to check authentication status
+app.get('/api/debug-auth', cors(SECURITY_CONFIG.cors), (req, res) => {
+    const sessionId = req.cookies.sid;
+    const session = sessionId ? getSession(sessionId) : null;
+    
+    console.log('🔍 [DEBUG-AUTH] Auth status check:', {
+        hasSessionId: !!sessionId,
+        sessionId: sessionId ? sessionId.substring(0, 20) + '...' : 'none',
+        hasSession: !!session,
+        userId: session ? session.userId : 'none',
+        totalSessions: sessions.size,
+        userAgent: req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 50) + '...' : 'none',
+        cookies: req.headers.cookie ? req.headers.cookie.substring(0, 100) + '...' : 'none'
+    });
+    
+    res.json({
+        authenticated: !!session,
+        hasSessionId: !!sessionId,
+        userId: session ? session.userId : null,
+        totalSessions: sessions.size,
+        sessionExpiresAt: session ? session.expiresAt : null
+    });
 });
 
 // Clear Job Description Endpoint
