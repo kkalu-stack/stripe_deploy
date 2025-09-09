@@ -3002,6 +3002,13 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         if (message && userProfile && toggleState !== undefined) {
             console.log('🔧 [SINGLE-CALL] Building complete prompt server-side for mode:', mode);
             console.log('🔧 [SINGLE-CALL] Toggle state:', toggleState);
+            console.log('🔍 [DEBUG] UserProfile received:', {
+                hasUserProfile: !!userProfile,
+                userProfileKeys: userProfile ? Object.keys(userProfile) : [],
+                hasResumeText: !!(userProfile && userProfile.resumeText),
+                resumeTextLength: userProfile && userProfile.resumeText ? userProfile.resumeText.length : 0,
+                resumeTextPreview: userProfile && userProfile.resumeText ? userProfile.resumeText.substring(0, 100) + '...' : 'NO RESUME TEXT'
+            });
             
             try {
                 // Build the complete prompt based on mode (like original client-side)
@@ -4360,7 +4367,10 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
     requestedLines: requestedLines,
     userRequest: userRequest,
     careerLevel: careerLevel,
-    detectedCareerLevel: careerLevel
+    detectedCareerLevel: careerLevel,
+    hasCurrentResume: !!currentResume,
+    currentResumePreview: currentResume ? currentResume.substring(0, 100) + '...' : 'NO CURRENT RESUME',
+    includesResumeInProfile: profileText.includes('FULL RESUME TEXT')
   });
   // Get conversation context from server-side chat history management
   var jobDescription = jobContext?.jobDescription || null;
