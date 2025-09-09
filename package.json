@@ -13,6 +13,7 @@
     "obfuscate": "javascript-obfuscator dist --output dist-obfuscated --config obfuscator-config.json"
   },
   "dependencies": {
+    "@upstash/redis": "^1.35.3",
     "express": "^4.18.2",
     "stripe": "^14.0.0",
     "cors": "^2.8.5",
@@ -39,27 +40,4 @@
   "keywords": ["stripe", "payment", "subscription", "trontiq", "security"],
   "author": "Trontiq",
   "license": "MIT"
-},
-{
-  "name": "trontiq-server",
-  "version": "1.0.0",
-  "description": "Trontiq server deployment",
-  "main": "Trontiq/deploy-minimal.js",
-  "scripts": {
-    "start": "node Trontiq/deploy-minimal.js"
-  },
-  "dependencies": {
-    "@upstash/redis": "^1.35.3",
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "express-rate-limit": "^7.1.5",
-    "helmet": "^7.1.0",
-    "@supabase/supabase-js": "^2.38.4",
-    "cookie-parser": "^1.4.6",
-    "stripe": "^14.9.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
 }
-
