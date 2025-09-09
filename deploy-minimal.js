@@ -3559,6 +3559,18 @@ What would you like to do?`
     }
 });
 
+// Test endpoint to verify server is working
+app.post('/api/test-endpoint', cors(SECURITY_CONFIG.cors), (req, res) => {
+    console.log('🧪 [TEST] Test endpoint called');
+    return res.json({ success: true, message: 'Test endpoint working' });
+});
+
+// Test endpoint without authentication
+app.post('/api/test-no-auth', cors(SECURITY_CONFIG.cors), (req, res) => {
+    console.log('🧪 [TEST] Test endpoint without auth called');
+    return res.json({ success: true, message: 'Test endpoint without auth working' });
+});
+
 // Clear Job Description Endpoint
 app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
