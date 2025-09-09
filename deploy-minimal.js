@@ -25,6 +25,34 @@ const redisClient = new Redis({
 
 console.log('✅ Upstash Redis client initialized');
 
+// Test Redis connection on startup
+async function testRedisConnection() {
+    try {
+        console.log('🔍 [REDIS-TEST] Testing Redis connection...');
+        
+        // Test basic operations like in the Upstash documentation
+        await redisClient.set("test:connection", "working");
+        const result = await redisClient.get("test:connection");
+        
+        console.log('✅ [REDIS-TEST] Redis connection successful:', result);
+        
+        // Clean up test key
+        await redisClient.del("test:connection");
+        console.log('✅ [REDIS-TEST] Test key cleaned up');
+        
+    } catch (error) {
+        console.error('❌ [REDIS-TEST] Redis connection failed:', error);
+        console.error('❌ [REDIS-TEST] Error details:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+    }
+}
+
+// Run Redis test on startup
+testRedisConnection();
+
 // In-memory session store (in production, use Redis or database)
 const sessions = new Map();
 
@@ -2008,6 +2036,10 @@ app.get('/api/get-user-id', async (req, res) => {
 app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
         console.log('🔍 [API/ME] Request received for user:', req.userId);
+        console.log('🔍 [API/ME] Redis client status:', {
+            redisClientExists: !!redisClient,
+            redisClientType: typeof redisClient
+        });
         
         // Get user data from Supabase Admin API (auth/users is not accessible via REST API)
         let user, fullName, displayName;
@@ -3591,34 +3623,15 @@ app.post('/api/test-no-auth', cors(SECURITY_CONFIG.cors), (req, res) => {
     return res.json({ success: true, message: 'Test endpoint without auth working' });
 });
 
-// Debug endpoint to check authentication status
-app.get('/api/debug-auth', cors(SECURITY_CONFIG.cors), (req, res) => {
-    const sessionId = req.cookies.sid;
-    const session = sessionId ? getSession(sessionId) : null;
-    
-    console.log('🔍 [DEBUG-AUTH] Auth status check:', {
-        hasSessionId: !!sessionId,
-        sessionId: sessionId ? sessionId.substring(0, 20) + '...' : 'none',
-        hasSession: !!session,
-        userId: session ? session.userId : 'none',
-        totalSessions: sessions.size,
-        userAgent: req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 50) + '...' : 'none',
-        cookies: req.headers.cookie ? req.headers.cookie.substring(0, 100) + '...' : 'none'
-    });
-    
-    res.json({
-        authenticated: !!session,
-        hasSessionId: !!sessionId,
-        userId: session ? session.userId : null,
-        totalSessions: sessions.size,
-        sessionExpiresAt: session ? session.expiresAt : null
-    });
-});
 
 // Clear Job Description Endpoint
 app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
         console.log('🔍 [API/CLEAR-JD] Clear job description request received for user:', req.userId);
+        console.log('🔍 [API/CLEAR-JD] Redis client status:', {
+            redisClientExists: !!redisClient,
+            redisClientType: typeof redisClient
+        });
         
         // Delete job description from Redis
         await deleteJobDescriptionFromRedis(req.userId);
@@ -3632,6 +3645,11 @@ app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateS
         
     } catch (error) {
         console.error('❌ [API/CLEAR-JD] Error:', error);
+        console.error('❌ [API/CLEAR-JD] Error details:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
         return res.status(500).json({
             success: false,
             error: 'Internal server error'
@@ -5087,10 +5105,22 @@ async function getJobDescriptionFromRedis(userId) {
 async function deleteJobDescriptionFromRedis(userId) {
     try {
         const key = `jd:${userId}`;
+        console.log('🔍 [REDIS JD] Attempting to delete key:', key);
+        console.log('🔍 [REDIS JD] Redis client before delete:', {
+            redisClientExists: !!redisClient,
+            redisClientType: typeof redisClient
+        });
+        
         await redisClient.del(key);
         console.log('🗑️ [REDIS JD] Job description deleted for user:', userId);
     } catch (error) {
         console.error('❌ [REDIS JD] Error deleting job description:', error);
+        console.error('❌ [REDIS JD] Error details:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+        throw error;
     }
 }
 
