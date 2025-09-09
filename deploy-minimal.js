@@ -3064,6 +3064,18 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             messagePreview: message ? message.substring(0, 100) : 'No message'
         });
         
+        // 🔍 DEBUG: Check resume data in userProfile
+        if (userProfile) {
+            console.log('🔍 [API/GENERATE] UserProfile debug:', {
+                userProfileKeys: Object.keys(userProfile),
+                hasResumeText: !!(userProfile.resumeText),
+                resumeTextLength: userProfile.resumeText ? userProfile.resumeText.length : 0,
+                resumeTextPreview: userProfile.resumeText ? userProfile.resumeText.substring(0, 200) + '...' : 'No resume text'
+            });
+        } else {
+            console.log('❌ [API/GENERATE] No userProfile received!');
+        }
+        
         // ✅ RESTORE ORIGINAL SINGLE-CALL ARCHITECTURE
         let finalMessages = messages;
         
@@ -4641,6 +4653,18 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, togg
         hasUserProfile: !!userProfile,
         toggleState: toggleState
     });
+    
+    // 🔍 DEBUG: Check what userProfile contains
+    if (userProfile) {
+        console.log('🔍 [DETAILED ANALYSIS] UserProfile received:', {
+            userProfileKeys: Object.keys(userProfile),
+            hasResumeText: !!(userProfile.resumeText),
+            resumeTextLength: userProfile.resumeText ? userProfile.resumeText.length : 0,
+            resumeTextPreview: userProfile.resumeText ? userProfile.resumeText.substring(0, 200) + '...' : 'No resume text'
+        });
+    } else {
+        console.log('❌ [DETAILED ANALYSIS] No userProfile received!');
+    }
     
     // Use the toggleState parameter passed from client instead of inferring from profile data
     const isProfileToggleOff = toggleState === 'off';
