@@ -1931,6 +1931,41 @@ app.get('/api/test-delete', (req, res) => {
     res.json({ message: 'Delete endpoint test - working!' });
 });
 
+// Test Redis job description retrieval
+app.get('/api/test-redis-jd/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log('🧪 [REDIS-TEST] Testing job description retrieval for user:', userId);
+        
+        // Test the exact same function that's used in the app
+        const jobDescription = await getJobDescriptionFromRedis(userId);
+        
+        console.log('🧪 [REDIS-TEST] Retrieval result:', {
+            userId: userId,
+            hasJobDescription: !!jobDescription,
+            length: jobDescription ? jobDescription.length : 0,
+            preview: jobDescription ? jobDescription.substring(0, 200) + '...' : 'No content'
+        });
+        
+        res.json({
+            success: true,
+            userId: userId,
+            hasJobDescription: !!jobDescription,
+            length: jobDescription ? jobDescription.length : 0,
+            preview: jobDescription ? jobDescription.substring(0, 200) + '...' : 'No content',
+            fullContent: jobDescription || null
+        });
+        
+    } catch (error) {
+        console.error('❌ [REDIS-TEST] Error testing Redis JD retrieval:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            details: error
+        });
+    }
+});
+
 // Test Supabase auth connection
 app.get('/api/test-auth-delete', async (req, res) => {
     try {
