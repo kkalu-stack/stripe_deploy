@@ -3105,7 +3105,8 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                         messagePreview: message.substring(0, 100)
                     });
                     
-                    // Get conversation context from chat history (no longer storing JD in chat history)
+                    // Get conversation context from chat history (retrieval only)
+                    console.log('🔍 [GENERATE MODE] Retrieving existing chat history for session:', sessionId);
                     const chatHistoryData = await manageChatHistory(sessionId, [], null, req.userId);
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
@@ -3300,6 +3301,19 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             originalLength: responseContent.length,
             cleanedLength: parsedResponse.response.length
         });
+        
+        // 💾 SAVE CONVERSATION TO REDIS
+        try {
+            console.log('💾 [CHAT HISTORY] Saving conversation to Redis...');
+            await manageChatHistory(sessionId, [
+                { role: 'user', content: message },
+                { role: 'assistant', content: parsedResponse.response }
+            ], null, req.userId);
+            console.log('✅ [CHAT HISTORY] Conversation saved successfully');
+        } catch (error) {
+            console.error('❌ [CHAT HISTORY] Error saving conversation:', error);
+            // Don't fail the request if chat history saving fails
+        }
         
         res.json({
             success: true,
@@ -4156,7 +4170,8 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     const isProfileToggleOff = toggleState === 'off';
     const isProfileEnabled = !isProfileToggleOff;
     
-    // Get conversation context from server-side chat history management
+    // Get conversation context from server-side chat history management (retrieval only)
+    console.log('🔍 [TOKEN MANAGEMENT] Retrieving existing chat history for session:', sessionId);
     const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
     const conversationContext = chatHistoryData.conversationContext;
     
@@ -4248,7 +4263,8 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, toggleS
   var isProfileToggleOff = toggleState === 'off';
   var isProfileEnabled = !isProfileToggleOff;
 
-  // Get conversation context from server-side chat history management
+  // Get conversation context from server-side chat history management (retrieval only)
+  console.log('🔍 [BUILD NATURAL INTENT] Retrieving existing chat history for session:', sessionId);
   var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   var conversationContext = chatHistoryData.conversationContext;
   
@@ -4363,7 +4379,8 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, sessionId, us
     trontiqUserData: userProfile !== null && userProfile !== void 0 && userProfile.trontiq_user ? typeof userProfile.trontiq_user === 'string' ? JSON.parse(userProfile.trontiq_user) : userProfile.trontiq_user : null
   });
   
-  // Get conversation context from server-side chat history management
+  // Get conversation context from server-side chat history management (retrieval only)
+  console.log('🔍 [BUILD COVER LETTER] Retrieving existing chat history for session:', sessionId);
   var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   var conversationContext = chatHistoryData.conversationContext;
   
@@ -4699,7 +4716,8 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, togg
       willIncludeInChatContext: !!jobDescription
     });
     
-    // Get conversation context from server-side chat history management
+    // Get conversation context from server-side chat history management (retrieval only)
+    console.log('🔍 [BUILD DETAILED ANALYSIS] Retrieving existing chat history for session:', sessionId);
     const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
     const conversationContext = chatHistoryData.conversationContext;
 
