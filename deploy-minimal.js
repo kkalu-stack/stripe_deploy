@@ -5253,8 +5253,9 @@ async function deleteJobDescriptionFromRedis(userId) {
 
 // Configuration for chat history management
 const CHAT_CONFIG = {
-    MAX_RECENT_MESSAGES: 10,        // Keep last 10 messages in full
-    SUMMARY_THRESHOLD: 20           // Start summarizing after 20 messages
+    MAX_RECENT_MESSAGES: 5,         // Keep last 5 messages in full (reduced for efficiency)
+    SUMMARY_THRESHOLD: 3,           // Start running summary after 3 messages
+    MAX_SUMMARY_LENGTH: 300         // Maximum length for running summary
 };
 
 /**
@@ -5308,11 +5309,11 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
         });
         session.lastActivity = new Date().toISOString();
         console.log(`💾 [CHAT HISTORY] Added ${newMessages.length} messages to session ${sessionId}`);
-    }
-    
-    // Auto-summarize if messages exceed threshold
-    if (session.messages.length > CHAT_CONFIG.SUMMARY_THRESHOLD) {
-        await summarizeMessages(session);
+        
+        // Update running summary with new messages
+        if (session.messages.length >= CHAT_CONFIG.SUMMARY_THRESHOLD) {
+            await updateRunningSummary(session);
+        }
     }
     
     // Determine what to return
@@ -5324,25 +5325,26 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
         recentMessages = session.messages.slice(-CHAT_CONFIG.MAX_RECENT_MESSAGES);
     }
     
-    // Build conversation context - prioritize summary over full job description
+    // Build conversation context - prioritize running summary
     let conversationContext = '';
     
-    // Add summary if available (this should contain the essential context)
+    // Add running summary if available (this contains all essential context)
     if (session.summary) {
         conversationContext += `\n\nCONVERSATION SUMMARY:\n${session.summary}`;
+        console.log(`📝 [CHAT HISTORY] Using running summary (${session.summary.length} chars) for context`);
     }
     
-    // Only add job description if we don't have a summary (first few messages)
-    // or if the job description is relatively short
-    if (session.jobDescription && (!session.summary || session.jobDescription.length < 2000)) {
-        conversationContext += `\n\nJOB DESCRIPTION:\n${session.jobDescription}`;
-    }
-    
-    // Add recent messages
-    if (recentMessages && recentMessages.length > 0) {
+    // Add recent messages only if we don't have a summary yet (first few messages)
+    if (recentMessages && recentMessages.length > 0 && !session.summary) {
         conversationContext += '\n\nRECENT CONVERSATION:\n' + recentMessages.map(msg => 
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n');
+        console.log(`💬 [CHAT HISTORY] Using ${recentMessages.length} recent messages for context`);
+    }
+    
+    // Add job description only if it's short and we don't have much context yet
+    if (session.jobDescription && session.jobDescription.length < 1000 && conversationContext.length < 2000) {
+        conversationContext += `\n\nJOB DESCRIPTION:\n${session.jobDescription}`;
     }
     
     // Store updated session in Redis
@@ -5358,35 +5360,46 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
 }
 
 /**
- * Summarize old messages to reduce token usage
+ * Update running summary with new messages - maintains a continuous summary
  * @param {Object} session - The session object
  */
-async function summarizeMessages(session) {
-    if (session.messages.length <= CHAT_CONFIG.SUMMARY_THRESHOLD) {
-        return;
-    }
-    
-    const messagesToSummarize = session.messages.slice(0, -CHAT_CONFIG.MAX_RECENT_MESSAGES);
-    const recentMessages = session.messages.slice(-CHAT_CONFIG.MAX_RECENT_MESSAGES);
-    
+async function updateRunningSummary(session) {
     try {
-        // Create summarization prompt
-        const conversationText = messagesToSummarize.map(msg => 
+        // Get the last few messages to add to the summary
+        const recentMessages = session.messages.slice(-3); // Last 3 messages
+        const newConversationText = recentMessages.map(msg => 
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n');
         
-        const summaryPrompt = `Please provide a concise summary of this conversation history. Focus on key topics, decisions, and context that would be important for continuing the conversation. Keep it under 200 words.
-
-Conversation History:
-${conversationText}
-
-Summary:`;
+        let summaryPrompt;
         
-        // Call OpenAI for summarization
+        if (session.summary) {
+            // Update existing summary with new messages
+            summaryPrompt = `You have an existing conversation summary and new messages. Update the summary to include the new information while keeping it concise and under ${CHAT_CONFIG.MAX_SUMMARY_LENGTH} words.
+
+EXISTING SUMMARY:
+${session.summary}
+
+NEW MESSAGES:
+${newConversationText}
+
+UPDATED SUMMARY (keep it concise, focus on key topics and context):`;
+        } else {
+            // Create initial summary
+            summaryPrompt = `Create a concise summary of this conversation. Focus on key topics, decisions, and context that would be important for continuing the conversation. Keep it under ${CHAT_CONFIG.MAX_SUMMARY_LENGTH} words.
+
+CONVERSATION:
+${newConversationText}
+
+SUMMARY:`;
+        }
+        
+        // Call OpenAI for summarization using the key rotation system
+        const apiKey = getNextApiKey();
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -5394,36 +5407,42 @@ Summary:`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a helpful assistant that creates concise summaries of conversations. Focus on key topics, decisions, and context.'
+                        content: 'You are a helpful assistant that creates and maintains concise conversation summaries. Focus on key topics, decisions, and context. Always stay under the word limit.'
                     },
                     {
                         role: 'user',
                         content: summaryPrompt
                     }
                 ],
-                max_tokens: 200,
+                max_tokens: Math.floor(CHAT_CONFIG.MAX_SUMMARY_LENGTH * 1.5), // Allow some buffer
                 temperature: 0.3
             })
         });
         
         if (response.ok) {
             const data = await response.json();
-            const summary = data.choices[0].message.content.trim();
+            const newSummary = data.choices[0].message.content.trim();
             
-            // Update session with summary and keep only recent messages
-            session.summary = summary;
-            session.messages = recentMessages;
+            // Update session with new summary
+            session.summary = newSummary;
             
-            console.log(`📝 [CHAT HISTORY] Summarized ${messagesToSummarize.length} messages for session ${session.sessionId}`);
+            // Keep only the most recent messages to avoid token bloat
+            if (session.messages.length > CHAT_CONFIG.MAX_RECENT_MESSAGES) {
+                session.messages = session.messages.slice(-CHAT_CONFIG.MAX_RECENT_MESSAGES);
+            }
+            
+            console.log(`📝 [RUNNING SUMMARY] Updated summary for session ${session.sessionId} (${newSummary.length} chars)`);
         } else {
             throw new Error(`OpenAI API error: ${response.status}`);
         }
         
     } catch (error) {
-        console.error('❌ [CHAT HISTORY] Failed to summarize messages:', error);
-        // Fallback: just keep recent messages without summary
-        session.messages = recentMessages;
-        session.summary = 'Previous conversation context available but not summarized.';
+        console.error('❌ [RUNNING SUMMARY] Failed to update summary:', error);
+        // Don't fail the request if summary update fails
+        // Keep existing summary or create a simple fallback
+        if (!session.summary) {
+            session.summary = 'Conversation context available but not summarized.';
+        }
     }
 }
 
