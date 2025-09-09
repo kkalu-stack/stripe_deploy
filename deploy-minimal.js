@@ -3094,6 +3094,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 } else if (mode === 'analysis') {
                     // For analysis mode, build the detailed analysis prompt
+                    console.log('🔍 [API/GENERATE] About to call buildDetailedAnalysisPrompt with userId:', req.userId);
                     prompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 } else if (mode === 'generate') {
                     // For generate mode, determine what to generate based on message content
@@ -3584,7 +3585,8 @@ app.post('/api/detect-job-description', cors(SECURITY_CONFIG.cors), authenticate
             // Save to Redis
             console.log('🔄 [API/JD-DETECT] Job description detected, starting save process...');
             console.log('📝 [API/JD-DETECT] Message length:', message.length);
-            console.log('📝 [API/JD-DETECT] User ID:', req.userId);
+            console.log('📝 [API/JD-DETECT] User ID for saving:', req.userId);
+            console.log('📝 [API/JD-DETECT] Redis key will be: jd:' + req.userId);
             
             await saveJobDescriptionToRedis(req.userId, message);
             
@@ -4684,6 +4686,7 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, togg
     });
     
     // Get job description from Redis and format as context
+    console.log('🔍 [DETAILED ANALYSIS] About to retrieve JD from Redis for userId:', userId);
     const jobDescription = await getJobDescriptionFromRedis(userId);
     const contextText = jobDescription ? `\n\nJOB CONTEXT:\n${jobDescription}` : '';
     
