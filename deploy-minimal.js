@@ -3049,12 +3049,12 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     const effectiveJobDescription = (jobContext && jobContext.jobDescription) || chatHistoryData.jobDescription || '';
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
-                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message, req.userId);
+                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, jobContext, toggleState, req.userId);
                     } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
                         prompt = await buildCoverLetterPrompt(effectiveJobDescription, userProfile, jobContext, sessionId, req.userId);
                     } else {
                         // Default to resume generation
-                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message, req.userId);
+                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, jobContext, toggleState, req.userId);
                     }
                 } else {
                     // Default to natural conversation
@@ -4306,8 +4306,7 @@ FINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:
 }
 
 // Build resume prompt (exact copy from background.js)
-async function buildResumePrompt(jobDescription, userProfile, jobContext, currentResume, sessionId, userId) {
-  var userRequest = arguments.length > 5 && arguments[5] !== undefined ? arguments[5] : '';
+async function buildResumePrompt(message, sessionId, userProfile, jobContext, toggleState, userId) {
   var profileText = formatUserProfile(userProfile, {
     includeRaw: true
   });
