@@ -3326,10 +3326,6 @@ app.use((error, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-    res.status(404).json({ error: 'Endpoint not found' });
-});
 
 // Webhook handler functions for Supabase integration
 
@@ -5328,6 +5324,11 @@ setInterval(() => {
         console.log(`🧹 [CHAT HISTORY] Cleaned up ${cleanedCount} old sessions`);
     }
 }, 60 * 60 * 1000);
+
+// 404 handler - must be last
+app.use('*', (req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+});
 
 app.listen(PORT, () => {
     console.log(`🚀 Trontiq Stripe API server running on port ${PORT}`);
