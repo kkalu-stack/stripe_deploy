@@ -3023,13 +3023,17 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                         messagePreview: message.substring(0, 100)
                     });
                     
+                    // Get job description from session if not in current request
+                    const chatHistoryData = await manageChatHistory(sessionId);
+                    const effectiveJobDescription = (jobContext && jobContext.jobDescription) || chatHistoryData.jobDescription || '';
+                    
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
-                        prompt = await buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, sessionId, message);
+                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message);
                     } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
-                        prompt = await buildCoverLetterPrompt(jobContext?.jobDescription || '', userProfile, jobContext, sessionId);
+                        prompt = await buildCoverLetterPrompt(effectiveJobDescription, userProfile, jobContext, sessionId);
                     } else {
                         // Default to resume generation
-                        prompt = await buildResumePrompt(jobContext?.jobDescription || '', userProfile, jobContext, userProfile.resumeText, sessionId, message);
+                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message);
                     }
                 } else {
                     // Default to natural conversation
@@ -4287,8 +4291,8 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
     includeRaw: true
   });
 
-  // Use full job description, not truncated context
-  var fullJobDescription = (jobContext === null || jobContext === void 0 ? void 0 : jobContext.jobDescription) || jobDescription;
+  // Use full job description, not truncated context - prioritize passed jobDescription parameter
+  var fullJobDescription = jobDescription || (jobContext === null || jobContext === void 0 ? void 0 : jobContext.jobDescription);
   
   console.log('🔍 [BUILD RESUME PROMPT] Job description check:', {
     hasJobDescription: !!jobDescription,
