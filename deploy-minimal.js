@@ -3002,13 +3002,6 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         if (message && userProfile && toggleState !== undefined) {
             console.log('🔧 [SINGLE-CALL] Building complete prompt server-side for mode:', mode);
             console.log('🔧 [SINGLE-CALL] Toggle state:', toggleState);
-            console.log('🔍 [DEBUG] UserProfile received:', {
-                hasUserProfile: !!userProfile,
-                userProfileKeys: userProfile ? Object.keys(userProfile) : [],
-                hasResumeText: !!(userProfile && userProfile.resumeText),
-                resumeTextLength: userProfile && userProfile.resumeText ? userProfile.resumeText.length : 0,
-                resumeTextPreview: userProfile && userProfile.resumeText ? userProfile.resumeText.substring(0, 100) + '...' : 'NO RESUME TEXT'
-            });
             
             try {
                 // Build the complete prompt based on mode (like original client-side)
@@ -3212,19 +3205,6 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 success: false,
                 error: 'Empty response from OpenAI API'
             });
-        }
-        
-        // Check for pending action markers in the response
-        const pendingActionMatch = responseContent.match(/<!-- PENDING_ACTION:(\w+) -->/);
-        if (pendingActionMatch) {
-            const actionType = pendingActionMatch[1];
-            console.log('🎯 [PENDING ACTION] Detected pending action marker:', actionType);
-            
-            // Remove the marker from the response content
-            responseContent = responseContent.replace(/<!-- PENDING_ACTION:\w+ -->/g, '').trim();
-            
-            // Add pending action info to response
-            responseContent += `\n\n<!-- PENDING_ACTION_SET:${actionType} -->`;
         }
         
         // Strip decision tags from response before sending to client
@@ -3840,16 +3820,6 @@ Encourage & Clarify: Encourage the user about their prospects and invite them to
 
 Offer Tailoring/Growth Assistance: After giving initial advice, always offer to help with the next step. E.g., "Would you like me to help you update your resume for this job or perhaps draft a cover letter highlighting your fit?" Many users will not know this is possible until you suggest it. Make the offer clear and welcoming.
 
-🚨 CRITICAL PENDING ACTION RULE 🚨
-When you make ANY offer that requires user confirmation (like "Would you like me to create a tailored resume?" or "Would you like assistance in tailoring your resume?"), you MUST include this exact marker at the end of your response: "<!-- PENDING_ACTION:resume -->"
-
-EXAMPLES:
-- "Would you like me to create a tailored resume? <!-- PENDING_ACTION:resume -->"
-- "Would you like assistance in tailoring your resume further? <!-- PENDING_ACTION:resume -->"
-- "Should I generate a tailored resume for this position? <!-- PENDING_ACTION:resume -->"
-
-This marker is REQUIRED for the system to recognize "yes" responses and generate the resume.
-
 On User's Go-Ahead → Generate Documents: If the user says "yes" or otherwise confirms they want a tailored resume or cover letter:
 
 Retrieve and use the user's profile data (resume, skills, etc.) along with the job description to create the requested document(s).
@@ -3991,8 +3961,7 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     const isProfileEnabled = !isProfileToggleOff;
     
     // Get conversation context from server-side chat history management
-    const jobDescription = jobContext?.jobDescription || null;
-    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
+    const chatHistoryData = await manageChatHistory(sessionId);
     const conversationContext = chatHistoryData.conversationContext;
     
     console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
@@ -4082,8 +4051,7 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
   var isProfileEnabled = !isProfileToggleOff;
 
   // Get conversation context from server-side chat history management
-  var jobDescription = jobContext?.jobDescription || null;
-  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
+  var chatHistoryData = await manageChatHistory(sessionId);
   var conversationContext = chatHistoryData.conversationContext;
   
   // ✅ DEBUG: Log server-side conversation context
@@ -4179,8 +4147,7 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, s
   });
   
   // Get conversation context from server-side chat history management
-  var jobDescription = jobContext?.jobDescription || null;
-  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
+  var chatHistoryData = await manageChatHistory(sessionId);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
@@ -4367,14 +4334,10 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
     requestedLines: requestedLines,
     userRequest: userRequest,
     careerLevel: careerLevel,
-    detectedCareerLevel: careerLevel,
-    hasCurrentResume: !!currentResume,
-    currentResumePreview: currentResume ? currentResume.substring(0, 100) + '...' : 'NO CURRENT RESUME',
-    includesResumeInProfile: profileText.includes('FULL RESUME TEXT')
+    detectedCareerLevel: careerLevel
   });
   // Get conversation context from server-side chat history management
-  var jobDescription = jobContext?.jobDescription || null;
-  var chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
+  var chatHistoryData = await manageChatHistory(sessionId);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
@@ -4426,7 +4389,7 @@ FORMATTING & STYLE GUIDELINES:
 
 ADDITIONAL OUTPUT INSTRUCTIONS:
 - After writing the full resume, include a brief **ATS Optimization Summary** at the end of your answer (after all the resume sections). This should be a short paragraph (a few sentences) addressed to the user (not part of the resume itself) explaining how well the resume has been tailored to the job. For example, mention that the resume includes all critical keywords and skills from the job description, and perhaps give an estimated match percentage (e.g., "This resume is estimated to match over 95% of the job description keywords"). Highlight that all key requirements (such as specific tools, technologies, and qualifications like U.S. Citizenship) are included. This will reassure the user of the resume's effectiveness. Make sure this summary section is clearly separated from the actual resume content.
-- Finally, as a friendly follow-up, add one line after the ATS summary offering further help. For example: *Need a tailored cover letter as well? Let me know, and I can create one that complements this resume.* (This should be separate from the resume text as an offer of additional assistance.)
+- Finally, as a friendly follow-up, add one line after the ATS summary offering further help. For example: *I can also prepare a tailored cover letter to complement this resume—just ask whenever you’re ready* (This should be separate from the resume text as an offer of additional assistance.)
 
 **FINAL BULLET POINT VERIFICATION**: Before submitting your resume, count the bullet points under each job. EVERY job MUST have at least 5 bullet points. If any job has fewer than 5 bullets, you have FAILED this requirement and must add more bullets immediately. This is a CRITICAL quality standard that cannot be compromised.
 
@@ -4487,8 +4450,7 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     const contextText = formatJobContext(jobContext);
     
     // Get conversation context from server-side chat history management
-    const jobDescription = jobContext?.jobDescription || null;
-    const chatHistoryData = await manageChatHistory(sessionId, [], jobDescription);
+    const chatHistoryData = await manageChatHistory(sessionId);
     const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
@@ -4686,7 +4648,7 @@ Provide **comprehensive, step-by-step analysis** with the following sections (in
     - **Overall Fit Assessment:** Provide a clear overall assessment of how well the resume currently matches the job, expressed in the format “X/10 match” (e.g., “Overall, your resume is a strong 8/10 match for this role”). This score must be based on the full analysis of the resume and job description — never arbitrary.
     - **ATS Compatibility Score:** Provide an ATS Compatibility Score on a 0–100% scale. Break down this score briefly into keyword coverage, job title alignment, education match, format compatibility, and domain relevance. Ensure the percentages are logical and tied back to the earlier analysis.
     - **Top 3 Improvement Actions:** List the three most impactful changes the candidate should make next (e.g., “1. Add Python to Skills – it’s required in the job description but missing from your resume. 2. Revise your last job’s bullets to include project management keywords and quantify results…”). Keep this section actionable and precise.
-    - End with an uplifting note that boosts the candidate’s confidence. Make it motivational and supportive, reinforcing that they are close to securing their target role. Conclude with a friendly, proactive question that invites them to continue (e.g., “Would you like me to create a tailored cover letter or resume that pairs perfectly with this job description to maximize your chances?”).
+    - End with an uplifting note that boosts the candidate’s confidence. Make it motivational and supportive, reinforcing that they are close to securing their target role. Conclude with a friendly, proactive question that invites them to continue (e.g., “I can also create a tailored resume or cover letter that aligns perfectly with this job description to maximize your chances—just let me know anytime.”).
 
 FORMAT & STYLE REMINDERS:
 - **Structure:** Use the exact section headers as outlined above (including the colon at the end of each). Do not deviate from this section order or naming. Ensure each section is clearly separated and formatted for easy reading (you can use line breaks, indentation, and bullet points as indicated).
@@ -4699,8 +4661,6 @@ FORMAT & STYLE REMINDERS:
 - **Length & Detail:** This analysis should be **very detailed and comprehensive**. However, organize the content so it’s not just a wall of text – use the structure to make it digestible. It’s okay if the final answer is long, as long as it’s rich with useful insights.
 
 Remember, the goal is to provide a level of feedback **beyond what automated tools or typical resume reviews offer**, giving the user **unprecedented insight** into how to tailor their resume to the job description.
-
-🚨 CRITICAL: When you conclude your analysis with an offer to help (like "Would you like me to create a tailored resume?"), you MUST include this exact marker: "<!-- PENDING_ACTION:resume -->"
 
 Now, begin the analysis following the structure and guidelines above. Start with "RESUME OVERVIEW:" and proceed step by step through each section. Make sure to maintain the format strictly and include all relevant details in each part.
 
