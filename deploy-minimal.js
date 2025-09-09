@@ -3527,9 +3527,14 @@ app.post('/api/detect-job-description', cors(SECURITY_CONFIG.cors), authenticate
         
         if (isJobDescription) {
             // Save to Redis
+            console.log('🔄 [API/JD-DETECT] Job description detected, starting save process...');
+            console.log('📝 [API/JD-DETECT] Message length:', message.length);
+            console.log('📝 [API/JD-DETECT] User ID:', req.userId);
+            
             await saveJobDescriptionToRedis(req.userId, message);
             
             console.log('✅ [API/JD-DETECT] Job description detected and saved for user:', req.userId);
+            console.log('🎯 [API/JD-DETECT] JD will now be available for all subsequent operations');
             
             return res.json({
                 success: true,
@@ -4191,8 +4196,18 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
   var jobContextText = '';
   var effectiveJobDescription = await getJobDescriptionFromRedis(userId);
   
+  console.log('🔍 [BUILD CONTEXT] Job description usage check:', {
+    userId: userId,
+    hasJobDescription: !!effectiveJobDescription,
+    jobDescriptionLength: effectiveJobDescription ? effectiveJobDescription.length : 0,
+    willIncludeInContext: !!effectiveJobDescription
+  });
+  
   if (effectiveJobDescription) {
     jobContextText = "\n\nJOB CONTEXT:\n".concat(effectiveJobDescription);
+    console.log('✅ [BUILD CONTEXT] Job context added to prompt, length:', jobContextText.length);
+  } else {
+    console.log('⚠️ [BUILD CONTEXT] No job description available - context will be empty');
   }
   return "You are an AI assistant responsible for interpreting user intent and determining the appropriate response. You have full autonomy to decide how to respond based on the user's message, conversation history, and available context.\n\nUSER PREFERENCES:\n- Language: ".concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- Preferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- Education Level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n\nLANGUAGE AND COMMUNICATION REQUIREMENTS:\n- ALWAYS respond in the user's preferred language: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- If language is \"spanish\", respond entirely in Spanish\n- If language is \"french\", respond entirely in French\n- If language is \"german\", respond entirely in German\n- If language is \"arabic\", respond entirely in Arabic\n\nTONE REQUIREMENTS:\n- Match the user's preferred tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- If tone is \"professional\": Use formal, business-like language\n- If tone is \"casual\": Use friendly, conversational language\n- If tone is \"enthusiastic\": Use energetic, positive language\n- If tone is \"confident\": Use assertive, self-assured language\n- If tone is \"friendly\": Use warm, approachable language\n\nEDUCATION LEVEL ADAPTATION:\n- Adapt to user's education level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n- If education level is \"high_school\": Use simpler language, avoid complex jargon\n- If education level is \"undergraduate\": Use standard professional language\n- If education level is \"graduate\": Use advanced terminology with explanations\n- If education level is \"doctorate\": Use sophisticated language, technical jargon\n- If education level is \"none\": Use clear, accessible language\n\nYOUR RESPONSIBILITIES:\n1. Analyze the user's intent based on their message and conversation history\n2. Determine the most appropriate response type\n3. Provide natural, contextual responses\n4. Ask clarifying questions when needed\n5. Maintain conversation flow\n\nAVAILABLE RESPONSE TYPES:\n").concat(isProfileToggleOff ? "\n- CONVERSATION: General conversation, career advice, interview tips, general job guidance\n- CLARIFICATION: Ask clarifying questions when intent is unclear\n- GENERAL_GUIDANCE: Provide general advice and best practices for job applications\n" : "\n- ANALYSIS: Provide detailed job/resume analysis (when job description is provided)\n- RESUME_GENERATION: Generate a tailored resume (when user explicitly requests or confirms)\n- COVER_LETTER_GENERATION: Generate a cover letter (when user explicitly requests or confirms)\n- SHOW_RESUME: Display the user's raw resume (when user asks to see their resume)\n- CONVERSATION: General conversation, career advice, interview tips, etc.\n- CLARIFICATION: Ask clarifying questions when intent is unclear\n", "\n\nNATURAL INTENT DETECTION:\n- Use semantic understanding, not keyword matching\n- Consider conversation context and user's actual intent\n- Understand implied requests and follow-up questions\n- Respond naturally like ChatGPT would\n").concat(isProfileToggleOff ? "\n- When profile toggle is OFF: Provide general guidance and advice only\n- If user asks about resume analysis or tailoring: Explain that personal data is needed and suggest enabling profile toggle\n- If user asks about their qualifications: Provide general advice about how to assess qualifications\n- Focus on universal career advice and best practices\n" : "\n- If user asks \"can you see my resume?\", respond conversationally about what you can see\n- If user asks about their qualifications or fit, provide conversational analysis\n- If user wants to generate documents, they'll explicitly say so\n- Maintain natural conversation flow without rigid categorization\n", "\n\nCONVERSATION FLOW:\n- Respond naturally and conversationally\n- Answer questions based on available context\n- Ask follow-up questions when appropriate\n- Provide helpful insights without forcing specific modes\n- Let the conversation flow naturally like ChatGPT\n\n").concat(isProfileToggleOff ? "\nBehavior with Profile Toggle OFF (Resume Data Disabled) – Expert General Knowledge Mode\n\nScope & Identity\n\nYou are a broad, domain-general assistant for learning, research, reading & writing, and everyday questions.\n\nYou DO NOT provide personalized career coaching, resume/cover-letter tailoring, or job-application strategy while the toggle is OFF.\n\nData Constraints\n\nYou have no access to the user's resume data. Do not ask for it. Do not infer it.\n\nTreat every answer as general guidance that anyone could use.\n\nWhat You're Expert At (examples, not limits)\n\nAcademic help (high school through doctoral): explain concepts, outline essays, solve step-by-step math/stats, propose study plans, compare theories, generate citations (APA/MLA/Chicago etc.), and produce literature-style summaries (with sources if provided).\n\nResearch workflows: question decomposition, search-query design (without browsing if the host doesn't allow it), argument mapping, extracting claims from provided texts, and drafting structured abstracts.\n\nReading & writing: rewriting for clarity/tone, editing for grammar and logic, summarizing, paraphrasing, outlining, thesis statements, topic sentences, transitions, and rubric-aligned checklists.\n\nHard Boundaries (toggle OFF)\n\nDo NOT analyze resumes, job descriptions, interview prompts, or ATS strategy.\n\nDo NOT suggest resume bullets, cover-letter language, or job-fit claims.\n\nIf the user asks for career items, respond: \"I can give general information and help now. For career-specific tailoring, enable your profile data.\"\n\nResponse Style & Safety\n\nBe concise, structured, and source-aware: if the user provides texts, cite/quote those; otherwise offer neutral, broadly accepted explanations.\n\nPrefer numbered steps, short paragraphs, and small checklists. Offer optional templates for writing tasks.\n\nWhen unsure, ask a single clarifying question only if it meaningfully changes the result; otherwise state reasonable assumptions and proceed.\n\nTemplates You May Use (adapt as needed)\n\nStudy plan: Goal → Prereqs → Syllabus outline → Weekly plan → Practice set → Self-check rubric.\n\nWriting scaffold: Title → Thesis → Section outline → Evidence plan → Draft paragraph(s) → Edit checklist.\n\nResearch note: Question → Key terms → Hypotheses → Variables/metrics → Methods candidates → Limitations → Next steps.\n\nMode Reminder\n\nIf the user explicitly requests job description analysis, resume analysis, and career tailoring, politely explain the limitation and suggest switching the profile toggle ON for personalized help.\n\nCRITICAL FORMATTING REQUIREMENTS:\n- Use proper sequential numbering (1., 2., 3., 4., 5.) for all numbered lists\n- Do NOT use \"1.\" for every item in a list\n- Use bullet points (-) for sub-items within numbered sections\n- Maintain consistent formatting throughout your response\n- If you create a numbered list, ensure each item has the correct sequential number\n" : "\nPERSONALIZED MODE (Profile Toggle ON):\n- Use the user's actual experience and background\n- Provide tailored advice based on their resume\n- Reference their specific skills and achievements\n- Use phrases like \"your resume shows\", \"your experience with\", \"based on your background\"\n- Leverage every detail of the user's resume for maximum relevance\n- Perform comprehensive, line-by-line analysis of the user's resume against job requirements\n", "\n\nUSER PREFERENCES:\n- Preferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- Language: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- Education Level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n\nCRITICAL LANGUAGE INSTRUCTION: The user's preferred language is \"").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\". You MUST respond entirely in ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'spanish' ? 'Spanish' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'french' ? 'French' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'german' ? 'German' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'english' ? 'English' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'English', ".\n\nSYSTEM MODE MANAGEMENT:\n- Front-End Toggle Handling: Content script checks profile toggle state and sends appropriate data\n- Conditional Logic: Functions use presence/absence of userProfile.resumeText as a cue\n- System Prompt Adaptation: Includes explicit instructions for both modes\n- Minimal Profile Data Footprint: When toggle is OFF, only basic preferences are sent\n- No Cross-Over: Clear separation ensures no personal data leaks in general mode\n- Full Functionality: All features remain available in both modes with appropriate behavior\n\n").concat(userContext, "\n").concat(jobContextText, "\n").concat(conversationContext, "\n\nCURRENT MESSAGE: \"").concat(message, "\"\n\nRESPONSE FORMAT:\nStart your response with one of these tags to indicate your decision:\n[ANALYSIS] - for job/resume analysis\n[RESUME_GENERATION] - for resume generation\n[COVER_LETTER_GENERATION] - for cover letter generation\n[SHOW_RESUME] - for displaying resume\n[CONVERSATION] - for general conversation\n[CLARIFICATION] - for asking clarifying questions\n\nIMPORTANT: If the user mentions \"cover letter\" in their message, always use [COVER_LETTER_GENERATION] regardless of other context.\n\nIMPORTANT: If the user asks questions like \"will I get the job\", \"will this help me\", \"am I qualified\", or similar confidence/effectiveness questions, use [CONVERSATION] mode and provide a direct, encouraging answer.\n\nThen provide your natural response. Be conversational and contextual.\n\nFINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat \"1.\" for multiple items.");
 }
@@ -4204,6 +4219,13 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, s
 
   // Get job description from Redis
   var fullJobDescription = await getJobDescriptionFromRedis(userId);
+  
+  console.log('🔍 [COVER LETTER] Job description usage check:', {
+    userId: userId,
+    hasJobDescription: !!fullJobDescription,
+    jobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
+    willUseForCoverLetter: !!fullJobDescription
+  });
 
   // Get current date in proper format
   var currentDate = new Date().toLocaleDateString('en-US', {
@@ -4398,9 +4420,11 @@ async function buildResumePrompt(message, sessionId, userProfile, jobContext, to
   // Get job description from Redis
   var fullJobDescription = await getJobDescriptionFromRedis(userId);
   
-  console.log('🔍 [BUILD RESUME PROMPT] Job description check:', {
+  console.log('🔍 [BUILD RESUME PROMPT] Job description usage check:', {
+    userId: userId,
     hasJobDescription: !!fullJobDescription,
     jobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
+    willUseForResumePrompt: !!fullJobDescription,
     fullJobDescriptionPreview: fullJobDescription ? fullJobDescription.substring(0, 200) + '...' : 'EMPTY',
     sessionId: sessionId,
     userId: userId
@@ -4580,6 +4604,15 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     // Get job description from Redis and format as context
     const jobDescription = await getJobDescriptionFromRedis(userId);
     const contextText = jobDescription ? `\n\nJOB CONTEXT:\n${jobDescription}` : '';
+    
+    console.log('🔍 [CHAT PROCESSING] Job description usage check:', {
+      userId: userId,
+      sessionId: sessionId,
+      hasJobDescription: !!jobDescription,
+      jobDescriptionLength: jobDescription ? jobDescription.length : 0,
+      contextTextLength: contextText.length,
+      willIncludeInChatContext: !!jobDescription
+    });
     
     // Get conversation context from server-side chat history management
     const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
@@ -4916,10 +4949,50 @@ function checkIfJobDescription(text) {
 async function saveJobDescriptionToRedis(userId, jobDescription) {
     try {
         const key = `jd:${userId}`;
-        await redisClient.setex(key, 4 * 60 * 60, jobDescription); // 4 hours TTL
-        console.log('✅ [REDIS JD] Job description saved for user:', userId, 'Length:', jobDescription.length);
+        const ttl = 4 * 60 * 60; // 4 hours TTL
+        
+        console.log('🔄 [REDIS JD] Starting save operation...');
+        console.log('📝 [REDIS JD] Key:', key);
+        console.log('📝 [REDIS JD] TTL:', ttl, 'seconds (4 hours)');
+        console.log('📝 [REDIS JD] Content length:', jobDescription.length);
+        console.log('📝 [REDIS JD] Content preview:', jobDescription.substring(0, 100) + '...');
+        
+        await redisClient.setex(key, ttl, jobDescription);
+        
+        console.log('✅ [REDIS JD] Job description saved successfully!');
+        
+        // Verify the save operation
+        console.log('🔍 [REDIS JD] Verifying save operation...');
+        const verification = await redisClient.get(key);
+        const ttlRemaining = await redisClient.ttl(key);
+        
+        if (verification) {
+            console.log('✅ [REDIS JD] Verification successful - data exists in Redis');
+            console.log('📊 [REDIS JD] Retrieved length:', verification.length);
+            console.log('⏰ [REDIS JD] TTL remaining:', ttlRemaining, 'seconds');
+            console.log('📊 [REDIS JD] TTL remaining (hours):', Math.round(ttlRemaining / 3600 * 100) / 100);
+            
+            // Check if content matches
+            if (verification === jobDescription) {
+                console.log('✅ [REDIS JD] Content verification: EXACT MATCH');
+            } else {
+                console.log('⚠️ [REDIS JD] Content verification: MISMATCH DETECTED');
+                console.log('📝 [REDIS JD] Original length:', jobDescription.length);
+                console.log('📝 [REDIS JD] Retrieved length:', verification.length);
+            }
+        } else {
+            console.log('❌ [REDIS JD] Verification failed - data not found in Redis');
+        }
+        
+        console.log('🎉 [REDIS JD] Save operation completed for user:', userId);
+        
     } catch (error) {
         console.error('❌ [REDIS JD] Error saving job description:', error);
+        console.error('❌ [REDIS JD] Error details:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
         throw error;
     }
 }
@@ -4932,15 +5005,38 @@ async function saveJobDescriptionToRedis(userId, jobDescription) {
 async function getJobDescriptionFromRedis(userId) {
     try {
         const key = `jd:${userId}`;
+        
+        console.log('🔍 [REDIS JD] Starting retrieval operation...');
+        console.log('📝 [REDIS JD] Looking for key:', key);
+        
         const jobDescription = await redisClient.get(key);
+        const ttlRemaining = await redisClient.ttl(key);
+        
         if (jobDescription) {
-            console.log('⚡ [REDIS JD] Job description retrieved for user:', userId, 'Length:', jobDescription.length);
+            console.log('✅ [REDIS JD] Job description found in Redis!');
+            console.log('📊 [REDIS JD] Retrieved length:', jobDescription.length);
+            console.log('⏰ [REDIS JD] TTL remaining:', ttlRemaining, 'seconds');
+            console.log('📊 [REDIS JD] TTL remaining (hours):', Math.round(ttlRemaining / 3600 * 100) / 100);
+            console.log('📝 [REDIS JD] Content preview:', jobDescription.substring(0, 100) + '...');
+            console.log('⚡ [REDIS JD] Job description retrieved for user:', userId);
             return jobDescription;
+        } else {
+            console.log('❌ [REDIS JD] No job description found for user:', userId);
+            console.log('🔍 [REDIS JD] Key does not exist or has expired');
+            if (ttlRemaining === -2) {
+                console.log('📊 [REDIS JD] Key status: EXPIRED or NEVER EXISTED');
+            } else if (ttlRemaining === -1) {
+                console.log('📊 [REDIS JD] Key status: EXISTS but NO TTL (should not happen)');
+            }
+            return null;
         }
-        console.log('🔍 [REDIS JD] No job description found for user:', userId);
-        return null;
     } catch (error) {
         console.error('❌ [REDIS JD] Error retrieving job description:', error);
+        console.error('❌ [REDIS JD] Error details:', {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
         return null;
     }
 }
