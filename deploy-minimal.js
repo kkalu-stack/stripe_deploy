@@ -538,11 +538,14 @@ app.post('/api/auth/logout', (req, res) => {
         if (sessionId) {
             const session = getSession(sessionId);
             
-            // NEW: Clean up chat sessions in Redis
+            // NEW: Clean up chat sessions and job description in Redis
             if (session && session.userId) {
-                console.log('🧹 [LOGOUT] Cleaning up chat sessions in Redis for user:', session.userId);
+                console.log('🧹 [LOGOUT] Cleaning up chat sessions and job description in Redis for user:', session.userId);
                 deleteUserChatSessions(session.userId).catch(error => {
                     console.error('❌ [LOGOUT] Error cleaning up chat sessions:', error);
+                });
+                deleteJobDescriptionFromRedis(session.userId).catch(error => {
+                    console.error('❌ [LOGOUT] Error cleaning up job description:', error);
                 });
             }
             
@@ -3029,10 +3032,10 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 
                 if (mode === 'natural') {
                     // For natural mode, build the complete conversation prompt (not just intent detection)
-                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState, req.userId);
+                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, null, toggleState, req.userId);
                 } else if (mode === 'analysis') {
                     // For analysis mode, build the detailed analysis prompt
-                    prompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState, req.userId);
+                    prompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, null, toggleState, req.userId);
                 } else if (mode === 'generate') {
                     // For generate mode, determine what to generate based on message content
                     console.log('🔍 [GENERATE MODE] Job context check:', {
@@ -3042,23 +3045,20 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                         messagePreview: message.substring(0, 100)
                     });
                     
-                    // Get job description from session if not in current request
-                    // Pass the job description from current request to store it in session
-                    const currentJobDescription = jobContext && jobContext.jobDescription ? jobContext.jobDescription : null;
-                    const chatHistoryData = await manageChatHistory(sessionId, [], currentJobDescription, req.userId);
-                    const effectiveJobDescription = (jobContext && jobContext.jobDescription) || chatHistoryData.jobDescription || '';
+                    // Get conversation context from chat history (no longer storing JD in chat history)
+                    const chatHistoryData = await manageChatHistory(sessionId, [], null, req.userId);
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
-                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, jobContext, toggleState, req.userId);
+                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, null, toggleState, req.userId);
                     } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
-                        prompt = await buildCoverLetterPrompt(effectiveJobDescription, userProfile, jobContext, sessionId, req.userId);
+                        prompt = await buildCoverLetterPrompt(null, userProfile, null, sessionId, req.userId);
                     } else {
                         // Default to resume generation
-                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, jobContext, toggleState, req.userId);
+                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, null, toggleState, req.userId);
                     }
                 } else {
                     // Default to natural conversation
-                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState, req.userId);
+                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, null, toggleState, req.userId);
                 }
                 
                 console.log('🔍 [DEBUG] Prompt built:', {
@@ -3507,6 +3507,81 @@ async function handlePaymentFailed(invoice) {
         console.error('Error updating failed payment in Supabase:', error);
     }
 }
+
+// Job Description Detection and Storage Endpoint
+app.post('/api/detect-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
+    try {
+        console.log('🔍 [API/JD-DETECT] Job description detection request received for user:', req.userId);
+        
+        const { message } = req.body;
+        
+        if (!message) {
+            return res.status(400).json({
+                success: false,
+                error: 'Message is required'
+            });
+        }
+        
+        // Check if message contains job description using the same logic as client-side
+        const isJobDescription = checkIfJobDescription(message);
+        
+        if (isJobDescription) {
+            // Save to Redis
+            await saveJobDescriptionToRedis(req.userId, message);
+            
+            console.log('✅ [API/JD-DETECT] Job description detected and saved for user:', req.userId);
+            
+            return res.json({
+                success: true,
+                isJobDescription: true,
+                message: `✅ I see the job description! I can help you:
+• Analyze your resume against this job
+• Generate a tailored resume  
+• Create a cover letter
+• Answer questions about the role
+
+What would you like to do?`
+            });
+        } else {
+            return res.json({
+                success: true,
+                isJobDescription: false,
+                message: null
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ [API/JD-DETECT] Error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
+// Clear Job Description Endpoint
+app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
+    try {
+        console.log('🔍 [API/CLEAR-JD] Clear job description request received for user:', req.userId);
+        
+        // Delete job description from Redis
+        await deleteJobDescriptionFromRedis(req.userId);
+        
+        console.log('✅ [API/CLEAR-JD] Job description cleared for user:', req.userId);
+        
+        return res.json({
+            success: true,
+            message: 'Job description cleared successfully'
+        });
+        
+    } catch (error) {
+        console.error('❌ [API/CLEAR-JD] Error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+});
 
 // Supabase fallback endpoint for display name when /api/me fails
 app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
@@ -4100,12 +4175,9 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
     userContext = "\n\nUSER PROFILE:\n".concat(profileText);
   }
 
-  // Build job context - include job description from session if available
+  // Build job context - include job description from Redis
   var jobContextText = '';
-  var sessionJobDescription = chatHistoryData.jobDescription;
-  
-  // Use job description from current request, or fall back to session job description
-  var effectiveJobDescription = (jobContext && jobContext.jobDescription) || sessionJobDescription;
+  var effectiveJobDescription = await getJobDescriptionFromRedis(userId);
   
   if (effectiveJobDescription) {
     jobContextText = "\n\nJOB CONTEXT:\n".concat(effectiveJobDescription);
@@ -4113,13 +4185,13 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
   return "You are an AI assistant responsible for interpreting user intent and determining the appropriate response. You have full autonomy to decide how to respond based on the user's message, conversation history, and available context.\n\nUSER PREFERENCES:\n- Language: ".concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- Preferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- Education Level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n\nLANGUAGE AND COMMUNICATION REQUIREMENTS:\n- ALWAYS respond in the user's preferred language: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- If language is \"spanish\", respond entirely in Spanish\n- If language is \"french\", respond entirely in French\n- If language is \"german\", respond entirely in German\n- If language is \"arabic\", respond entirely in Arabic\n\nTONE REQUIREMENTS:\n- Match the user's preferred tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- If tone is \"professional\": Use formal, business-like language\n- If tone is \"casual\": Use friendly, conversational language\n- If tone is \"enthusiastic\": Use energetic, positive language\n- If tone is \"confident\": Use assertive, self-assured language\n- If tone is \"friendly\": Use warm, approachable language\n\nEDUCATION LEVEL ADAPTATION:\n- Adapt to user's education level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n- If education level is \"high_school\": Use simpler language, avoid complex jargon\n- If education level is \"undergraduate\": Use standard professional language\n- If education level is \"graduate\": Use advanced terminology with explanations\n- If education level is \"doctorate\": Use sophisticated language, technical jargon\n- If education level is \"none\": Use clear, accessible language\n\nYOUR RESPONSIBILITIES:\n1. Analyze the user's intent based on their message and conversation history\n2. Determine the most appropriate response type\n3. Provide natural, contextual responses\n4. Ask clarifying questions when needed\n5. Maintain conversation flow\n\nAVAILABLE RESPONSE TYPES:\n").concat(isProfileToggleOff ? "\n- CONVERSATION: General conversation, career advice, interview tips, general job guidance\n- CLARIFICATION: Ask clarifying questions when intent is unclear\n- GENERAL_GUIDANCE: Provide general advice and best practices for job applications\n" : "\n- ANALYSIS: Provide detailed job/resume analysis (when job description is provided)\n- RESUME_GENERATION: Generate a tailored resume (when user explicitly requests or confirms)\n- COVER_LETTER_GENERATION: Generate a cover letter (when user explicitly requests or confirms)\n- SHOW_RESUME: Display the user's raw resume (when user asks to see their resume)\n- CONVERSATION: General conversation, career advice, interview tips, etc.\n- CLARIFICATION: Ask clarifying questions when intent is unclear\n", "\n\nNATURAL INTENT DETECTION:\n- Use semantic understanding, not keyword matching\n- Consider conversation context and user's actual intent\n- Understand implied requests and follow-up questions\n- Respond naturally like ChatGPT would\n").concat(isProfileToggleOff ? "\n- When profile toggle is OFF: Provide general guidance and advice only\n- If user asks about resume analysis or tailoring: Explain that personal data is needed and suggest enabling profile toggle\n- If user asks about their qualifications: Provide general advice about how to assess qualifications\n- Focus on universal career advice and best practices\n" : "\n- If user asks \"can you see my resume?\", respond conversationally about what you can see\n- If user asks about their qualifications or fit, provide conversational analysis\n- If user wants to generate documents, they'll explicitly say so\n- Maintain natural conversation flow without rigid categorization\n", "\n\nCONVERSATION FLOW:\n- Respond naturally and conversationally\n- Answer questions based on available context\n- Ask follow-up questions when appropriate\n- Provide helpful insights without forcing specific modes\n- Let the conversation flow naturally like ChatGPT\n\n").concat(isProfileToggleOff ? "\nBehavior with Profile Toggle OFF (Resume Data Disabled) – Expert General Knowledge Mode\n\nScope & Identity\n\nYou are a broad, domain-general assistant for learning, research, reading & writing, and everyday questions.\n\nYou DO NOT provide personalized career coaching, resume/cover-letter tailoring, or job-application strategy while the toggle is OFF.\n\nData Constraints\n\nYou have no access to the user's resume data. Do not ask for it. Do not infer it.\n\nTreat every answer as general guidance that anyone could use.\n\nWhat You're Expert At (examples, not limits)\n\nAcademic help (high school through doctoral): explain concepts, outline essays, solve step-by-step math/stats, propose study plans, compare theories, generate citations (APA/MLA/Chicago etc.), and produce literature-style summaries (with sources if provided).\n\nResearch workflows: question decomposition, search-query design (without browsing if the host doesn't allow it), argument mapping, extracting claims from provided texts, and drafting structured abstracts.\n\nReading & writing: rewriting for clarity/tone, editing for grammar and logic, summarizing, paraphrasing, outlining, thesis statements, topic sentences, transitions, and rubric-aligned checklists.\n\nHard Boundaries (toggle OFF)\n\nDo NOT analyze resumes, job descriptions, interview prompts, or ATS strategy.\n\nDo NOT suggest resume bullets, cover-letter language, or job-fit claims.\n\nIf the user asks for career items, respond: \"I can give general information and help now. For career-specific tailoring, enable your profile data.\"\n\nResponse Style & Safety\n\nBe concise, structured, and source-aware: if the user provides texts, cite/quote those; otherwise offer neutral, broadly accepted explanations.\n\nPrefer numbered steps, short paragraphs, and small checklists. Offer optional templates for writing tasks.\n\nWhen unsure, ask a single clarifying question only if it meaningfully changes the result; otherwise state reasonable assumptions and proceed.\n\nTemplates You May Use (adapt as needed)\n\nStudy plan: Goal → Prereqs → Syllabus outline → Weekly plan → Practice set → Self-check rubric.\n\nWriting scaffold: Title → Thesis → Section outline → Evidence plan → Draft paragraph(s) → Edit checklist.\n\nResearch note: Question → Key terms → Hypotheses → Variables/metrics → Methods candidates → Limitations → Next steps.\n\nMode Reminder\n\nIf the user explicitly requests job description analysis, resume analysis, and career tailoring, politely explain the limitation and suggest switching the profile toggle ON for personalized help.\n\nCRITICAL FORMATTING REQUIREMENTS:\n- Use proper sequential numbering (1., 2., 3., 4., 5.) for all numbered lists\n- Do NOT use \"1.\" for every item in a list\n- Use bullet points (-) for sub-items within numbered sections\n- Maintain consistent formatting throughout your response\n- If you create a numbered list, ensure each item has the correct sequential number\n" : "\nPERSONALIZED MODE (Profile Toggle ON):\n- Use the user's actual experience and background\n- Provide tailored advice based on their resume\n- Reference their specific skills and achievements\n- Use phrases like \"your resume shows\", \"your experience with\", \"based on your background\"\n- Leverage every detail of the user's resume for maximum relevance\n- Perform comprehensive, line-by-line analysis of the user's resume against job requirements\n", "\n\nUSER PREFERENCES:\n- Preferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- Language: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- Education Level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n\nCRITICAL LANGUAGE INSTRUCTION: The user's preferred language is \"").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\". You MUST respond entirely in ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'spanish' ? 'Spanish' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'french' ? 'French' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'german' ? 'German' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'english' ? 'English' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'English', ".\n\nSYSTEM MODE MANAGEMENT:\n- Front-End Toggle Handling: Content script checks profile toggle state and sends appropriate data\n- Conditional Logic: Functions use presence/absence of userProfile.resumeText as a cue\n- System Prompt Adaptation: Includes explicit instructions for both modes\n- Minimal Profile Data Footprint: When toggle is OFF, only basic preferences are sent\n- No Cross-Over: Clear separation ensures no personal data leaks in general mode\n- Full Functionality: All features remain available in both modes with appropriate behavior\n\n").concat(userContext, "\n").concat(jobContextText, "\n").concat(conversationContext, "\n\nCURRENT MESSAGE: \"").concat(message, "\"\n\nRESPONSE FORMAT:\nStart your response with one of these tags to indicate your decision:\n[ANALYSIS] - for job/resume analysis\n[RESUME_GENERATION] - for resume generation\n[COVER_LETTER_GENERATION] - for cover letter generation\n[SHOW_RESUME] - for displaying resume\n[CONVERSATION] - for general conversation\n[CLARIFICATION] - for asking clarifying questions\n\nIMPORTANT: If the user mentions \"cover letter\" in their message, always use [COVER_LETTER_GENERATION] regardless of other context.\n\nIMPORTANT: If the user asks questions like \"will I get the job\", \"will this help me\", \"am I qualified\", or similar confidence/effectiveness questions, use [CONVERSATION] mode and provide a direct, encouraging answer.\n\nThen provide your natural response. Be conversational and contextual.\n\nFINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat \"1.\" for multiple items.");
 }
 
-// Build cover letter prompt (exact copy from background.js)
+// Build cover letter prompt (updated to use Redis JD storage)
 async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, sessionId, userId) {
   // Use the raw resume text directly - this is what we want for cover letter generation
   var resumeText = (userProfile === null || userProfile === void 0 ? void 0 : userProfile.resumeText) || 'No resume data available';
 
-  // Use full job description, not truncated context
-  var fullJobDescription = (jobContext === null || jobContext === void 0 ? void 0 : jobContext.jobDescription) || jobDescription;
+  // Get job description from Redis
+  var fullJobDescription = await getJobDescriptionFromRedis(userId);
 
   // Get current date in proper format
   var currentDate = new Date().toLocaleDateString('en-US', {
@@ -4305,24 +4377,21 @@ FINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:
 - 99% alignment with job description requirements`;
 }
 
-// Build resume prompt (exact copy from background.js)
+// Build resume prompt (updated to use Redis JD storage)
 async function buildResumePrompt(message, sessionId, userProfile, jobContext, toggleState, userId) {
   var profileText = formatUserProfile(userProfile, {
     includeRaw: true
   });
 
-  // Use full job description, not truncated context - prioritize passed jobDescription parameter
-  var fullJobDescription = jobDescription || (jobContext === null || jobContext === void 0 ? void 0 : jobContext.jobDescription);
+  // Get job description from Redis
+  var fullJobDescription = await getJobDescriptionFromRedis(userId);
   
   console.log('🔍 [BUILD RESUME PROMPT] Job description check:', {
-    hasJobDescription: !!jobDescription,
-    jobDescriptionLength: jobDescription ? jobDescription.length : 0,
-    hasJobContext: !!jobContext,
-    hasJobContextDescription: !!(jobContext && jobContext.jobDescription),
-    jobContextDescriptionLength: jobContext && jobContext.jobDescription ? jobContext.jobDescription.length : 0,
-    fullJobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
+    hasJobDescription: !!fullJobDescription,
+    jobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
     fullJobDescriptionPreview: fullJobDescription ? fullJobDescription.substring(0, 200) + '...' : 'EMPTY',
-    sessionId: sessionId
+    sessionId: sessionId,
+    userId: userId
   });
 
   // Check if job description is missing and provide helpful message
@@ -4495,7 +4564,10 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     const profileText = formatUserProfile(userProfile, {
         includeRaw: !isProfileToggleOff // Only include resume when toggle is ON
     });
-    const contextText = formatJobContext(jobContext);
+    
+    // Get job description from Redis and format as context
+    const jobDescription = await getJobDescriptionFromRedis(userId);
+    const contextText = jobDescription ? `\n\nJOB CONTEXT:\n${jobDescription}` : '';
     
     // Get conversation context from server-side chat history management
     const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
@@ -4787,6 +4859,91 @@ async function deleteUserChatSessions(userId) {
         }
     } catch (error) {
         console.error('❌ [UPSTASH] Error deleting user chat sessions:', error);
+    }
+}
+
+// ===== REDIS JOB DESCRIPTION STORAGE FUNCTIONS =====
+
+/**
+ * Check if text contains a job description (server-side version of client-side logic)
+ * @param {string} text - The text to check
+ * @returns {boolean} True if text appears to be a job description
+ */
+function checkIfJobDescription(text) {
+    if (!text || typeof text !== 'string') return false;
+    
+    const lowerText = text.toLowerCase();
+    
+    // Look for job description indicators (same as client-side)
+    const jobIndicators = [
+        'job description', 'position description', 'role description', 
+        'we are looking for', 'we are seeking', 'requirements:', 'qualifications:', 
+        'responsibilities:', 'duties:', 'about the role', 'about this position', 
+        'job requirements', 'position requirements', 'role requirements', 
+        'minimum qualifications', 'preferred qualifications', 'required skills', 
+        'preferred skills', 'experience required', 'experience needed'
+    ];
+    
+    // Check if text contains multiple job description indicators
+    const matches = jobIndicators.filter(indicator => lowerText.includes(indicator));
+    
+    // Also check for typical job description structure
+    const hasStructuredContent = text.includes('•') || text.includes('-') || text.includes('*');
+    const hasMultipleLines = text.split('\n').length > 5;
+    const isLongText = text.length > 200;
+    
+    // Consider it a job description if it has multiple indicators or structured content
+    return matches.length >= 2 || (hasStructuredContent && hasMultipleLines && isLongText);
+}
+
+/**
+ * Save job description to Redis for a user
+ * @param {string} userId - The user identifier
+ * @param {string} jobDescription - The job description text
+ */
+async function saveJobDescriptionToRedis(userId, jobDescription) {
+    try {
+        const key = `jd:${userId}`;
+        await redisClient.setex(key, 4 * 60 * 60, jobDescription); // 4 hours TTL
+        console.log('✅ [REDIS JD] Job description saved for user:', userId, 'Length:', jobDescription.length);
+    } catch (error) {
+        console.error('❌ [REDIS JD] Error saving job description:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get job description from Redis for a user
+ * @param {string} userId - The user identifier
+ * @returns {string|null} The job description text or null if not found
+ */
+async function getJobDescriptionFromRedis(userId) {
+    try {
+        const key = `jd:${userId}`;
+        const jobDescription = await redisClient.get(key);
+        if (jobDescription) {
+            console.log('⚡ [REDIS JD] Job description retrieved for user:', userId, 'Length:', jobDescription.length);
+            return jobDescription;
+        }
+        console.log('🔍 [REDIS JD] No job description found for user:', userId);
+        return null;
+    } catch (error) {
+        console.error('❌ [REDIS JD] Error retrieving job description:', error);
+        return null;
+    }
+}
+
+/**
+ * Delete job description from Redis for a user
+ * @param {string} userId - The user identifier
+ */
+async function deleteJobDescriptionFromRedis(userId) {
+    try {
+        const key = `jd:${userId}`;
+        await redisClient.del(key);
+        console.log('🗑️ [REDIS JD] Job description deleted for user:', userId);
+    } catch (error) {
+        console.error('❌ [REDIS JD] Error deleting job description:', error);
     }
 }
 
