@@ -3624,8 +3624,20 @@ app.post('/api/test-no-auth', cors(SECURITY_CONFIG.cors), (req, res) => {
 });
 
 
+// Debug: Log all POST requests to see what's being received
+app.post('*', (req, res, next) => {
+    console.log('🔍 [DEBUG] POST request received:', {
+        url: req.url,
+        path: req.path,
+        method: req.method,
+        headers: req.headers
+    });
+    next();
+});
+
 // Clear Job Description Endpoint
 app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
+    console.log('🔍 [API/CLEAR-JD] Endpoint reached - request received');
     try {
         console.log('🔍 [API/CLEAR-JD] Clear job description request received for user:', req.userId);
         console.log('🔍 [API/CLEAR-JD] Redis client status:', {
