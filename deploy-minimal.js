@@ -3029,10 +3029,10 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 
                 if (mode === 'natural') {
                     // For natural mode, build the complete conversation prompt (not just intent detection)
-                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState);
+                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState, req.userId);
                 } else if (mode === 'analysis') {
                     // For analysis mode, build the detailed analysis prompt
-                    prompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState);
+                    prompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState, req.userId);
                 } else if (mode === 'generate') {
                     // For generate mode, determine what to generate based on message content
                     console.log('🔍 [GENERATE MODE] Job context check:', {
@@ -3045,20 +3045,20 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     // Get job description from session if not in current request
                     // Pass the job description from current request to store it in session
                     const currentJobDescription = jobContext && jobContext.jobDescription ? jobContext.jobDescription : null;
-                    const chatHistoryData = await manageChatHistory(sessionId, [], currentJobDescription);
+                    const chatHistoryData = await manageChatHistory(sessionId, [], currentJobDescription, req.userId);
                     const effectiveJobDescription = (jobContext && jobContext.jobDescription) || chatHistoryData.jobDescription || '';
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
-                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message);
+                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message, req.userId);
                     } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
-                        prompt = await buildCoverLetterPrompt(effectiveJobDescription, userProfile, jobContext, sessionId);
+                        prompt = await buildCoverLetterPrompt(effectiveJobDescription, userProfile, jobContext, sessionId, req.userId);
                     } else {
                         // Default to resume generation
-                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message);
+                        prompt = await buildResumePrompt(effectiveJobDescription, userProfile, jobContext, userProfile.resumeText, sessionId, message, req.userId);
                     }
                 } else {
                     // Default to natural conversation
-                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState);
+                    prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState, req.userId);
                 }
                 
                 console.log('🔍 [DEBUG] Prompt built:', {
@@ -3970,7 +3970,7 @@ function buildSystemPromptServerSide(mode, toggleState) {
 }
 
 // Build user prompt server-side (exact copy from background.js logic)
-async function buildUserPromptServerSide(message, userProfile, jobContext, sessionId, toggleState, mode) {
+async function buildUserPromptServerSide(message, userProfile, jobContext, sessionId, toggleState, mode, userId) {
     // Add null checks and default values
     if (!message) message = '';
     if (!userProfile) {
@@ -3986,7 +3986,7 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     const isProfileEnabled = !isProfileToggleOff;
     
     // Get conversation context from server-side chat history management
-    const chatHistoryData = await manageChatHistory(sessionId);
+    const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
     const conversationContext = chatHistoryData.conversationContext;
     
     console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
@@ -4056,7 +4056,7 @@ Based on the user's message, conversation history, and available context, determ
 Respond naturally and helpfully based on the user's request.`;
     } else if (mode === 'analysis') {
         // Use the specialized buildDetailedAnalysisPrompt function
-        return await buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState);
+        return await buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState, userId);
     }
     
     // ✅ CRITICAL FIX: Log total prompt length for token management
@@ -4071,14 +4071,14 @@ const PORT = process.env.PORT || 3000;
 // These functions were moved from background.js to protect IP
 
 // Build natural intent prompt (exact copy from background.js)
-async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState) {
+async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobContext, toggleState, userId) {
   // ✅ Use the toggleState parameter passed from the calling function
   // ❌ DO NOT override with profile data logic - this was the bug!
   var isProfileToggleOff = toggleState === 'off';
   var isProfileEnabled = !isProfileToggleOff;
 
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   var conversationContext = chatHistoryData.conversationContext;
   
   // ✅ DEBUG: Log server-side conversation context
@@ -4114,7 +4114,7 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, jobCont
 }
 
 // Build cover letter prompt (exact copy from background.js)
-async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, sessionId) {
+async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, sessionId, userId) {
   // Use the raw resume text directly - this is what we want for cover letter generation
   var resumeText = (userProfile === null || userProfile === void 0 ? void 0 : userProfile.resumeText) || 'No resume data available';
 
@@ -4179,7 +4179,7 @@ async function buildCoverLetterPrompt(jobDescription, userProfile, jobContext, s
   });
   
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
@@ -4306,7 +4306,7 @@ FINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:
 }
 
 // Build resume prompt (exact copy from background.js)
-async function buildResumePrompt(jobDescription, userProfile, jobContext, currentResume, sessionId) {
+async function buildResumePrompt(jobDescription, userProfile, jobContext, currentResume, sessionId, userId) {
   var userRequest = arguments.length > 5 && arguments[5] !== undefined ? arguments[5] : '';
   var profileText = formatUserProfile(userProfile, {
     includeRaw: true
@@ -4386,7 +4386,7 @@ I'm here to help you create the perfect resume for your job application!`;
     detectedCareerLevel: careerLevel
   });
   // Get conversation context from server-side chat history management
-  var chatHistoryData = await manageChatHistory(sessionId);
+  var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   var conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD RESUME PROMPT] Server-side conversation context:', {
@@ -4471,7 +4471,7 @@ function parseAIDecision(response) {
 // REMOVED: formatResumeForDisplay function - no longer needed with single-call architecture
 
 // Build detailed analysis prompt (exact copy from background.js)
-async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState) {
+async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobContext, toggleState, userId) {
     console.log('�� [DETAILED ANALYSIS] Function called with parameters:', {
         messageLength: message ? message.length : 0,
         sessionId: sessionId,
@@ -4499,7 +4499,7 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, jobC
     const contextText = formatJobContext(jobContext);
     
     // Get conversation context from server-side chat history management
-    const chatHistoryData = await manageChatHistory(sessionId);
+    const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
     const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
@@ -4802,10 +4802,10 @@ const CHAT_CONFIG = {
  * @param {string} sessionId - The session identifier
  * @param {Array} newMessages - New messages to add (optional)
  * @param {string} jobDescription - Job description to preserve (optional)
+ * @param {string} userId - The user identifier
  * @returns {Object} { summary, recentMessages, totalMessages, conversationContext }
  */
-async function manageChatHistory(sessionId, newMessages = [], jobDescription = null) {
-    const userId = req.userId; // From authentication middleware
+async function manageChatHistory(sessionId, newMessages = [], jobDescription = null, userId = null) {
     
     // Get existing session from Redis
     let session = await getChatSession(sessionId);
