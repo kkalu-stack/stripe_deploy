@@ -3337,12 +3337,56 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             cleanedLength: parsedResponse.response.length
         });
         
+        // 🎯 EXECUTE AI DECISION - Switch to appropriate function based on AI's intent
+        let finalResponse = parsedResponse.response;
+        let finalUsage = data.usage;
+        
+        if (parsedResponse.type === 'ANALYSIS') {
+            console.log('🔄 [EXECUTE AI DECISION] Switching to detailed analysis mode...');
+            try {
+                const analysisPrompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, toggleState, req.userId);
+                const analysisData = await callOpenAI(analysisPrompt, 'gpt-4o', 4000, 0.7);
+                finalResponse = analysisData.choices[0].message.content;
+                finalUsage = analysisData.usage;
+                console.log('✅ [EXECUTE AI DECISION] Analysis completed successfully');
+            } catch (error) {
+                console.error('❌ [EXECUTE AI DECISION] Analysis failed, using original response:', error);
+                // Keep original response if analysis fails
+            }
+        } else if (parsedResponse.type === 'RESUME_GENERATION') {
+            console.log('🔄 [EXECUTE AI DECISION] Switching to resume generation mode...');
+            try {
+                const resumePrompt = await buildResumePrompt(message, sessionId, userProfile, toggleState, req.userId);
+                const resumeData = await callOpenAI(resumePrompt, 'gpt-4o', 4000, 0.7);
+                finalResponse = resumeData.choices[0].message.content;
+                finalUsage = resumeData.usage;
+                console.log('✅ [EXECUTE AI DECISION] Resume generation completed successfully');
+            } catch (error) {
+                console.error('❌ [EXECUTE AI DECISION] Resume generation failed, using original response:', error);
+                // Keep original response if resume generation fails
+            }
+        } else if (parsedResponse.type === 'COVER_LETTER_GENERATION') {
+            console.log('🔄 [EXECUTE AI DECISION] Switching to cover letter generation mode...');
+            try {
+                const coverLetterPrompt = await buildCoverLetterPrompt(null, userProfile, sessionId, req.userId);
+                const coverLetterData = await callOpenAI(coverLetterPrompt, 'gpt-4o', 4000, 0.7);
+                finalResponse = coverLetterData.choices[0].message.content;
+                finalUsage = coverLetterData.usage;
+                console.log('✅ [EXECUTE AI DECISION] Cover letter generation completed successfully');
+            } catch (error) {
+                console.error('❌ [EXECUTE AI DECISION] Cover letter generation failed, using original response:', error);
+                // Keep original response if cover letter generation fails
+            }
+        } else {
+            console.log('🔄 [EXECUTE AI DECISION] Using original response for type:', parsedResponse.type);
+        }
+        
         // 💾 SAVE CONVERSATION TO REDIS
         try {
             console.log('💾 [CHAT HISTORY] Saving conversation to Redis...');
             await manageChatHistory(sessionId, [
                 { role: 'user', content: message },
-                { role: 'assistant', content: parsedResponse.response }
+                { role: 'assistant', content: finalResponse }
             ], null, req.userId);
             console.log('✅ [CHAT HISTORY] Conversation saved successfully');
         } catch (error) {
@@ -3352,8 +3396,8 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         res.json({
             success: true,
-            content: parsedResponse.response, // Send cleaned response without tags
-            usage: data.usage
+            content: finalResponse, // Send final response (either original or from specialized function)
+            usage: finalUsage
         });
         
     } catch (error) {
