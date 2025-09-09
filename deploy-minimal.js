@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
 const cookieParser = require('cookie-parser');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { Redis } = require('@upstash/redis');
 
 // Supabase configuration for direct HTTP requests
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -15,6 +16,14 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Initialize Supabase client
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// Initialize Upstash Redis client
+const redisClient = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+console.log('✅ Upstash Redis client initialized');
 
 // In-memory session store (in production, use Redis or database)
 const sessions = new Map();
@@ -527,6 +536,16 @@ app.post('/api/auth/logout', (req, res) => {
         const sessionId = req.cookies.sid;
         
         if (sessionId) {
+            const session = getSession(sessionId);
+            
+            // NEW: Clean up chat sessions in Redis
+            if (session && session.userId) {
+                console.log('🧹 [LOGOUT] Cleaning up chat sessions in Redis for user:', session.userId);
+                deleteUserChatSessions(session.userId).catch(error => {
+                    console.error('❌ [LOGOUT] Error cleaning up chat sessions:', error);
+                });
+            }
+            
             // Delete session from storage
             deleteSession(sessionId);
         }
@@ -3024,7 +3043,9 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     });
                     
                     // Get job description from session if not in current request
-                    const chatHistoryData = await manageChatHistory(sessionId);
+                    // Pass the job description from current request to store it in session
+                    const currentJobDescription = jobContext && jobContext.jobDescription ? jobContext.jobDescription : null;
+                    const chatHistoryData = await manageChatHistory(sessionId, [], currentJobDescription);
                     const effectiveJobDescription = (jobContext && jobContext.jobDescription) || chatHistoryData.jobDescription || '';
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
@@ -4305,6 +4326,23 @@ async function buildResumePrompt(jobDescription, userProfile, jobContext, curren
     sessionId: sessionId
   });
 
+  // Check if job description is missing and provide helpful message
+  if (!fullJobDescription || fullJobDescription.trim().length === 0) {
+    console.log('⚠️ [BUILD RESUME PROMPT] No job description found, returning helpful message');
+    return `I'm ready to help you create a highly optimized resume tailored to your specific job application needs. However, to proceed, I'll need the specific job description and details from your resume, including your work experience, skills, and education.
+
+If you've already enabled the profile data toggle and provided this information, I can analyze it and begin drafting the resume. If not, please provide the necessary details or toggle your profile data to ON for personalized assistance.
+
+Once I have the information, I can craft a resume that aligns closely with the job requirements and maximizes your chances with both ATS and hiring managers.
+
+**To get started:**
+1. Please provide the job description for the position you're applying to
+2. Make sure your profile data toggle is ON (if you want me to use your existing resume data)
+3. Let me know if you need any specific formatting or have particular requirements
+
+I'm here to help you create the perfect resume for your job application!`;
+  }
+
   // Extract line count request from user request
   var lineCountMatch = userRequest.match(/(\d+)\s*(?:lines?|bullet\s*points?)/i);
   var requestedLines = lineCountMatch ? parseInt(lineCountMatch[1]) : null;
@@ -4686,8 +4724,72 @@ ${conversationContext}
 // ===== SERVER-SIDE CHAT HISTORY MANAGEMENT =====
 // Single function to handle all chat history management with summarization
 
-// In-memory storage for chat sessions (replace with database in production)
-const chatSessions = new Map();
+// Redis storage for chat sessions
+// const chatSessions = new Map(); // REMOVED - now using Redis
+
+// Upstash Redis helper functions for chat sessions
+async function storeChatSession(sessionId, sessionData) {
+    try {
+        const key = `chat_session:${sessionId}`;
+        await redisClient.setex(key, 4 * 60 * 60, JSON.stringify(sessionData)); // 4 hours TTL (safety net only)
+        console.log('✅ [UPSTASH] Chat session stored:', key);
+    } catch (error) {
+        console.error('❌ [UPSTASH] Error storing chat session:', error);
+        throw error;
+    }
+}
+
+async function getChatSession(sessionId) {
+    try {
+        const key = `chat_session:${sessionId}`;
+        const sessionData = await redisClient.get(key);
+        if (sessionData) {
+            console.log('⚡ [UPSTASH] Chat session retrieved:', key);
+            // Upstash Redis automatically parses JSON, so we can return it directly
+            return sessionData;
+        }
+        return null;
+    } catch (error) {
+        console.error('❌ [UPSTASH] Error retrieving chat session:', error);
+        return null;
+    }
+}
+
+async function deleteChatSession(sessionId) {
+    try {
+        const key = `chat_session:${sessionId}`;
+        await redisClient.del(key);
+        console.log('🗑️ [UPSTASH] Chat session deleted:', key);
+    } catch (error) {
+        console.error('❌ [UPSTASH] Error deleting chat session:', error);
+    }
+}
+
+async function deleteUserChatSessions(userId) {
+    try {
+        const pattern = `chat_session:*`;
+        const keys = await redisClient.keys(pattern);
+        
+        // Filter keys that belong to this user
+        const userKeys = [];
+        for (const key of keys) {
+            const sessionData = await redisClient.get(key);
+            if (sessionData) {
+                // Upstash Redis automatically parses JSON, so we can use it directly
+                if (sessionData.userId === userId) {
+                    userKeys.push(key);
+                }
+            }
+        }
+        
+        if (userKeys.length > 0) {
+            await redisClient.del(...userKeys);
+            console.log('🧹 [UPSTASH] Deleted', userKeys.length, 'chat sessions for user:', userId);
+        }
+    } catch (error) {
+        console.error('❌ [UPSTASH] Error deleting user chat sessions:', error);
+    }
+}
 
 // Configuration for chat history management
 const CHAT_CONFIG = {
@@ -4703,19 +4805,24 @@ const CHAT_CONFIG = {
  * @returns {Object} { summary, recentMessages, totalMessages, conversationContext }
  */
 async function manageChatHistory(sessionId, newMessages = [], jobDescription = null) {
+    const userId = req.userId; // From authentication middleware
+    
+    // Get existing session from Redis
+    let session = await getChatSession(sessionId);
+    
     // Initialize session if it doesn't exist
-    if (!chatSessions.has(sessionId)) {
-        chatSessions.set(sessionId, {
+    if (!session) {
+        session = {
             sessionId,
+            userId,
             messages: [],
             summary: null,
-            jobDescription: jobDescription,
+            jobDescription: null,
             lastActivity: new Date().toISOString(),
             createdAt: new Date().toISOString()
-        });
+        };
+        console.log('🆕 [REDIS] Created new chat session:', sessionId);
     }
-    
-    const session = chatSessions.get(sessionId);
     
     // Update job description if provided - RESET CONVERSATION for new job
     if (jobDescription) {
@@ -4777,6 +4884,9 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n');
     }
+    
+    // Store updated session in Redis
+    await storeChatSession(sessionId, session);
     
     return {
         summary: session.summary,
