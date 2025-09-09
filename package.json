@@ -2,10 +2,10 @@
   "name": "trontiq-stripe-api",
   "version": "1.0.0",
   "description": "Stripe payment API for Trontiq extension (no user data storage)",
-  "main": "deploy-minimal.js",
+  "main": "Trontiq/deploy-minimal.js",
   "scripts": {
-    "start": "node deploy-minimal.js",
-    "dev": "nodemon deploy-minimal.js",
+    "start": "node Trontiq/deploy-minimal.js",
+    "dev": "nodemon Trontiq/deploy-minimal.js",
     "build": "npm install && npm list ioredis",
     "build:dev": "webpack --mode development",
     "build:prod": "webpack --mode production",
