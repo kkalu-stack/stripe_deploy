@@ -4986,9 +4986,9 @@ USER REQUEST: "${message}"
 
 Provide **comprehensive, step-by-step analysis** with the following sections (in this exact order and format):
 
-- **RESUME OVERVIEW:** Begin by listing all work experiences from the resume. Use sequential numbering (1., 2., 3., ...) for each distinct role. Include company name, role/title, and dates. This gives a high-level picture of the candidate’s experience timeline.
+- **RESUME OVERVIEW:** Begin by listing ALL work experiences from the resume. Use sequential numbering (1., 2., 3., ...) for each distinct role. Include company name, role/title, and dates. This gives a high-level picture of the candidate's experience timeline. **CRITICAL: You must scan the ENTIRE resume text to identify ALL work experiences, even if they're not in a traditional "work experience" section. Look for job titles, company names, and employment dates throughout the document. Do not miss any work experience.**
 - **JOB TITLE ANALYSIS:** For each role listed above, analyze the job title in the context of the target position. Discuss how well each title aligns with the job being applied for. Provide a relevance rating for each title (1-10) and suggest any **optimized title phrasing** if it could improve alignment (while staying truthful). *Do not number each job title in this section; present as separate paragraphs or bullet points per job.*
-- **WORK EXPERIENCE ANALYSIS:** Dive deep into every single work experience in the candidate’s resume, no exceptions. Do not skip or condense roles. Process each role one by one in the order they appear in the overview. For each role, output:
+- **WORK EXPERIENCE ANALYSIS:** Dive deep into every single work experience in the candidate's resume, no exceptions. Do not skip or condense roles. Process each role one by one in the order they appear in the overview. **IMPORTANT: If you notice any work experiences in the resume text that were not captured in the overview, include them in this analysis as well. Your goal is to analyze 100% of the candidate's work experience.** For each role, output:
     - **Job Title Analysis (Relevance:** X/10): a brief note on the title’s relevance (this can reiterate the rating from the Job Title Analysis section in context).
     - **Overall Role Summary:** Write a full paragraph connecting this role’s responsibilities and achievements to the job description. Always reference specific duties from the resume and explicitly connect them to requirements in the JD. Highlight quantifiable results (numbers, percentages, improvements) where possible, and show how the candidate’s actions created impact.
     - **Key Skills from This Role:** Provide a bullet list of the 3–5 most relevant skills or technologies from this role that match the job Description. Always mirror the exact wording from the job Description for ATS alignment.
@@ -5022,9 +5022,18 @@ FORMAT & STYLE REMINDERS:
 
 Remember, the goal is to provide a level of feedback **beyond what automated tools or typical resume reviews offer**, giving the user **unprecedented insight** into how to tailor their resume to the job description.
 
+**CRITICAL WORK EXPERIENCE CAPTURE REQUIREMENT:**
+Before starting your analysis, perform a comprehensive scan of the entire resume text to identify ALL work experiences. Look for:
+- Job titles (any line that appears to be a professional role)
+- Company names (any organization or business name)
+- Employment dates (any date ranges that suggest work periods)
+- Work-related content (bullet points, achievements, responsibilities)
+
+Do not rely solely on section headers or traditional formatting. Many resumes have work experiences scattered throughout or in non-standard sections. Your analysis must capture 100% of the candidate's work experience in the first attempt.
+
 Now, begin the analysis following the structure and guidelines above. Start with "RESUME OVERVIEW:" and proceed step by step through each section. Make sure to maintain the format strictly and include all relevant details in each part.
 
-FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. Let's deliver an analysis that truly stands out.
+FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. **Most importantly, ensure you have captured every single work experience from the resume.** Let's deliver an analysis that truly stands out.
 
 ${conversationContext}
 
