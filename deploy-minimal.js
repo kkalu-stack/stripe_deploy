@@ -3105,15 +3105,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 userProfileKeys: Object.keys(userProfile),
                 hasResumeText: !!(userProfile.resumeText),
                 resumeTextLength: userProfile.resumeText ? userProfile.resumeText.length : 0,
-                resumeTextPreview: userProfile.resumeText ? userProfile.resumeText.substring(0, 200) + '...' : 'No resume text',
-                // 🔍 LANGUAGE DEBUG: Check language specifically
-                language: userProfile.language,
-                languageType: typeof userProfile.language,
-                languageUndefined: userProfile.language === undefined,
-                languageNull: userProfile.language === null,
-                languageEmpty: userProfile.language === '',
-                preferredTone: userProfile.preferredTone,
-                educationLevel: userProfile.educationLevel
+                resumeTextPreview: userProfile.resumeText ? userProfile.resumeText.substring(0, 200) + '...' : 'No resume text'
             });
         } else {
             console.log('❌ [API/GENERATE] No userProfile received!');
@@ -3172,14 +3164,15 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 });
                 
                 const systemMessage = SYSTEM_PROMPT;
+                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
                 
                 // Build the complete message structure (like original client-side)
                 finalMessages = [{
                     role: 'system',
-                    content: systemMessage
+                    content: systemMessage + '\n\n' + guard
                 }, {
                     role: 'user',
-                    content: prompt
+                    content: guard + '\n\n' + prompt
                 }];
                 
                 console.log('✅ [SINGLE-CALL] Complete prompt built server-side, returning final response');
@@ -4285,15 +4278,6 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     
     // Build the complete prompt based on mode
     if (mode === 'natural') {
-        // 🔍 LANGUAGE DEBUG: Log what we're using for language in natural mode
-        console.log('🔍 [NATURAL PROMPT] Language debug:', {
-            userProfileLanguage: userProfile?.language,
-            userProfileKeys: userProfile ? Object.keys(userProfile) : 'No userProfile',
-            userProfileType: typeof userProfile,
-            userProfileNull: userProfile === null,
-            userProfileUndefined: userProfile === undefined
-        });
-        
         return `You are an AI assistant responsible for interpreting user intent and determining the appropriate response. You have full autonomy to decide how to respond based on the user's message, conversation history, and available context.
 
 USER PREFERENCES:
@@ -4838,16 +4822,6 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, togg
     const userLanguage = userProfile?.language || 'english';
     const userTone = userProfile?.preferredTone || 'professional';
     const userEducation = userProfile?.educationLevel || 'not specified';
-    
-    // 🔍 LANGUAGE DEBUG: Log what we're using for language
-    console.log('🔍 [PROMPT BUILD] Language debug:', {
-        userProfileLanguage: userProfile?.language,
-        userLanguageFinal: userLanguage,
-        userProfileKeys: userProfile ? Object.keys(userProfile) : 'No userProfile',
-        userProfileType: typeof userProfile,
-        userProfileNull: userProfile === null,
-        userProfileUndefined: userProfile === undefined
-    });
 
     // If profile toggle is OFF, provide general analysis without resume
     if (isProfileToggleOff) {
