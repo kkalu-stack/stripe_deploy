@@ -3164,15 +3164,14 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 });
                 
                 const systemMessage = SYSTEM_PROMPT;
-                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
                 
                 // Build the complete message structure (like original client-side)
                 finalMessages = [{
                     role: 'system',
-                    content: systemMessage + '\n\n' + guard
+                    content: systemMessage
                 }, {
                     role: 'user',
-                    content: guard + '\n\n' + prompt
+                    content: prompt
                 }];
                 
                 console.log('✅ [SINGLE-CALL] Complete prompt built server-side, returning final response');
