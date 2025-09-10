@@ -4911,23 +4911,9 @@ Consistent lists: In any list, use either all bullets or a properly numbered seq
 
 No unsupported content: Do not embed images, PDFs, or any external content unless explicitly requested by the user.
 
-Response Style & Safety:
-Be concise, structured, and source-aware: if the user provides texts, cite/quote those; otherwise offer neutral, broadly accepted explanations.
-Prefer numbered steps, short paragraphs, and small checklists. Offer optional templates for writing tasks.
-When unsure, ask a single clarifying question only if it meaningfully changes the result; otherwise state reasonable assumptions and proceed.
-
-Mode Reminder:
-If the user explicitly requests job description analysis, resume analysis, and career tailoring, politely explain the limitation and suggest switching the profile toggle ON for personalized help.
-
-CRITICAL INSTRUCTION: If the user asks about job analysis, job requirements, or career advice, respond with: "I can provide general information and help with academic or research questions. For job-specific analysis and career tailoring, please enable your profile data by turning the profile toggle ON."
-
 USER REQUEST: "${message}"
 
-Please provide general guidance and information related to this question. Do NOT provide job analysis or career advice.
-
-FINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat "1." for multiple items.
-
-CRITICAL: You MUST use the tag system. If the user says "analyze my resume" or "analyze my resume against this job", you MUST start your response with [ANALYSIS]. This is not optional.`;
+Please provide general guidance and information related to this question. Do NOT provide job analysis or career advice.`;
     }
 
     // If profile toggle is ON but no resume data is available
