@@ -3145,12 +3145,12 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     const chatHistoryData = await manageChatHistory(sessionId, [], null, req.userId);
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
-                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, toggleState, req.userId);
+                        prompt = await buildResumePrompt(message, sessionId, userProfile, toggleState, req.userId);
                     } else if (message.toLowerCase().includes('cover letter') || message.toLowerCase().includes('cover letter')) {
-                        prompt = await buildCoverLetterPrompt(null, userProfile, sessionId, req.userId);
+                        prompt = await buildCoverLetterPrompt(message, sessionId, userProfile, toggleState, req.userId);
                     } else {
                         // Default to resume generation
-                        prompt = await buildResumePrompt(chatHistoryData.conversationContext, sessionId, userProfile, toggleState, req.userId);
+                        prompt = await buildResumePrompt(message, sessionId, userProfile, toggleState, req.userId);
                     }
                 } else {
                     // Default to natural conversation
@@ -3368,7 +3368,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         } else if (parsedResponse.type === 'COVER_LETTER_GENERATION') {
             console.log('🔄 [EXECUTE AI DECISION] Switching to cover letter generation mode...');
             try {
-                const coverLetterPrompt = await buildCoverLetterPrompt(null, userProfile, sessionId, req.userId);
+                const coverLetterPrompt = await buildCoverLetterPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 const coverLetterData = await callOpenAI(coverLetterPrompt, 'gpt-4o', 4000, 0.7);
                 finalResponse = coverLetterData.choices[0].message.content;
                 finalUsage = coverLetterData.usage;
@@ -4387,7 +4387,7 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, toggleS
 }
 
 // Build cover letter prompt (updated to use Redis JD storage)
-async function buildCoverLetterPrompt(jobDescription, userProfile, sessionId, userId) {
+async function buildCoverLetterPrompt(message, sessionId, userProfile, toggleState, userId) {
   // Use the raw resume text directly - this is what we want for cover letter generation
   var resumeText = (userProfile === null || userProfile === void 0 ? void 0 : userProfile.resumeText) || 'No resume data available';
 
@@ -4587,13 +4587,18 @@ FINAL ATS OPTIMIZATION CHECKLIST FOR COVER LETTER:
 }
 
 // Build resume prompt (updated to use Redis JD storage)
-async function buildResumePrompt(conversationContext, sessionId, userProfile, toggleState, userId) {
+async function buildResumePrompt(message, sessionId, userProfile, toggleState, userId) {
   var profileText = formatUserProfile(userProfile, {
     includeRaw: true
   });
 
   // Get job description from Redis
   var fullJobDescription = await getJobDescriptionFromRedis(userId);
+  
+  // Get conversation context from server-side chat history management (retrieval only)
+  console.log('🔍 [BUILD RESUME PROMPT] Retrieving existing chat history for session:', sessionId);
+  const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
+  const conversationContext = chatHistoryData.conversationContext;
   
   console.log('🔍 [BUILD RESUME PROMPT] Job description usage check:', {
     userId: userId,
@@ -4602,7 +4607,7 @@ async function buildResumePrompt(conversationContext, sessionId, userProfile, to
     willUseForResumePrompt: !!fullJobDescription,
     fullJobDescriptionPreview: fullJobDescription ? fullJobDescription.substring(0, 200) + '...' : 'EMPTY',
     sessionId: sessionId,
-    userId: userId
+    conversationContextLength: conversationContext.length
   });
 
   // Check if job description is missing and provide helpful message
@@ -4665,11 +4670,17 @@ I'm here to help you create the perfect resume for your job application!`;
     detectedCareerLevel: careerLevel
   });
   
-  console.log('🔍 [BUILD RESUME PROMPT] Using conversation context:', {
-    conversationContextLength: conversationContext.length
-  });
 
-  return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be meticulously tailored to maximize ATS visibility and to impress human readers (hiring managers), far surpassing a generic resume.${conversationContext}
+  return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be meticulously tailored to maximize ATS visibility and to impress human readers (hiring managers), far surpassing a generic resume.
+
+JOB DESCRIPTION:
+${fullJobDescription}
+
+USER PROFILE/RESUME DATA:
+${profileText}
+
+CONVERSATION CONTEXT:
+${conversationContext}
 
 RESUME STRUCTURE AND FORMAT:
 - Use a professional, clean resume format with the following sections in order:
