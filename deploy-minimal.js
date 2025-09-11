@@ -2525,7 +2525,16 @@ app.post('/api/delete-account', async (req, res) => {
             });
         }
         
-        // 4. Log the deletion for audit purposes (removed to avoid foreign key constraint)
+        // 4. Clean up Redis data (chat sessions and job descriptions)
+        try {
+            await deleteUserChatSessions(userId);
+            await deleteJobDescriptionFromRedis(userId);
+        } catch (redisError) {
+            // Error: Error cleaning up Redis data:', redisError);
+            // Continue with deletion even if Redis cleanup fails
+        }
+        
+        // 5. Log the deletion for audit purposes (removed to avoid foreign key constraint)
         res.json({ success: true, message: 'Account deleted successfully' });
         
     } catch (error) {
