@@ -287,6 +287,9 @@ async function supabaseRequest(endpoint, options = {}) {
 
 const app = express();
 
+// Trust proxy for rate limiting (required for Render.com deployment)
+app.set('trust proxy', 1);
+
 // Security configuration (embedded)
 const SECURITY_CONFIG = {
     rateLimit: {
@@ -4736,20 +4739,36 @@ SUMMARY:`;
     }
 }
 
-// Clean up old sessions every hour
-setInterval(() => {
-    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours
-    let cleanedCount = 0;
-    
-    for (const [sessionId, session] of chatSessions.entries()) {
-        if (new Date(session.lastActivity) < cutoffTime) {
-            chatSessions.delete(sessionId);
-            cleanedCount++;
+// Clean up old sessions every hour (Redis-based cleanup)
+setInterval(async () => {
+    try {
+        const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours
+        let cleanedCount = 0;
+        
+        // Get all chat session keys from Redis
+        const sessionKeys = await redis.keys('chat_session:*');
+        
+        for (const key of sessionKeys) {
+            try {
+                const sessionData = await redis.get(key);
+                if (sessionData) {
+                    const session = JSON.parse(sessionData);
+                    if (new Date(session.lastActivity) < cutoffTime) {
+                        await redis.del(key);
+                        cleanedCount++;
+                    }
+                }
+            } catch (error) {
+                // Skip invalid session data
+                continue;
+            }
         }
-    }
-    
-    if (cleanedCount > 0) {
-        // Cleaned up old sessions
+        
+        if (cleanedCount > 0) {
+            // Cleaned up old sessions
+        }
+    } catch (error) {
+        // Error:Chat session cleanup failed
     }
 }, 60 * 60 * 1000);
 
