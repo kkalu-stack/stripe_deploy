@@ -730,46 +730,18 @@ app.post('/api/test-create-subscription', async (req, res) => {
         }
         
         
-        // Create a test subscription record
-        const subscriptionData = {
-            user_id: userId,
-            stripe_subscription_id: 'test_sub_' + Date.now(),
-            stripe_customer_id: 'test_cust_' + Date.now(),
-            status: 'active',
-            current_period_start: new Date().toISOString(),
-            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-            tokens_limit: -1, // Unlimited for Pro
-            tokens_used: 0,
-            updated_at: new Date().toISOString()
-        };
-        
-        
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-                'apikey': SUPABASE_SERVICE_ROLE_KEY,
-                'Content-Type': 'application/json',
-                'Prefer': 'resolution=merge-duplicates'
-            },
-            body: JSON.stringify(subscriptionData)
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Failed to create test subscription:', response.status, errorText);
-            return res.status(500).json({ 
-                error: 'Failed to create test subscription',
-                details: errorText
-            });
-        }
-        
-        const result = await response.json();
-        
+        // Return success without creating subscription records
+        // The system now uses checkUserRequestLimit() function for tracking user limits
         res.json({ 
             status: 'ok',
-            message: 'Test subscription created successfully',
-            subscription: result
+            message: 'Test subscription endpoint deprecated - using waitlist system instead',
+            subscription: {
+                status: 'free',
+                tokens_used: 0,
+                tokens_limit: 50,
+                is_unlimited: false,
+                current_period_end: null
+            }
         });
         
     } catch (error) {
@@ -1394,7 +1366,8 @@ app.post('/api/update-token-usage', async (req, res) => {
     }
 });
 
-// Create subscription record for existing user (admin endpoint)
+// DEPRECATED: Create subscription record for existing user (admin endpoint)
+// This endpoint is no longer used since we switched to the waitlist system
 app.post('/api/create-subscription-record', async (req, res) => {
     try {
         const { userId, status = 'free' } = req.body;
@@ -1403,45 +1376,21 @@ app.post('/api/create-subscription-record', async (req, res) => {
             return res.status(400).json({ error: 'Missing userId' });
         }
         
-        // Check if subscription record already exists
-        try {
-            const existingData = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
-            
-            if (existingData && existingData.length > 0) {
-                return res.json({ 
-                    success: true, 
-                    message: 'Subscription record already exists',
-                    subscription: existingData[0]
-                });
-            }
-        } catch (error) {
-            // Continue to create new record
-        }
-        
-        // Create new subscription record
-        const subscriptionData = {
-            user_id: userId,
-            status: status,
+        // Return success without creating subscription records
+        // The system now uses checkUserRequestLimit() function for tracking user limits
+        res.json({ 
+            success: true, 
+            message: 'Subscription system deprecated - using waitlist system instead',
+            status: 'free',
             tokens_used: 0,
-            tokens_limit: status === 'active' ? -1 : 50,
-            stripe_subscription_id: null,
-            stripe_customer_id: null,
-            current_period_start: null,
-            current_period_end: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-        
-        await supabaseRequest('user_subscriptions', {
-            method: 'POST',
-            body: subscriptionData
+            tokens_limit: 50,
+            is_unlimited: false,
+            current_period_end: null
         });
         
-        res.json({ success: true, subscription: subscriptionData });
-        
     } catch (error) {
-        console.error('Error creating subscription record:', error);
-        res.status(500).json({ error: 'Failed to create subscription record' });
+        console.error('Error in deprecated subscription endpoint:', error);
+        res.status(500).json({ error: 'Failed to process request' });
     }
 });
 
@@ -3159,42 +3108,12 @@ async function handleCheckoutCompleted(session) {
 async function handleSubscriptionCreated(subscription) {
     try {
         
-        // Get customer details from Stripe
-        const customer = await stripe.customers.retrieve(subscription.customer);
+        // DEPRECATED: Subscription creation no longer handled - using waitlist system
+        console.log('📋 Subscription created event received but ignored - using waitlist system instead');
         
-        // Find user by email in Supabase (using direct HTTP request)
-        try {
-            const users = await supabaseRequest('auth/users', {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
-                }
-            });
-            
-            const user = users.find(u => u.email === customer.email);
-            if (!user) {
-                return;
-            }
-            
-            // Insert or update subscription record
-            await supabaseRequest('user_subscriptions', {
-                method: 'POST',
-                body: {
-                    user_id: user.id,
-                    stripe_subscription_id: subscription.id,
-                    stripe_customer_id: subscription.customer,
-                    status: subscription.status,
-                    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                    tokens_limit: -1, // Unlimited for Pro
-                    updated_at: new Date().toISOString()
-                }
-            });
-            
-            
-        } catch (supabaseError) {
-            console.error('Error saving subscription to Supabase:', supabaseError);
-        }
+        // Get customer details from Stripe for logging
+        const customer = await stripe.customers.retrieve(subscription.customer);
+        console.log(`📋 Customer ${customer.email} subscription created but not processed (waitlist system active)`);
         
     } catch (error) {
         console.error('Error handling subscription created:', error);
@@ -3203,40 +3122,23 @@ async function handleSubscriptionCreated(subscription) {
 
 async function handleSubscriptionUpdated(subscription) {
     try {
-        
-        // Update subscription record using PATCH request
-        await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
-            method: 'PATCH',
-            body: {
-                status: subscription.status,
-                current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-                current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-                updated_at: new Date().toISOString()
-            }
-        });
-        
+        // DEPRECATED: Subscription updates no longer handled - using waitlist system
+        console.log('📋 Subscription updated event received but ignored - using waitlist system instead');
+        console.log(`📋 Subscription ${subscription.id} updated but not processed (waitlist system active)`);
         
     } catch (error) {
-        console.error('Error updating subscription in Supabase:', error);
+        console.error('Error handling subscription updated:', error);
     }
 }
 
 async function handleSubscriptionDeleted(subscription) {
     try {
-        
-        // Update subscription status to canceled
-        await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
-            method: 'PATCH',
-            body: {
-                status: 'canceled',
-                tokens_limit: 50, // Back to free tier
-                updated_at: new Date().toISOString()
-            }
-        });
-        
+        // DEPRECATED: Subscription deletions no longer handled - using waitlist system
+        console.log('📋 Subscription deleted event received but ignored - using waitlist system instead');
+        console.log(`📋 Subscription ${subscription.id} deleted but not processed (waitlist system active)`);
         
     } catch (error) {
-        console.error('Error updating deleted subscription in Supabase:', error);
+        console.error('Error handling subscription deleted:', error);
     }
 }
 
