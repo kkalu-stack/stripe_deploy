@@ -37,12 +37,7 @@ async function testRedisConnection() {
         await redisClient.del("test:connection");
         
     } catch (error) {
-        console.error('❌ [REDIS-TEST] Redis connection failed:', error);
-        console.error('❌ [REDIS-TEST] Error details:', {
-            message: error.message,
-            code: error.code,
-            stack: error.stack
-        });
+        // Redis connection failed
     }
 }
 
@@ -114,10 +109,7 @@ if (openaiApiKeys.length === 0 && process.env.OPENAI_API_KEY) {
 }
 
 if (openaiApiKeys.length === 0) {
-    console.error('❌ CRITICAL: No OpenAI API keys found! Please set either:');
-    console.error('❌ - OPENAI_API_KEY_1 through OPENAI_API_KEY_10 for rotation system, OR');
-    console.error('❌ - OPENAI_API_KEY for single key fallback');
-    console.error('❌ Available environment variables:', Object.keys(process.env).filter(key => key.includes('OPENAI')));
+    // No OpenAI API keys found
 }
 
 // Key rotation system - Initialize AFTER all keys are loaded
@@ -126,9 +118,7 @@ let keyUsageCount = new Array(openaiApiKeys.length).fill(0);
 
 function getNextApiKey() {
     if (openaiApiKeys.length === 0) {
-        console.error('❌ No OpenAI API keys configured');
-        console.error('❌ Please set either OPENAI_API_KEY_1 through OPENAI_API_KEY_10 OR OPENAI_API_KEY');
-        console.error('❌ Current environment variables with OPENAI:', Object.keys(process.env).filter(key => key.includes('OPENAI')));
+        // No OpenAI API keys configured
         return null;
     }
     
@@ -157,13 +147,13 @@ function markKeyAsFailed(keyIndex) {
 
 // Validate required environment variables
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('❌ Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+    // Missing required environment variables
     process.exit(1);
 }
 
 // Helper function to handle subscription creation errors
 function handleSubscriptionCreationError(createError, res) {
-    console.error('❌ Error creating free tier subscription:', createError);
+    // Error creating free tier subscription
     
     // Check if it's a foreign key constraint error
     if (createError.code === '23503') {
@@ -258,7 +248,7 @@ async function supabaseRequest(endpoint, options = {}) {
         
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('❌ Supabase error response:', errorText);
+            // Supabase error response
             
             let error;
             try {
@@ -286,11 +276,11 @@ async function supabaseRequest(endpoint, options = {}) {
             const data = JSON.parse(responseText);
         return data;
         } catch (jsonError) {
-            console.warn('⚠️ Could not parse JSON response:', jsonError.message);
+            // Could not parse JSON response
             return null;
         }
     } catch (fetchError) {
-        console.error('❌ Supabase request failed:', fetchError);
+        // Supabase request failed
         throw fetchError;
     }
 }
@@ -348,9 +338,8 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
     try {
         event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
     } catch (err) {
-        console.error('❌ Webhook signature verification failed:', err.message);
-        console.error('❌ Error details:', err);
-        return res.status(400).send(`Webhook Error: ${err.message}`);
+        // Webhook signature verification failed
+        return res.status(400).send('Webhook signature verification failed');
     }
 
     // Handle the event with Supabase database operations
@@ -385,8 +374,7 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
         }
         
     } catch (error) {
-        console.error('❌ Error processing webhook event:', error);
-        console.error('❌ Error stack:', error.stack);
+        // Error: Error processing webhook event:', error.message);
     }
 
     res.json({ received: true });
@@ -449,7 +437,7 @@ app.get('/api/session-health', cors(SECURITY_CONFIG.cors), (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Session health check error:', error);
+        // Error: Session health check error:', error);
         res.status(500).json({ 
             success: false, 
             error: 'INTERNAL_ERROR',
@@ -475,7 +463,7 @@ app.post('/api/auth/exchange', async (req, res) => {
         const { data: { user }, error } = await supabase.auth.getUser(idToken);
         
         if (error || !user) {
-            console.error('❌ Token verification failed:', error);
+            // Error: Token verification failed:', error);
             return res.status(401).json({ 
                 success: false, 
                 error: 'Invalid token' 
@@ -496,7 +484,7 @@ app.post('/api/auth/exchange', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Auth exchange error:', error);
+        // Error: Auth exchange error:', error);
         res.status(500).json({ 
             success: false, 
             error: 'Internal server error' 
@@ -517,10 +505,10 @@ app.post('/api/auth/logout', (req, res) => {
             // NEW: Clean up chat sessions and job description in Redis
             if (session && session.userId) {
                 deleteUserChatSessions(session.userId).catch(error => {
-                    console.error('❌ [LOGOUT] Error cleaning up chat sessions:', error);
+                    // Error: [LOGOUT] Error cleaning up chat sessions:', error);
                 });
                 deleteJobDescriptionFromRedis(session.userId).catch(error => {
-                    console.error('❌ [LOGOUT] Error cleaning up job description:', error);
+                    // Error: [LOGOUT] Error cleaning up job description:', error);
                 });
             }
             
@@ -543,7 +531,7 @@ app.post('/api/auth/logout', (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Logout error:', error);
+        // Error: Logout error:', error);
         res.status(500).json({ 
             success: false, 
             error: 'Internal server error' 
@@ -612,12 +600,10 @@ app.post('/api/test-openai', async (req, res) => {
         
         if (!testResponse.ok) {
             const errorData = await testResponse.text();
-            console.error('🧪 [TEST] OpenAI API error:', errorData);
-            return res.status(500).json({
+            // Error:🧪 [TEST] OpenAI API error:', errorData);
+            return             res.status(500).json({
                 success: false,
-                error: 'OpenAI API error',
-                status: testResponse.status,
-                details: errorData
+                error: 'OpenAI API test failed'
             });
         }
         
@@ -631,7 +617,7 @@ app.post('/api/test-openai', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('🧪 [TEST] Test error:', error);
+        // Error:🧪 [TEST] Test error:', error);
         res.status(500).json({
             success: false,
             error: 'Test failed',
@@ -653,12 +639,10 @@ app.get('/api/test-supabase', async (req, res) => {
             testData
         });
     } catch (error) {
-        console.error('❌ Supabase test failed:', error);
+        // Error: Supabase test failed:', error);
         res.status(500).json({ 
             status: 'error',
-            message: 'Supabase connection failed',
-            error: error.message,
-            details: error
+            message: 'Supabase connection failed'
         });
     }
 });
@@ -710,12 +694,10 @@ app.post('/api/test-webhook-processing', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Test webhook processing failed:', error);
+        // Error: Test webhook processing failed:', error);
         res.status(500).json({ 
             status: 'error',
-            message: 'Test webhook processing failed',
-            error: error.message,
-            details: error
+            message: 'Test webhook processing failed'
         });
     }
 });
@@ -745,12 +727,10 @@ app.post('/api/test-create-subscription', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Test subscription creation failed:', error);
+        // Error: Test subscription creation failed:', error);
         res.status(500).json({ 
             status: 'error',
-            message: 'Test subscription creation failed',
-            error: error.message,
-            details: error
+            message: 'Test subscription creation failed'
         });
     }
 });
@@ -928,8 +908,8 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         // while the webhook processes in the background for redundancy
         
     } catch (error) {
-        console.error('Error creating checkout session:', error);
-        res.status(500).json({ error: 'Failed to create checkout session', details: error.message });
+        // Error:Error creating checkout session:', error);
+        res.status(500).json({ error: 'Failed to create checkout session' });
     }
 });
 */
@@ -1004,7 +984,7 @@ app.get('/success', async (req, res) => {
         `);
         
     } catch (error) {
-        console.error('❌ [SUCCESS] Error handling success page:', error);
+        // Error: [SUCCESS] Error handling success page:', error);
         res.status(500).send('Error processing success page');
     }
 });
@@ -1040,8 +1020,8 @@ app.post('/api/verify-payment', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error verifying payment:', error);
-        res.status(500).json({ error: 'Failed to verify payment', details: error.message });
+        // Error:Error verifying payment:', error);
+        res.status(500).json({ error: 'Failed to verify payment' });
     }
 });
 */
@@ -1094,7 +1074,7 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
             }
             
         } catch (verificationError) {
-            console.error('❌ [CANCEL_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
+            // Error: [CANCEL_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
             return res.status(500).json({
                 success: false,
                 error: 'VERIFICATION_FAILED',
@@ -1119,7 +1099,7 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
                 }
             });
         } catch (supabaseError) {
-            console.error('⚠️ [CANCEL_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
+            // Error:⚠️ [CANCEL_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
             // Don't fail the cancellation if Supabase update fails
         }
 
@@ -1134,8 +1114,8 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
             }
         });
     } catch (error) {
-        console.error('❌ [CANCEL_SUBSCRIPTION] Error canceling subscription:', error);
-        res.status(500).json({ error: 'Failed to cancel subscription', details: error.message });
+        // Error: [CANCEL_SUBSCRIPTION] Error canceling subscription:', error);
+        res.status(500).json({ error: 'Failed to cancel subscription' });
     }
 });
 */
@@ -1188,7 +1168,7 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
             }
             
         } catch (verificationError) {
-            console.error('❌ [REACTIVATE_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
+            // Error: [REACTIVATE_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
             return res.status(500).json({
                 success: false,
                 error: 'VERIFICATION_FAILED',
@@ -1212,7 +1192,7 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
                 }
             });
         } catch (supabaseError) {
-            console.error('⚠️ [REACTIVATE_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
+            // Error:⚠️ [REACTIVATE_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
             // Don't fail the reactivation if Supabase update fails
         }
 
@@ -1225,8 +1205,8 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
             }
         });
     } catch (error) {
-        console.error('❌ [REACTIVATE_SUBSCRIPTION] Error reactivating subscription:', error);
-        res.status(500).json({ error: 'Failed to reactivate subscription', details: error.message });
+        // Error: [REACTIVATE_SUBSCRIPTION] Error reactivating subscription:', error);
+        res.status(500).json({ error: 'Failed to reactivate subscription' });
     }
 });
 */
@@ -1240,7 +1220,7 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
         try {
             const testData = await supabaseRequest('user_subscriptions?limit=1');
         } catch (connectionError) {
-            console.error('❌ Supabase connection failed:', connectionError);
+            // Error: Supabase connection failed:', connectionError);
             return res.status(500).json({ 
                 error: 'Supabase connection failed',
                 details: connectionError.message
@@ -1302,7 +1282,7 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                 });
             }
         } catch (supabaseError) {
-            console.error('❌ Supabase query error:', supabaseError);
+            // Error: Supabase query error:', supabaseError);
             // For any query error, just return free tier status
             res.json({
                 status: 'free',
@@ -1313,12 +1293,10 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
             });
         }
     } catch (error) {
-        console.error('❌ Error retrieving subscription from Supabase:', error);
-        console.error('❌ Error details:', JSON.stringify(error, null, 2));
+        // Error: Error retrieving subscription from Supabase:', error);
+        // Error: Error details:', JSON.stringify(error, null, 2));
         res.status(500).json({ 
-            error: 'Failed to retrieve subscription',
-            details: error.message,
-            stack: error.stack
+            error: 'Failed to retrieve subscription'
         });
     }
 });
@@ -1340,7 +1318,7 @@ app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
             cancel_at_period_end: subscription.cancel_at_period_end
         });
     } catch (error) {
-        console.error('Error retrieving subscription from Stripe:', error);
+        // Error:Error retrieving subscription from Stripe:', error);
         res.status(500).json({ error: 'Failed to retrieve subscription' });
     }
 });
@@ -1361,7 +1339,7 @@ app.post('/api/update-token-usage', async (req, res) => {
         res.json({ success: true, tokensUsed });
         
     } catch (error) {
-        console.error('Error updating token usage in Supabase:', error);
+        // Error:Error updating token usage in Supabase:', error);
         res.status(500).json({ error: 'Failed to update token usage' });
     }
 });
@@ -1389,7 +1367,7 @@ app.post('/api/create-subscription-record', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('Error in deprecated subscription endpoint:', error);
+        // Error:Error in deprecated subscription endpoint:', error);
         res.status(500).json({ error: 'Failed to process request' });
     }
 });
@@ -1448,15 +1426,15 @@ app.post('/api/waitlist', async (req, res) => {
 
         if (verification && verification.length > 0) {
         } else {
-            console.warn('⚠️ Waitlist entry not found in verification query');
-            console.warn('⚠️ This could mean:');
-            console.warn('   - Table does not exist');
-            console.warn('   - RLS policies are blocking access');
-            console.warn('   - Record was not actually inserted');
+            // Warning: Waitlist entry not found in verification query');
+            // Warning: This could mean:');
+            // Warning:   - Table does not exist');
+            // Warning:   - RLS policies are blocking access');
+            // Warning:   - Record was not actually inserted');
         }
     } catch (verifyError) {
-        console.error('❌ Error verifying waitlist entry:', verifyError);
-        console.error('❌ Verification error details:', verifyError.message);
+        // Error: Error verifying waitlist entry:', verifyError);
+        // Error: Verification error details:', verifyError.message);
     }
         
         // Even if response is null (empty response from Supabase), the 201 status means success
@@ -1467,7 +1445,7 @@ app.post('/api/waitlist', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Error adding user to waitlist:', error);
+        // Error: Error adding user to waitlist:', error);
         res.status(500).json({ success: false, error: 'Failed to join waitlist' });
     }
 });
@@ -1502,7 +1480,7 @@ app.get('/api/waitlist/status', async (req, res) => {
         }
         
     } catch (error) {
-        console.error('❌ Error checking waitlist status:', error);
+        // Error: Error checking waitlist status:', error);
         res.status(500).json({ success: false, error: 'Failed to check waitlist status' });
     }
 });
@@ -1524,7 +1502,7 @@ app.post('/api/create-portal-session', async (req, res) => {
         
         res.json({ url: session.url });
     } catch (error) {
-        console.error('Error creating portal session:', error);
+        // Error:Error creating portal session:', error);
         res.status(500).json({ error: 'Failed to create portal session' });
     }
 });
@@ -1729,11 +1707,10 @@ app.get('/api/test-redis-jd/:userId', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ [REDIS-TEST] Error testing Redis JD retrieval:', error);
+        // Error: [REDIS-TEST] Error testing Redis JD retrieval:', error);
         res.status(500).json({
             success: false,
-            error: error.message,
-            details: error
+            error: 'Internal server error'
         });
     }
 });
@@ -1755,7 +1732,7 @@ app.get('/api/test-auth-delete', async (req, res) => {
         
         if (!testResponse.ok) {
             const errorText = await testResponse.text();
-            console.error('❌ Test error response:', errorText);
+            // Error: Test error response:', errorText);
             return res.json({ 
                 success: false, 
                 error: `HTTP ${testResponse.status}: ${errorText}`,
@@ -1774,11 +1751,10 @@ app.get('/api/test-auth-delete', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Test auth connection error:', error);
+        // Error: Test auth connection error:', error);
         res.json({ 
             success: false, 
-            error: error.message,
-            stack: error.stack
+            error: 'Internal server error'
         });
     }
 });
@@ -1805,7 +1781,7 @@ app.get('/api/get-user-id', async (req, res) => {
         
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('❌ Error fetching users:', errorText);
+            // Error: Error fetching users:', errorText);
             return res.status(500).json({ error: 'Failed to fetch users' });
         }
         
@@ -1821,10 +1797,9 @@ app.get('/api/get-user-id', async (req, res) => {
         res.json({ userId: user.id });
         
     } catch (error) {
-        console.error('❌ Error in get-user-id endpoint:', error);
+        // Error: Error in get-user-id endpoint:', error);
         res.status(500).json({ 
-            error: 'Failed to get user ID',
-            details: error.message 
+            error: 'Failed to get user ID'
         });
     }
 });
@@ -1846,7 +1821,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             });
             
             if (!userResponse.ok) {
-                console.error('❌ [API/ME] Failed to fetch user from Admin API:', userResponse.status);
+                // Error: [API/ME] Failed to fetch user from Admin API:', userResponse.status);
                 return res.status(401).json({
                     success: false,
                     error: 'User not found'
@@ -1862,7 +1837,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             const resumeText = user.user_metadata?.resume_text || '';
             
         } catch (adminApiError) {
-            console.error('❌ [API/ME] Admin API error:', adminApiError);
+            // Error: [API/ME] Admin API error:', adminApiError);
             return res.status(401).json({
                 success: false,
                 error: 'User not found'
@@ -1874,7 +1849,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
         try {
             userPreferences = await supabaseRequest(`user_preferences?user_id=eq.${req.userId}&select=*`);
         } catch (preferencesError) {
-            console.error('❌ [API/ME] Preferences fetch error:', preferencesError);
+            // Error: [API/ME] Preferences fetch error:', preferencesError);
             // Continue with default preferences
             userPreferences = null;
         }
@@ -1934,7 +1909,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
         try {
             subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&select=*`);
         } catch (subscriptionError) {
-            console.error('❌ [API/ME] Subscription fetch error:', subscriptionError);
+            // Error: [API/ME] Subscription fetch error:', subscriptionError);
             // Continue with default free user data
             subscriptionData = null;
         }
@@ -2072,7 +2047,7 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
         */
         
     } catch (error) {
-        console.error('❌ [API/ME] Endpoint error:', error);
+        // Error: [API/ME] Endpoint error:', error);
         
         // Return 503 for internal errors, not 500
         res.status(503).json({
@@ -2179,7 +2154,7 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 if (userResponse.ok) {
                 }
             } catch (metadataError) {
-                console.warn('⚠️ [API/ME POST] Could not update display name in metadata:', metadataError);
+                // Warning: [API/ME POST] Could not update display name in metadata:', metadataError);
             }
             
             res.json({
@@ -2188,7 +2163,7 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
             
         } catch (updateError) {
-            console.error('❌ [API/ME POST] Update error:', updateError);
+            // Error: [API/ME POST] Update error:', updateError);
             return res.status(500).json({
                 success: false,
                 error: 'Failed to update display name'
@@ -2196,7 +2171,7 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         }
         
     } catch (error) {
-        console.error('❌ [API/ME POST] Endpoint error:', error);
+        // Error: [API/ME POST] Endpoint error:', error);
         res.status(503).json({
             success: false,
             error: 'TEMP_UNAVAILABLE',
@@ -2248,7 +2223,7 @@ app.post('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) =>
         res.json({ success: true, education });
         
     } catch (error) {
-        console.error('❌ Save education error:', error);
+        // Error: Save education error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -2289,7 +2264,7 @@ app.get('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Get language error:', error);
+        // Error: Get language error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -2334,7 +2309,7 @@ app.post('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => 
         res.json({ success: true, language });
         
     } catch (error) {
-        console.error('❌ Save language error:', error);
+        // Error: Save language error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -2375,7 +2350,7 @@ app.get('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res) 
         res.json({ success: true, display_name: displayName });
         
     } catch (error) {
-        console.error('❌ Get display name error:', error);
+        // Error: Get display name error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -2415,7 +2390,7 @@ app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res)
         });
         
         if (!updateResponse.ok) {
-            console.error('❌ Failed to update user metadata:', updateResponse.status);
+            // Error: Failed to update user metadata:', updateResponse.status);
             return res.status(500).json({ success: false, error: 'Failed to update display name' });
         }
         
@@ -2423,7 +2398,7 @@ app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res)
         res.json({ success: true, display_name });
         
     } catch (error) {
-        console.error('❌ Save display name error:', error);
+        // Error: Save display name error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -2463,7 +2438,7 @@ app.post('/api/account/clear', async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Clear account error:', error);
+        // Error: Clear account error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -2498,7 +2473,7 @@ app.post('/api/delete-account', async (req, res) => {
                 }
             }
         } catch (stripeError) {
-            console.error('⚠️ Error canceling Stripe subscription:', stripeError);
+            // Error:⚠️ Error canceling Stripe subscription:', stripeError);
             // Continue with account deletion even if Stripe cancellation fails
         }
         
@@ -2508,7 +2483,7 @@ app.post('/api/delete-account', async (req, res) => {
                 method: 'DELETE'
             });
         } catch (subscriptionError) {
-            console.error('⚠️ Error deleting subscription record:', subscriptionError);
+            // Error:⚠️ Error deleting subscription record:', subscriptionError);
         }
         
         // 2.5. Delete privacy audit log records for this user
@@ -2517,7 +2492,7 @@ app.post('/api/delete-account', async (req, res) => {
                 method: 'DELETE'
             });
         } catch (auditDeleteError) {
-            console.error('⚠️ Error deleting audit log records:', auditDeleteError);
+            // Error:⚠️ Error deleting audit log records:', auditDeleteError);
         }
         
         // 3. Delete user from Supabase auth
@@ -2535,12 +2510,12 @@ app.post('/api/delete-account', async (req, res) => {
             
             if (!deleteResponse.ok) {
                 const errorText = await deleteResponse.text();
-                console.error('❌ Supabase delete error response:', errorText);
+                // Error: Supabase delete error response:', errorText);
                 throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText} - ${errorText}`);
             }
             
         } catch (authError) {
-            console.error('❌ Error deleting user from auth:', authError);
+            // Error: Error deleting user from auth:', authError);
             return res.status(500).json({ 
                 error: 'Failed to delete user account',
                 details: authError.message 
@@ -2551,11 +2526,9 @@ app.post('/api/delete-account', async (req, res) => {
         res.json({ success: true, message: 'Account deleted successfully' });
         
     } catch (error) {
-        console.error('❌ Error in delete account endpoint:', error);
+        // Error: Error in delete account endpoint:', error);
         res.status(500).json({ 
-            error: 'Failed to delete account',
-            details: error.message,
-            stack: error.stack
+            error: 'Failed to delete account'
         });
     }
 });
@@ -2600,7 +2573,7 @@ app.get('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Get resume error:', error);
+        // Error: Get resume error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -2646,7 +2619,7 @@ app.post('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
         });
         
         if (!updateResponse.ok) {
-            console.error('❌ Failed to update user metadata:', updateResponse.status);
+            // Error: Failed to update user metadata:', updateResponse.status);
             return res.status(500).json({ success: false, error: 'Failed to save resume' });
         }
         
@@ -2660,7 +2633,7 @@ app.post('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ Save resume error:', error);
+        // Error: Save resume error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -2692,7 +2665,7 @@ async function checkUserSubscriptionStatus(userId) {
         
         return { upgradeRequired: false };
     } catch (error) {
-        console.error('❌ Error checking subscription status:', error);
+        // Error: Error checking subscription status:', error);
         // Default to allowing access if there's an error
         return { upgradeRequired: false };
     }
@@ -2717,7 +2690,7 @@ async function logUserRequest(userId, requestType = 'chat', tokensUsed = 0) {
         
         return logResponse;
     } catch (error) {
-        console.error('❌ Error logging request:', error);
+        // Error: Error logging request:', error);
         return null;
     }
 }
@@ -2745,7 +2718,7 @@ async function checkUserRequestLimit(userId) {
             remaining: limit - requestCount
         };
     } catch (error) {
-        console.error('❌ Error checking request limit:', error);
+        // Error: Error checking request limit:', error);
         // Default to allowing request if there's an error
         return {
             canMakeRequest: true,
@@ -2825,7 +2798,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 }];
                 
             } catch (error) {
-                console.error('❌ [SINGLE-CALL] Error building complete prompt:', error);
+                // Error: [SINGLE-CALL] Error building complete prompt:', error);
                 return res.status(500).json({
                     success: false,
                     error: `Failed to build complete prompt: ${error.message}`
@@ -2864,7 +2837,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         // Get API key from the 10-key rotation system
         const apiKey = getNextApiKey();
         if (!apiKey) {
-            console.error('❌ No API keys available');
+            // Error: No API keys available');
             return res.status(500).json({
                 success: false,
                 error: 'No API keys available'
@@ -2890,7 +2863,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         if (!openaiResponse.ok) {
             const errorData = await openaiResponse.text();
-            console.error('❌ OpenAI API error:', openaiResponse.status, errorData);
+            // Error: OpenAI API error:', openaiResponse.status, errorData);
             
             // Mark the current key as failed if it's a rate limit or authentication error
             if (openaiResponse.status === 429 || openaiResponse.status === 401) {
@@ -2919,7 +2892,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         if (data.choices && data.choices.length > 0 && data.choices[0] && data.choices[0].message) {
             responseContent = data.choices[0].message.content || '';
         } else {
-            console.error('❌ [ERROR] Invalid OpenAI response structure:', data);
+            // Error: [ERROR] Invalid OpenAI response structure:', data);
             return res.status(500).json({
                 success: false,
                 error: 'Invalid response from OpenAI API'
@@ -2928,7 +2901,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         // Check if response content is empty
         if (!responseContent || responseContent.trim() === '') {
-            console.error('❌ [ERROR] Empty response content from OpenAI');
+            // Error: [ERROR] Empty response content from OpenAI');
             return res.status(500).json({
                 success: false,
                 error: 'Empty response from OpenAI API'
@@ -2949,7 +2922,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 finalResponse = analysisData.choices[0].message.content;
                 finalUsage = analysisData.usage;
             } catch (error) {
-                console.error('❌ [EXECUTE AI DECISION] Analysis failed, using original response:', error);
+                // Error: [EXECUTE AI DECISION] Analysis failed, using original response:', error);
                 // Keep original response if analysis fails
             }
         } else if (parsedResponse.type === 'RESUME_GENERATION') {
@@ -2959,7 +2932,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 finalResponse = resumeData.choices[0].message.content;
                 finalUsage = resumeData.usage;
             } catch (error) {
-                console.error('❌ [EXECUTE AI DECISION] Resume generation failed, using original response:', error);
+                // Error: [EXECUTE AI DECISION] Resume generation failed, using original response:', error);
                 // Keep original response if resume generation fails
             }
         } else if (parsedResponse.type === 'COVER_LETTER_GENERATION') {
@@ -2969,7 +2942,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 finalResponse = coverLetterData.choices[0].message.content;
                 finalUsage = coverLetterData.usage;
             } catch (error) {
-                console.error('❌ [EXECUTE AI DECISION] Cover letter generation failed, using original response:', error);
+                // Error: [EXECUTE AI DECISION] Cover letter generation failed, using original response:', error);
                 // Keep original response if cover letter generation fails
             }
         }
@@ -2981,7 +2954,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 { role: 'assistant', content: finalResponse }
             ], null, req.userId);
         } catch (error) {
-            console.error('❌ [CHAT HISTORY] Error saving conversation:', error);
+            // Error: [CHAT HISTORY] Error saving conversation:', error);
             // Don't fail the request if chat history saving fails
         }
         
@@ -2992,10 +2965,9 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         });
         
     } catch (error) {
-        console.error('❌ Generate API error:', error);
-        console.error('❌ Error stack:', error.stack);
+        // Error: Generate API error:', error.message);
         
-        // Provide more specific error messages
+        // Provide user-friendly error messages
         let errorMessage = 'Failed to generate response';
         if (error.message.includes('Cannot read properties of undefined')) {
             errorMessage = 'Failed to generate response: Invalid data structure received';
@@ -3004,7 +2976,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         } else if (error.message.includes('rate limit')) {
             errorMessage = 'Failed to generate response: Rate limit exceeded';
         } else {
-            errorMessage = `Failed to generate response: ${error.message}`;
+            errorMessage = 'Failed to generate response: Please try again';
         }
         
         res.status(500).json({
@@ -3019,7 +2991,7 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
 
 // Error handling middleware
 app.use((error, req, res, next) => {
-    console.error('Unhandled error:', error);
+    // Error:Unhandled error:', error);
     res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -3049,7 +3021,7 @@ async function handleCheckoutCompleted(session) {
             });
             
             if (!response.ok) {
-                console.error('❌ Failed to fetch users from Supabase:', response.status, response.statusText);
+                // Error: Failed to fetch users from Supabase:', response.status, response.statusText);
                 return;
             }
             
@@ -3087,9 +3059,9 @@ async function handleCheckoutCompleted(session) {
             });
             
             if (!subResponse.ok) {
-                console.error('❌ Failed to save subscription:', subResponse.status, subResponse.statusText);
+                // Error: Failed to save subscription:', subResponse.status, subResponse.statusText);
                 const errorText = await subResponse.text();
-                console.error('❌ Error details:', errorText);
+                // Error: Error details:', errorText);
                 return;
             }
             
@@ -3097,11 +3069,11 @@ async function handleCheckoutCompleted(session) {
             
             
         } catch (supabaseError) {
-            console.error('❌ Error saving subscription to Supabase:', supabaseError);
+            // Error: Error saving subscription to Supabase:', supabaseError);
         }
         
     } catch (error) {
-        console.error('❌ Error handling checkout completed:', error);
+        // Error: Error handling checkout completed:', error);
     }
 }
 
@@ -3109,36 +3081,36 @@ async function handleSubscriptionCreated(subscription) {
     try {
         
         // DEPRECATED: Subscription creation no longer handled - using waitlist system
-        console.log('📋 Subscription created event received but ignored - using waitlist system instead');
+        // Subscription created event received but ignored - using waitlist system instead
         
         // Get customer details from Stripe for logging
         const customer = await stripe.customers.retrieve(subscription.customer);
-        console.log(`📋 Customer ${customer.email} subscription created but not processed (waitlist system active)`);
+        // Customer subscription created but not processed (waitlist system active)
         
     } catch (error) {
-        console.error('Error handling subscription created:', error);
+        // Error handling subscription created
     }
 }
 
 async function handleSubscriptionUpdated(subscription) {
     try {
         // DEPRECATED: Subscription updates no longer handled - using waitlist system
-        console.log('📋 Subscription updated event received but ignored - using waitlist system instead');
-        console.log(`📋 Subscription ${subscription.id} updated but not processed (waitlist system active)`);
+        // Subscription updated event received but ignored - using waitlist system instead
+        // Subscription updated but not processed (waitlist system active)
         
     } catch (error) {
-        console.error('Error handling subscription updated:', error);
+        // Error handling subscription updated
     }
 }
 
 async function handleSubscriptionDeleted(subscription) {
     try {
         // DEPRECATED: Subscription deletions no longer handled - using waitlist system
-        console.log('📋 Subscription deleted event received but ignored - using waitlist system instead');
-        console.log(`📋 Subscription ${subscription.id} deleted but not processed (waitlist system active)`);
+        // Subscription deleted event received but ignored - using waitlist system instead
+        // Subscription deleted but not processed (waitlist system active)
         
     } catch (error) {
-        console.error('Error handling subscription deleted:', error);
+        // Error handling subscription deleted
     }
 }
 
@@ -3156,7 +3128,7 @@ async function handlePaymentSucceeded(invoice) {
         }
         
     } catch (error) {
-        console.error('Error handling payment succeeded:', error);
+        // Error:Error handling payment succeeded:', error);
     }
 }
 
@@ -3176,7 +3148,7 @@ async function handlePaymentFailed(invoice) {
         }
         
     } catch (error) {
-        console.error('Error updating failed payment in Supabase:', error);
+        // Error:Error updating failed payment in Supabase:', error);
     }
 }
 
@@ -3222,7 +3194,7 @@ What would you like to do?`
         }
         
     } catch (error) {
-        console.error('❌ [API/JD-DETECT] Error:', error);
+        // Error: [API/JD-DETECT] Error:', error);
         return res.status(500).json({
             success: false,
             error: 'Internal server error'
@@ -3260,12 +3232,7 @@ app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateS
         });
         
     } catch (error) {
-        console.error('❌ [API/CLEAR-JD] Error:', error);
-        console.error('❌ [API/CLEAR-JD] Error details:', {
-            message: error.message,
-            code: error.code,
-            stack: error.stack
-        });
+        // Error: [API/CLEAR-JD] Error occurred
         return res.status(500).json({
             success: false,
             error: 'Internal server error'
@@ -3339,7 +3306,7 @@ app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
         });
         
     } catch (error) {
-        console.error('❌ [SUPABASE_USER] Error:', error);
+        // Error: [SUPABASE_USER] Error:', error);
         res.status(500).json({
             success: false,
             error: 'Internal server error'
@@ -3657,7 +3624,7 @@ function formatUserProfile(profile, options = {}) {
     const { includeRaw = false, isProfileToggleOff = false } = options;
     
     if (!profile) {
-        console.error('❌ [SERVER] No profile provided - this should never happen as all users must have a profile');
+        // Error: [SERVER] No profile provided - this should never happen as all users must have a profile');
         return 'No profile available';
     }
     
@@ -3735,7 +3702,7 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     // Add null checks and default values
     if (!message) message = '';
     if (!userProfile) {
-        console.error('❌ [SERVER] No user profile provided - this should never happen as all users must have a profile');
+        // Error: [SERVER] No user profile provided - this should never happen as all users must have a profile');
         userProfile = {}; // Fallback for safety
     }
     if (!jobContext) jobContext = {};
@@ -4238,7 +4205,7 @@ You DO NOT provide personalized career coaching, resume/cover-letter tailoring, 
 Data Constraints:
 You have no access to the user's resume data. Do not ask for it. Do not infer it.
 
-Treat every answer as general guidance that anyone could use.
+Treat every answer as general guidance that anyone could use. Be very detailed in your answers with examples when appropriate.
 
 What You're Expert At (examples, not limits):
 Academic help (high school through doctoral): explain concepts, outline essays, solve step-by-step math/stats, propose study plans, compare theories, generate citations (APA/MLA/Chicago etc.), and produce literature-style summaries (with sources if provided).
@@ -4417,7 +4384,7 @@ async function storeChatSession(sessionId, sessionData) {
         const key = `chat_session:${sessionId}`;
         await redisClient.setex(key, 4 * 60 * 60, JSON.stringify(sessionData)); // 4 hours TTL (safety net only)
     } catch (error) {
-        console.error('❌ [UPSTASH] Error storing chat session:', error);
+        // Error: [UPSTASH] Error storing chat session:', error);
         throw error;
     }
 }
@@ -4432,7 +4399,7 @@ async function getChatSession(sessionId) {
         }
         return null;
     } catch (error) {
-        console.error('❌ [UPSTASH] Error retrieving chat session:', error);
+        // Error: [UPSTASH] Error retrieving chat session:', error);
         return null;
     }
 }
@@ -4442,7 +4409,7 @@ async function deleteChatSession(sessionId) {
         const key = `chat_session:${sessionId}`;
         await redisClient.del(key);
     } catch (error) {
-        console.error('❌ [UPSTASH] Error deleting chat session:', error);
+        // Error: [UPSTASH] Error deleting chat session:', error);
     }
 }
 
@@ -4467,7 +4434,7 @@ async function deleteUserChatSessions(userId) {
             await redisClient.del(...userKeys);
         }
     } catch (error) {
-        console.error('❌ [UPSTASH] Error deleting user chat sessions:', error);
+        // Error: [UPSTASH] Error deleting user chat sessions:', error);
     }
 }
 
@@ -4533,12 +4500,7 @@ async function saveJobDescriptionToRedis(userId, jobDescription) {
         }
         
     } catch (error) {
-        console.error('❌ [REDIS JD] Error saving job description:', error);
-        console.error('❌ [REDIS JD] Error details:', {
-            message: error.message,
-            code: error.code,
-            stack: error.stack
-        });
+        // Error: [REDIS JD] Error saving job description
         throw error;
     }
 }
@@ -4566,12 +4528,7 @@ async function getJobDescriptionFromRedis(userId) {
             return null;
         }
     } catch (error) {
-        console.error('❌ [REDIS JD] Error retrieving job description:', error);
-        console.error('❌ [REDIS JD] Error details:', {
-            message: error.message,
-            code: error.code,
-            stack: error.stack
-        });
+        // Error: [REDIS JD] Error retrieving job description
         return null;
     }
 }
@@ -4585,12 +4542,7 @@ async function deleteJobDescriptionFromRedis(userId) {
         const key = `jd:${userId}`;
         await redisClient.del(key);
     } catch (error) {
-        console.error('❌ [REDIS JD] Error deleting job description:', error);
-        console.error('❌ [REDIS JD] Error details:', {
-            message: error.message,
-            code: error.code,
-            stack: error.stack
-        });
+        // Error: [REDIS JD] Error deleting job description
         throw error;
     }
 }
@@ -4775,7 +4727,7 @@ SUMMARY:`;
         }
         
     } catch (error) {
-        console.error('❌ [RUNNING SUMMARY] Failed to update summary:', error);
+        // Error: [RUNNING SUMMARY] Failed to update summary:', error);
         // Don't fail the request if summary update fails
         // Keep existing summary or create a simple fallback
         if (!session.summary) {
