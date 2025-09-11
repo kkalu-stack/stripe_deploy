@@ -23,22 +23,18 @@ const redisClient = new Redis({
     token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-console.log('✅ Upstash Redis client initialized');
 
 // Test Redis connection on startup
 async function testRedisConnection() {
     try {
-        console.log('🔍 [REDIS-TEST] Testing Redis connection...');
         
         // Test basic operations like in the Upstash documentation
         await redisClient.set("test:connection", "working");
         const result = await redisClient.get("test:connection");
         
-        console.log('✅ [REDIS-TEST] Redis connection successful:', result);
         
         // Clean up test key
         await redisClient.del("test:connection");
-        console.log('✅ [REDIS-TEST] Test key cleaned up');
         
     } catch (error) {
         console.error('❌ [REDIS-TEST] Redis connection failed:', error);
@@ -69,17 +65,8 @@ const SESSION_CONFIG = {
 function authenticateSession(req, res, next) {
     const sessionId = req.cookies.sid;
     
-    console.log('🔍 [AUTH] Authentication attempt:', {
-        hasSessionId: !!sessionId,
-        sessionId: sessionId ? sessionId.substring(0, 20) + '...' : 'none',
-        userAgent: req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 50) + '...' : 'none',
-        origin: req.headers.origin || 'none',
-        referer: req.headers.referer || 'none',
-        cookies: req.headers.cookie ? req.headers.cookie.substring(0, 100) + '...' : 'none'
-    });
     
     if (!sessionId) {
-        console.log('❌ [AUTH] No session cookie found');
         return res.status(401).json({
             success: false,
             error: 'SESSION_EXPIRED',
@@ -90,8 +77,6 @@ function authenticateSession(req, res, next) {
     const session = getSession(sessionId);
     
     if (!session) {
-        console.log('❌ [AUTH] Invalid or expired session:', sessionId);
-        console.log('🔍 [AUTH] Available sessions:', Array.from(sessions.keys()).map(id => id.substring(0, 20) + '...'));
         return res.status(401).json({
             success: false,
             error: 'SESSION_EXPIRED',
@@ -106,7 +91,6 @@ function authenticateSession(req, res, next) {
     // Extend session on each request (rolling renewal)
     extendSession(sessionId);
     
-    console.log('✅ [AUTH] Session validated for user:', session.userId);
     next();
 }
 
@@ -127,10 +111,8 @@ const openaiApiKeys = [
 // Fallback to single API key if no rotation keys are found
 if (openaiApiKeys.length === 0 && process.env.OPENAI_API_KEY) {
     openaiApiKeys.push(process.env.OPENAI_API_KEY);
-    console.log('🔑 Using fallback single API key');
 }
 
-console.log(`🔑 Loaded ${openaiApiKeys.length} OpenAI API keys`);
 if (openaiApiKeys.length === 0) {
     console.error('❌ CRITICAL: No OpenAI API keys found! Please set either:');
     console.error('❌ - OPENAI_API_KEY_1 through OPENAI_API_KEY_10 for rotation system, OR');
@@ -141,7 +123,6 @@ if (openaiApiKeys.length === 0) {
 // Key rotation system - Initialize AFTER all keys are loaded
 let currentKeyIndex = 0;
 let keyUsageCount = new Array(openaiApiKeys.length).fill(0);
-console.log(`🔑 Initialized keyUsageCount array with ${keyUsageCount.length} slots`);
 
 function getNextApiKey() {
     if (openaiApiKeys.length === 0) {
@@ -151,8 +132,6 @@ function getNextApiKey() {
         return null;
     }
     
-    // Debug: Log available keys
-    console.log(`🔍 [DEBUG] Available API keys: ${openaiApiKeys.length}, Usage counts: [${keyUsageCount.join(', ')}]`);
     
     // Find the key with the lowest usage count
     let minUsage = Math.min(...keyUsageCount);
@@ -166,8 +145,6 @@ function getNextApiKey() {
     // Increment usage count
     keyUsageCount[currentKeyIndex]++;
     
-    console.log(`🔑 [ROTATION] Using API key ${currentKeyIndex + 1} (usage: ${keyUsageCount[currentKeyIndex]})`);
-    console.log(`🔑 [ROTATION] Key preview: ${openaiApiKeys[currentKeyIndex].substring(0, 8)}...`);
     return openaiApiKeys[currentKeyIndex];
 }
 
@@ -175,7 +152,6 @@ function markKeyAsFailed(keyIndex) {
     if (keyIndex >= 0 && keyIndex < keyUsageCount.length) {
         // Add a penalty to this key's usage count
         keyUsageCount[keyIndex] += 10;
-        console.log(`⚠️ Marked key ${keyIndex + 1} as failed, increased penalty`);
     }
 }
 
@@ -191,7 +167,6 @@ function handleSubscriptionCreationError(createError, res) {
     
     // Check if it's a foreign key constraint error
     if (createError.code === '23503') {
-        console.log('⚠️ User does not exist in auth.users table, returning free tier status');
         // Return free tier status without creating record
         res.json({
             status: 'free',
@@ -225,7 +200,6 @@ function createSession(userId, userAgent) {
     };
     
     sessions.set(sessionId, session);
-    console.log('🔐 Session created:', { sessionId, userId });
     return sessionId;
 }
 
@@ -236,7 +210,6 @@ function getSession(sessionId) {
     // Check if session is expired
     if (new Date() > session.expiresAt) {
         sessions.delete(sessionId);
-        console.log('🔐 Session expired:', sessionId);
         return null;
     }
     
@@ -247,7 +220,6 @@ function getSession(sessionId) {
     const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
     if (session.expiresAt < oneHourFromNow) {
         extendSession(sessionId);
-        console.log('🔐 Session auto-extended:', sessionId);
     }
     
     return session;
@@ -258,13 +230,11 @@ function extendSession(sessionId) {
     if (session) {
         session.expiresAt = new Date(Date.now() + SESSION_CONFIG.maxAge);
         session.lastActivity = new Date();
-        console.log('🔐 Session extended:', sessionId);
     }
 }
 
 function deleteSession(sessionId) {
     sessions.delete(sessionId);
-    console.log('🔐 Session deleted:', sessionId);
 }
 
 // Helper function to make Supabase requests
@@ -277,12 +247,6 @@ async function supabaseRequest(endpoint, options = {}) {
         ...options.headers
     };
     
-    console.log('🌐 Making Supabase request:', {
-        url,
-        method: options.method || 'GET',
-        headers: { ...headers, 'apikey': '[HIDDEN]', 'Authorization': '[HIDDEN]' },
-        body: options.body ? 'Present' : 'None'
-    });
     
     try {
         const response = await fetch(url, {
@@ -291,7 +255,6 @@ async function supabaseRequest(endpoint, options = {}) {
             body: options.body ? JSON.stringify(options.body) : undefined
         });
         
-        console.log('📡 Supabase response status:', response.status);
         
         if (!response.ok) {
             const errorText = await response.text();
@@ -309,22 +272,18 @@ async function supabaseRequest(endpoint, options = {}) {
         
         // Handle 204 No Content responses (common for PATCH/DELETE operations)
         if (response.status === 204) {
-            console.log('✅ Supabase request successful (204 No Content)');
             return null; // No data to return for 204 responses
         }
         
         // For other successful responses, try to parse JSON
         try {
             const responseText = await response.text();
-            console.log('📡 Supabase response body:', responseText);
             
             if (!responseText || responseText.trim() === '') {
-                console.log('✅ Supabase request successful (empty response)');
                 return null;
             }
             
             const data = JSON.parse(responseText);
-        console.log('✅ Supabase request successful');
         return data;
         } catch (jsonError) {
             console.warn('⚠️ Could not parse JSON response:', jsonError.message);
@@ -383,19 +342,11 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-    console.log('🔔 Webhook received');
-    console.log('📝 Stripe signature header:', sig ? 'Present' : 'Missing');
-    console.log('🔑 Webhook secret exists:', !!endpointSecret);
-    console.log('📦 Request body length:', req.body ? req.body.length : 'No body');
-    console.log('🌐 Request headers:', Object.keys(req.headers));
-    console.log('📅 Timestamp:', new Date().toISOString());
 
     let event;
 
     try {
         event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-        console.log('✅ Webhook signature verified, event type:', event.type);
-        console.log('📊 Event data object:', JSON.stringify(event.data.object, null, 2));
     } catch (err) {
         console.error('❌ Webhook signature verification failed:', err.message);
         console.error('❌ Error details:', err);
@@ -404,44 +355,35 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
 
     // Handle the event with Supabase database operations
     try {
-        console.log('🔄 Processing webhook event:', event.type);
         
         switch (event.type) {
             case 'checkout.session.completed':
-                console.log('💳 Processing checkout.session.completed...');
                 await handleCheckoutCompleted(event.data.object);
                 break;
                 
             case 'customer.subscription.created':
-                console.log('📦 Processing customer.subscription.created...');
                 await handleSubscriptionCreated(event.data.object);
                 break;
                 
             case 'customer.subscription.updated':
-                console.log('🔄 Processing customer.subscription.updated...');
                 await handleSubscriptionUpdated(event.data.object);
                 break;
                 
             case 'customer.subscription.deleted':
-                console.log('🗑️ Processing customer.subscription.deleted...');
                 await handleSubscriptionDeleted(event.data.object);
                 break;
                 
             case 'invoice.payment_succeeded':
-                console.log('💰 Processing invoice.payment_succeeded...');
                 await handlePaymentSucceeded(event.data.object);
                 break;
                 
             case 'invoice.payment_failed':
-                console.log('❌ Processing invoice.payment_failed...');
                 await handlePaymentFailed(event.data.object);
                 break;
                 
             default:
-                console.log(`⚠️ Unhandled event type: ${event.type}`);
         }
         
-        console.log('✅ Webhook event processed successfully');
     } catch (error) {
         console.error('❌ Error processing webhook event:', error);
         console.error('❌ Error stack:', error.stack);
@@ -528,7 +470,6 @@ app.post('/api/auth/exchange', async (req, res) => {
             });
         }
         
-        console.log('🔐 Auth exchange request received');
         
         // Verify the Supabase ID token
         const { data: { user }, error } = await supabase.auth.getUser(idToken);
@@ -541,7 +482,6 @@ app.post('/api/auth/exchange', async (req, res) => {
             });
         }
         
-        console.log('✅ Token verified for user:', user.id);
         
         // Create server session
         const sessionId = createSession(user.id, req.headers['user-agent']);
@@ -549,12 +489,6 @@ app.post('/api/auth/exchange', async (req, res) => {
         // Set HttpOnly cookie
         res.cookie('sid', sessionId, SESSION_CONFIG);
         
-        console.log('✅ Session created and cookie set:', {
-            sessionId: sessionId.substring(0, 20) + '...',
-            userId: user.id,
-            cookieConfig: SESSION_CONFIG,
-            userAgent: req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 50) + '...' : 'none'
-        });
         
         res.json({ 
             success: true, 
@@ -573,7 +507,6 @@ app.post('/api/auth/exchange', async (req, res) => {
 // Auth logout endpoint
 app.post('/api/auth/logout', (req, res) => {
     try {
-        console.log('🔐 Logout request received');
         
         // Get session from cookie
         const sessionId = req.cookies.sid;
@@ -583,7 +516,6 @@ app.post('/api/auth/logout', (req, res) => {
             
             // NEW: Clean up chat sessions and job description in Redis
             if (session && session.userId) {
-                console.log('🧹 [LOGOUT] Cleaning up chat sessions and job description in Redis for user:', session.userId);
                 deleteUserChatSessions(session.userId).catch(error => {
                     console.error('❌ [LOGOUT] Error cleaning up chat sessions:', error);
                 });
@@ -604,7 +536,6 @@ app.post('/api/auth/logout', (req, res) => {
             path: '/'
         });
         
-        console.log('✅ Logout successful');
         
         res.json({ 
             success: true, 
@@ -651,7 +582,6 @@ app.get('/api/api-key-status', (req, res) => {
 // Test OpenAI API endpoint (no authentication required for testing)
 app.post('/api/test-openai', async (req, res) => {
     try {
-        console.log('🧪 [TEST] Testing OpenAI API connection...');
         
         const apiKey = getNextApiKey();
         if (!apiKey) {
@@ -662,7 +592,6 @@ app.post('/api/test-openai', async (req, res) => {
             });
         }
         
-        console.log('🧪 [TEST] API key obtained, making test call...');
         
         const testResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -680,7 +609,6 @@ app.post('/api/test-openai', async (req, res) => {
             })
         });
         
-        console.log('🧪 [TEST] OpenAI response status:', testResponse.status);
         
         if (!testResponse.ok) {
             const errorData = await testResponse.text();
@@ -694,7 +622,6 @@ app.post('/api/test-openai', async (req, res) => {
         }
         
         const data = await testResponse.json();
-        console.log('🧪 [TEST] OpenAI API success:', data);
         
         res.json({
             success: true,
@@ -716,13 +643,9 @@ app.post('/api/test-openai', async (req, res) => {
 // Test Supabase connection
 app.get('/api/test-supabase', async (req, res) => {
     try {
-        console.log('🧪 Testing Supabase connection...');
-        console.log('🔗 Supabase URL:', SUPABASE_URL);
-        console.log('🔑 Service Role Key exists:', !!SUPABASE_SERVICE_ROLE_KEY);
         
         // Test a simple query
         const testData = await supabaseRequest('user_subscriptions?limit=1&select=count');
-        console.log('✅ Supabase test successful:', testData);
         
         res.json({ 
             status: 'ok',
@@ -761,8 +684,6 @@ app.post('/api/test-webhook-processing', async (req, res) => {
             return res.status(400).json({ error: 'email is required' });
         }
         
-        console.log('🧪 Testing webhook processing manually...');
-        console.log('📧 Email:', email);
         
         // Simulate a subscription created event
         const mockEvent = {
@@ -778,7 +699,6 @@ app.post('/api/test-webhook-processing', async (req, res) => {
             }
         };
         
-        console.log('📦 Mock event:', mockEvent);
         
         // Process the mock event
         await handleSubscriptionCreated(mockEvent.data.object);
@@ -809,9 +729,6 @@ app.post('/api/test-create-subscription', async (req, res) => {
             return res.status(400).json({ error: 'userId and email are required' });
         }
         
-        console.log('🧪 Testing manual subscription creation...');
-        console.log('👤 User ID:', userId);
-        console.log('📧 Email:', email);
         
         // Create a test subscription record
         const subscriptionData = {
@@ -826,7 +743,6 @@ app.post('/api/test-create-subscription', async (req, res) => {
             updated_at: new Date().toISOString()
         };
         
-        console.log('💾 Test subscription data:', subscriptionData);
         
         const response = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
             method: 'POST',
@@ -849,7 +765,6 @@ app.post('/api/test-create-subscription', async (req, res) => {
         }
         
         const result = await response.json();
-        console.log('✅ Test subscription created:', result);
         
         res.json({ 
             status: 'ok',
@@ -899,7 +814,6 @@ app.get('/success', (req, res) => {
             
             <script>
                 if (sessionId) {
-                    console.log('Payment successful:', sessionId);
                 }
                 
                 function closeAndRefresh() {
@@ -909,7 +823,6 @@ app.get('/success', (req, res) => {
                             window.opener.postMessage({ type: 'PAYMENT_SUCCESS', sessionId: sessionId }, '*');
                         }
                     } catch (e) {
-                        console.log('Could not send message to opener:', e);
                     }
                     
                     // Close the window
@@ -954,51 +867,28 @@ app.get('/cancel', (req, res) => {
 app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         // SECURITY: Validate user session before allowing checkout
-        console.log('🔍 [CHECKOUT] Request received - checking cookies...');
-        console.log('🔍 [CHECKOUT] All cookies:', req.cookies);
         
         const sessionId = req.cookies.sid;
-        console.log('🔍 [CHECKOUT] Session ID from cookie:', sessionId);
         
         if (!sessionId) {
-            console.log('❌ [CHECKOUT] No session cookie found');
             return res.status(401).json({ error: 'No session cookie found' });
         }
 
         // Get user from session
-        console.log('🔍 [CHECKOUT] Looking up session in memory store...');
-        console.log('🔍 [CHECKOUT] Total sessions in memory:', sessions.size);
         
         const session = sessions.get(sessionId);
-        console.log('🔍 [CHECKOUT] Session found:', !!session);
         
         if (!session) {
-            console.log('❌ [CHECKOUT] Invalid or expired session');
-            console.log('🔍 [CHECKOUT] Available session IDs:', Array.from(sessions.keys()));
             return res.status(401).json({ error: 'Invalid session' });
         }
 
         // Validate session hasn't expired
-        console.log('🔍 [CHECKOUT] Session expires at:', new Date(session.expiresAt).toISOString());
-        console.log('🔍 [CHECKOUT] Current time:', new Date().toISOString());
         
         if (Date.now() > session.expiresAt) {
-            console.log('❌ [CHECKOUT] Session expired');
             sessions.delete(sessionId);
             return res.status(401).json({ error: 'Session expired' });
         }
-
-        console.log('✅ [CHECKOUT] User authenticated:', session.userId);
-        console.log('🔒 [CHECKOUT] Session details:', {
-            sessionId,
-            userId: session.userId,
-            expiresAt: new Date(session.expiresAt).toISOString(),
-            userAgent: req.headers['user-agent']?.substring(0, 100)
-        });
         
-        // Log request body for debugging
-        console.log('🔍 [CHECKOUT] Request body:', req.body);
-        console.log('🔍 [CHECKOUT] Request headers:', req.headers);
 
         // Get user email from session for Stripe checkout
         // Note: We can't query auth.users directly, so we'll use a placeholder
@@ -1008,9 +898,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         // For now, we'll create the checkout without customer_email
         // Stripe will prompt the user to enter their email during checkout
         // This prevents cross-user data leakage since each user enters their own email
-        console.log('ℹ️ [CHECKOUT] Skipping user email fetch (auth.users not accessible)');
-        console.log('ℹ️ [CHECKOUT] User will enter email during Stripe checkout');
-        console.log('ℹ️ [CHECKOUT] This prevents cross-user data leakage');
 
         // Handle both JSON and form data
         const priceId = req.body.priceId;
@@ -1018,13 +905,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         if (!priceId) {
             return res.status(400).json({ error: 'Price ID is required' });
         }
-
-        console.log('Creating Stripe Prebuilt Checkout session for authenticated user:', session.userId);
-        console.log('🔒 [CHECKOUT] Security parameters:', {
-            billing_address_collection: 'required',
-            client_reference_id: `user_${session.userId}_${Date.now()}`,
-            force_fresh: 'true'
-        });
 
         // Use hardcoded base URL
         const baseUrl = 'https://stripe-deploy.onrender.com';
@@ -1063,7 +943,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             }
         });
 
-        console.log('Checkout session created:', stripeSession.id);
         
         // Return the checkout URL for the frontend to handle
         res.json({ 
@@ -1072,7 +951,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             sessionId: stripeSession.id
         });
         
-        console.log('✅ [CHECKOUT] Response sent successfully');
         
         // Note: The success page will handle immediate subscription activation
         // while the webhook processes in the background for redundancy
@@ -1092,7 +970,6 @@ app.get('/success', async (req, res) => {
         const { session_id, user_id, subscription } = req.query;
         
         if (subscription === 'active' && user_id) {
-            console.log('🎉 [SUCCESS] User completed checkout, activating subscription immediately');
             
             // Create a temporary subscription record immediately
             const tempSubscriptionData = {
@@ -1108,7 +985,6 @@ app.get('/success', async (req, res) => {
                 is_temp: true // Mark as temporary
             };
             
-            console.log('💾 [SUCCESS] Creating temporary subscription record:', tempSubscriptionData);
             
             // Save to database immediately
             const subResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
@@ -1123,9 +999,7 @@ app.get('/success', async (req, res) => {
             });
             
             if (subResponse.ok) {
-                console.log('✅ [SUCCESS] Temporary subscription created successfully');
             } else {
-                console.log('⚠️ [SUCCESS] Failed to create temporary subscription, webhook will handle it');
             }
         }
         
@@ -1171,7 +1045,6 @@ app.post('/api/verify-payment', async (req, res) => {
     try {
         const { sessionId } = req.body;
 
-        console.log('Verifying payment for session:', sessionId);
 
         // Retrieve the session from Stripe
         const session = await stripe.checkout.sessions.retrieve(sessionId);
@@ -1183,7 +1056,6 @@ app.post('/api/verify-payment', async (req, res) => {
         // Get subscription details from Stripe
         const subscription = await stripe.subscriptions.retrieve(session.subscription);
 
-        console.log('Subscription retrieved:', subscription.id);
 
         res.json({ 
             success: true, 
@@ -1213,13 +1085,11 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
             return res.status(400).json({ error: 'Subscription ID is required' });
         }
 
-        console.log('🔍 [CANCEL_SUBSCRIPTION] Request received for subscription:', subscriptionId);
 
         // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
         
         if (!sessionId) {
-            console.log('❌ [CANCEL_SUBSCRIPTION] No session cookie found');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1231,7 +1101,6 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
         const session = getSession(sessionId);
         
         if (!session) {
-            console.log('❌ [CANCEL_SUBSCRIPTION] Invalid or expired session');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1239,14 +1108,12 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
             });
         }
         
-        console.log('✅ [CANCEL_SUBSCRIPTION] Session validated, user ID:', session.userId);
 
         // Verify that the user owns this subscription
         try {
             const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}&select=*`);
             
             if (!subscriptionData || subscriptionData.length === 0) {
-                console.log('❌ [CANCEL_SUBSCRIPTION] User does not own this subscription');
                 return res.status(403).json({
                     success: false,
                     error: 'FORBIDDEN',
@@ -1254,7 +1121,6 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
                 });
             }
             
-            console.log('✅ [CANCEL_SUBSCRIPTION] Subscription ownership verified');
         } catch (verificationError) {
             console.error('❌ [CANCEL_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
             return res.status(500).json({
@@ -1265,16 +1131,13 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
         }
 
         // Cancel subscription directly in Stripe
-        console.log('🔄 [CANCEL_SUBSCRIPTION] Canceling subscription in Stripe...');
         const subscription = await stripe.subscriptions.update(subscriptionId, {
             cancel_at_period_end: true
         });
 
-        console.log('✅ [CANCEL_SUBSCRIPTION] Subscription canceled successfully');
 
         // Update Supabase to track cancellation
         try {
-            console.log('🔄 [CANCEL_SUBSCRIPTION] Updating Supabase with cancellation date...');
             await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}`, {
                 method: 'PATCH',
                 body: {
@@ -1283,7 +1146,6 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
                     current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
                 }
             });
-            console.log('✅ [CANCEL_SUBSCRIPTION] Supabase updated with cancellation date');
         } catch (supabaseError) {
             console.error('⚠️ [CANCEL_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
             // Don't fail the cancellation if Supabase update fails
@@ -1317,13 +1179,11 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
             return res.status(400).json({ error: 'Subscription ID is required' });
         }
 
-        console.log('🔍 [REACTIVATE_SUBSCRIPTION] Request received for subscription:', subscriptionId);
 
         // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
         
         if (!sessionId) {
-            console.log('❌ [REACTIVATE_SUBSCRIPTION] No session cookie found');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1335,7 +1195,6 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
         const session = getSession(sessionId);
         
         if (!session) {
-            console.log('❌ [REACTIVATE_SUBSCRIPTION] Invalid or expired session');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -1343,14 +1202,12 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
             });
         }
         
-        console.log('✅ [REACTIVATE_SUBSCRIPTION] Session validated, user ID:', session.userId);
 
         // Verify that the user owns this subscription
         try {
             const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}&select=*`);
             
             if (!subscriptionData || subscriptionData.length === 0) {
-                console.log('❌ [REACTIVATE_SUBSCRIPTION] User does not own this subscription');
                 return res.status(403).json({
                     success: false,
                     error: 'FORBIDDEN',
@@ -1358,7 +1215,6 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
                 });
             }
             
-            console.log('✅ [REACTIVATE_SUBSCRIPTION] Subscription ownership verified');
         } catch (verificationError) {
             console.error('❌ [REACTIVATE_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
             return res.status(500).json({
@@ -1369,16 +1225,13 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
         }
 
         // Reactivate subscription in Stripe
-        console.log('🔄 [REACTIVATE_SUBSCRIPTION] Reactivating subscription in Stripe...');
         const subscription = await stripe.subscriptions.update(subscriptionId, {
             cancel_at_period_end: false
         });
 
-        console.log('✅ [REACTIVATE_SUBSCRIPTION] Subscription reactivated successfully');
 
         // Update Supabase to clear cancellation
         try {
-            console.log('🔄 [REACTIVATE_SUBSCRIPTION] Updating Supabase to clear cancellation...');
             await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}`, {
                 method: 'PATCH',
                 body: {
@@ -1386,7 +1239,6 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
                     cancel_at_period_end: false
                 }
             });
-            console.log('✅ [REACTIVATE_SUBSCRIPTION] Supabase updated to clear cancellation');
         } catch (supabaseError) {
             console.error('⚠️ [REACTIVATE_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
             // Don't fail the reactivation if Supabase update fails
@@ -1411,13 +1263,10 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
 app.get('/api/subscription-status/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        console.log('🔍 Checking subscription status for user:', userId);
         
         // First, test if we can connect to Supabase at all
         try {
-            console.log('📡 Testing Supabase connection...');
             const testData = await supabaseRequest('user_subscriptions?limit=1');
-            console.log('✅ Supabase connection test successful');
         } catch (connectionError) {
             console.error('❌ Supabase connection failed:', connectionError);
             return res.status(500).json({ 
@@ -1428,13 +1277,10 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
         
         // Get subscription from Supabase
         try {
-            console.log('📡 Querying Supabase for user subscription...');
             const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
-            console.log('📊 Supabase response:', data);
             
             if (data && data.length > 0) {
                 const subscription = data[0];
-                console.log('✅ Found subscription:', subscription);
                 
                 // Determine subscription status with cancellation logic
                 let displayStatus = subscription.status;
@@ -1473,7 +1319,6 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
                     stripe_subscription_id: subscription.stripe_subscription_id
                 });
             } else {
-                console.log('📝 No subscription found, returning free tier status...');
                 // Don't try to create subscription record - just return free tier status
                 // This avoids foreign key constraint issues with test users
                 res.json({
@@ -1541,7 +1386,6 @@ app.post('/api/update-token-usage', async (req, res) => {
         // Use the new updateTokenUsage helper function that handles free users
         await updateTokenUsage(userId, tokensUsed);
         
-        console.log('✅ Token usage updated for user:', userId, 'tokens:', tokensUsed);
         res.json({ success: true, tokensUsed });
         
     } catch (error) {
@@ -1593,7 +1437,6 @@ app.post('/api/create-subscription-record', async (req, res) => {
             body: subscriptionData
         });
         
-        console.log('✅ Created subscription record for user:', userId, 'status:', status);
         res.json({ success: true, subscription: subscriptionData });
         
     } catch (error) {
@@ -1641,32 +1484,20 @@ app.post('/api/waitlist', async (req, res) => {
             joined_at: new Date().toISOString()
         };
         
-        console.log('📝 Creating waitlist entry:', waitlistEntry);
         
         // Debug: Check if service key is available
-        console.log('🔑 SUPABASE_SERVICE_ROLE_KEY exists:', !!SUPABASE_SERVICE_ROLE_KEY);
-        console.log('🔑 SUPABASE_SERVICE_ROLE_KEY length:', SUPABASE_SERVICE_ROLE_KEY ? SUPABASE_SERVICE_ROLE_KEY.length : 'undefined');
-        console.log('🔑 SUPABASE_SERVICE_ROLE_KEY starts with:', SUPABASE_SERVICE_ROLE_KEY ? SUPABASE_SERVICE_ROLE_KEY.substring(0, 20) + '...' : 'undefined');
         
         const response = await supabaseRequest('waitlist', {
             method: 'POST',
             body: waitlistEntry
         });
         
-        console.log('✅ User added to waitlist:', session.userId);
-        console.log('📊 Supabase response:', response);
         
             // Verify the record was actually inserted
     try {
-        console.log('🔍 Attempting verification query for user:', session.userId);
         const verification = await supabaseRequest(`waitlist?user_id=eq.${session.userId}&select=*`);
-        console.log('🔍 Verification query result:', verification);
-        console.log('🔍 Verification query result type:', typeof verification);
-        console.log('🔍 Verification query result length:', verification ? verification.length : 'null/undefined');
 
         if (verification && verification.length > 0) {
-            console.log('✅ Waitlist entry verified in database');
-            console.log('📋 Verified entry details:', verification[0]);
         } else {
             console.warn('⚠️ Waitlist entry not found in verification query');
             console.warn('⚠️ This could mean:');
@@ -1935,17 +1766,9 @@ app.get('/api/test-delete', (req, res) => {
 app.get('/api/test-redis-jd/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        console.log('🧪 [REDIS-TEST] Testing job description retrieval for user:', userId);
         
         // Test the exact same function that's used in the app
         const jobDescription = await getJobDescriptionFromRedis(userId);
-        
-        console.log('🧪 [REDIS-TEST] Retrieval result:', {
-            userId: userId,
-            hasJobDescription: !!jobDescription,
-            length: jobDescription ? jobDescription.length : 0,
-            preview: jobDescription ? jobDescription.substring(0, 200) + '...' : 'No content'
-        });
         
         res.json({
             success: true,
@@ -1969,9 +1792,6 @@ app.get('/api/test-redis-jd/:userId', async (req, res) => {
 // Test Supabase auth connection
 app.get('/api/test-auth-delete', async (req, res) => {
     try {
-        console.log('🔗 Testing Supabase auth connection...');
-        console.log('🔗 Supabase URL:', process.env.SUPABASE_URL);
-        console.log('🔑 Service role key exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
         
         // Test the auth endpoint
         const testResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users`, {
@@ -1983,7 +1803,6 @@ app.get('/api/test-auth-delete', async (req, res) => {
             }
         });
         
-        console.log('📡 Test response status:', testResponse.status);
         
         if (!testResponse.ok) {
             const errorText = await testResponse.text();
@@ -1996,9 +1815,6 @@ app.get('/api/test-auth-delete', async (req, res) => {
         }
         
         const users = await testResponse.json();
-        console.log('✅ Supabase auth connection successful');
-        console.log('📊 Users response type:', typeof users);
-        console.log('📊 Users response:', JSON.stringify(users, null, 2));
         
         res.json({ 
             success: true, 
@@ -2027,7 +1843,6 @@ app.get('/api/get-user-id', async (req, res) => {
             return res.status(400).json({ error: 'Email is required' });
         }
         
-        console.log('🔍 Looking up user ID for email:', email);
         
         // Get user from Supabase auth by email
         const response = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users`, {
@@ -2046,7 +1861,6 @@ app.get('/api/get-user-id', async (req, res) => {
         }
         
         const users = await response.json();
-        console.log('📊 Found users:', users.length);
         
         // Find user by email
         const user = users.find(u => u.email === email);
@@ -2055,7 +1869,6 @@ app.get('/api/get-user-id', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
         
-        console.log('✅ Found user ID:', user.id);
         res.json({ userId: user.id });
         
     } catch (error) {
@@ -2070,11 +1883,6 @@ app.get('/api/get-user-id', async (req, res) => {
 // Session-based user info endpoint (secure) - GET for reading, POST for writing
 app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
-        console.log('🔍 [API/ME] Request received for user:', req.userId);
-        console.log('🔍 [API/ME] Redis client status:', {
-            redisClientExists: !!redisClient,
-            redisClientType: typeof redisClient
-        });
         
         // Get user data from Supabase Admin API (auth/users is not accessible via REST API)
         let user, fullName, displayName;
@@ -2103,11 +1911,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             
             // Debug: Log resume data availability
             const resumeText = user.user_metadata?.resume_text || '';
-            console.log('🔍 [API/ME] Resume data check:', {
-                hasResumeText: !!resumeText,
-                resumeLength: resumeText.length,
-                userId: req.userId
-            });
             
         } catch (adminApiError) {
             console.error('❌ [API/ME] Admin API error:', adminApiError);
@@ -2132,13 +1935,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
         const requestLimit = await checkUserRequestLimit(req.userId);
         const requestsUsed = requestLimit.requestCount;
         const monthlyLimit = requestLimit.limit; // 15 for free tier
-        
-        console.log('📊 [API/ME] Free tier request count:', { 
-            userId: req.userId,
-            requestsUsed, 
-            monthlyLimit,
-            requestLimit: requestLimit
-        });
         
         // Always return free tier data (ignore old subscription data)
         // Reduced cache time for request count accuracy
@@ -2274,17 +2070,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
                 }
             };
             
-            console.log('🔍 Debug - Final API response data:', {
-                displayStatus: displayStatus,
-                isCancelled: isCancelled,
-                isProUser: isProUser,
-                subscriptionStatus: responseData.subscriptionStatus,
-                cancelled_at: responseData.cancel_at_period_end,
-                cancel_at_period_end: responseData.cancel_at_period_end,
-                hasResumeText: !!responseData.user.resume_text,
-                resumeLength: responseData.user.resume_text ? responseData.user.resume_text.length : 0
-            });
-            
             // Set cache headers
             res.set('Cache-Control', 'private, max-age=30');
             
@@ -2298,15 +2083,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             const requestsUsed = requestLimit.requestCount;
             const monthlyLimit = requestLimit.limit; // 15 for free tier
             
-            console.log('📊 [API/ME] Free user request count:', { requestsUsed, monthlyLimit });
-            
             // Debug: Log resume data for free users
             const freeUserResumeText = user.user_metadata?.resume_text || '';
-            console.log('🔍 [API/ME] Free user resume data:', {
-                hasResumeText: !!freeUserResumeText,
-                resumeLength: freeUserResumeText.length,
-                userId: session.userId
-            });
             
             res.json({
                 success: true,
@@ -2359,13 +2137,11 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
 // POST method for updating user preferences and profile data
 app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        console.log('🔍 [API/ME POST] Update request received');
         
         // Get session from HttpOnly cookie
         const sessionId = req.cookies.sid;
         
         if (!sessionId) {
-            console.log('❌ [API/ME POST] No session cookie found');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -2377,7 +2153,6 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
         const session = getSession(sessionId);
         
         if (!session) {
-            console.log('❌ [API/ME POST] Invalid or expired session');
             return res.status(401).json({
                 success: false,
                 error: 'SESSION_EXPIRED',
@@ -2385,7 +2160,6 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        console.log('✅ [API/ME POST] Session validated, user ID:', session.userId);
         
         // Extend session (rolling renewal)
         extendSession(sessionId);
@@ -2400,7 +2174,6 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
             });
         }
         
-        console.log('🔄 [API/ME POST] Updating display name:', display_name);
         
         // Update display name in user_preferences table
         try {
@@ -2419,7 +2192,6 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 
                 if (updateResult === null) {
                     // 204 response means success
-                    console.log('✅ [API/ME POST] Display name updated successfully (204 response)');
                 } else if (!updateResult) {
                     throw new Error('Failed to update display name');
                 }
@@ -2436,7 +2208,6 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 
                 if (insertResult === null) {
                     // 204 response means success
-                    console.log('✅ [API/ME POST] Display name created successfully (204 response)');
                 } else if (!insertResult) {
                     throw new Error('Failed to create display name');
                 }
@@ -2457,7 +2228,6 @@ app.post('/api/me', cors(SECURITY_CONFIG.cors), async (req, res) => {
                 });
                 
                 if (userResponse.ok) {
-                    console.log('✅ [API/ME POST] Display name also updated in user metadata');
                 }
             } catch (metadataError) {
                 console.warn('⚠️ [API/ME POST] Could not update display name in metadata:', metadataError);
@@ -2525,7 +2295,6 @@ app.post('/api/prefs/education', cors(SECURITY_CONFIG.cors), async (req, res) =>
             });
         }
         
-        console.log('✅ Education preference saved:', { userId: session.userId, education });
         
         res.json({ success: true, education });
         
@@ -2612,7 +2381,6 @@ app.post('/api/prefs/language', cors(SECURITY_CONFIG.cors), async (req, res) => 
             });
         }
         
-        console.log('✅ Language preference saved:', { userId: session.userId, language });
         
         res.json({ success: true, language });
         
@@ -2702,7 +2470,6 @@ app.post('/api/prefs/display_name', cors(SECURITY_CONFIG.cors), async (req, res)
             return res.status(500).json({ success: false, error: 'Failed to update display name' });
         }
         
-        console.log('✅ Display name updated:', { userId: session.userId, display_name });
         
         res.json({ success: true, display_name });
         
@@ -2740,7 +2507,6 @@ app.post('/api/account/clear', async (req, res) => {
             });
         }
         
-        console.log('✅ Account data cleared for user:', userId);
         
         res.json({ 
             success: true, 
@@ -2765,7 +2531,6 @@ app.post('/api/delete-account', async (req, res) => {
             return res.status(400).json({ error: 'User ID is required' });
         }
         
-        console.log('🗑️ Deleting user account:', userId);
         
         // 1. Cancel any active Stripe subscription
         try {
@@ -2776,13 +2541,11 @@ app.post('/api/delete-account', async (req, res) => {
             if (subscriptionResponse && subscriptionResponse.length > 0) {
                 const subscription = subscriptionResponse[0];
                 if (subscription.stripe_subscription_id) {
-                    console.log('🔄 Canceling Stripe subscription:', subscription.stripe_subscription_id);
                     
                     // Cancel the subscription in Stripe
                     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
                     await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
                     
-                    console.log('✅ Stripe subscription canceled');
                 }
             }
         } catch (stripeError) {
@@ -2795,7 +2558,6 @@ app.post('/api/delete-account', async (req, res) => {
             await supabaseRequest(`user_subscriptions?user_id=eq.${userId}`, {
                 method: 'DELETE'
             });
-            console.log('✅ User subscription record deleted');
         } catch (subscriptionError) {
             console.error('⚠️ Error deleting subscription record:', subscriptionError);
         }
@@ -2805,16 +2567,12 @@ app.post('/api/delete-account', async (req, res) => {
             await supabaseRequest(`privacy_audit_log?user_id=eq.${userId}`, {
                 method: 'DELETE'
             });
-            console.log('✅ Privacy audit log records deleted');
         } catch (auditDeleteError) {
             console.error('⚠️ Error deleting audit log records:', auditDeleteError);
         }
         
         // 3. Delete user from Supabase auth
         try {
-            console.log('🗑️ Attempting to delete user from Supabase auth:', userId);
-            console.log('🔗 Supabase URL:', process.env.SUPABASE_URL);
-            console.log('🔑 Service role key exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
             
             const deleteResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
                 method: 'DELETE',
@@ -2825,7 +2583,6 @@ app.post('/api/delete-account', async (req, res) => {
                 }
             });
             
-            console.log('📡 Supabase delete response status:', deleteResponse.status);
             
             if (!deleteResponse.ok) {
                 const errorText = await deleteResponse.text();
@@ -2833,7 +2590,6 @@ app.post('/api/delete-account', async (req, res) => {
                 throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText} - ${errorText}`);
             }
             
-            console.log('✅ User deleted from Supabase auth');
         } catch (authError) {
             console.error('❌ Error deleting user from auth:', authError);
             return res.status(500).json({ 
@@ -2843,7 +2599,6 @@ app.post('/api/delete-account', async (req, res) => {
         }
         
         // 4. Log the deletion for audit purposes (removed to avoid foreign key constraint)
-        console.log('✅ Account deletion completed successfully');
         res.json({ success: true, message: 'Account deleted successfully' });
         
     } catch (error) {
@@ -2946,7 +2701,6 @@ app.post('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
             return res.status(500).json({ success: false, error: 'Failed to save resume' });
         }
         
-        console.log('✅ Resume text saved for user:', session.userId);
         
         res.json({
             success: true,
@@ -2968,7 +2722,6 @@ app.post('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
 // Helper function to check user subscription status
 async function checkUserSubscriptionStatus(userId) {
     try {
-        console.log('🔍 Checking subscription status for user:', userId);
         
         // Get subscription from Supabase
         const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
@@ -2999,7 +2752,6 @@ async function checkUserSubscriptionStatus(userId) {
 // Helper function to log request and check limits
 async function logUserRequest(userId, requestType = 'chat', tokensUsed = 0) {
     try {
-        console.log('📊 Logging request for user:', userId, 'type:', requestType, 'tokens:', tokensUsed);
         
         // Log the request in the requests table
         const requestLog = {
@@ -3014,7 +2766,6 @@ async function logUserRequest(userId, requestType = 'chat', tokensUsed = 0) {
             body: requestLog
         });
         
-        console.log('✅ Request logged successfully');
         return logResponse;
     } catch (error) {
         console.error('❌ Error logging request:', error);
@@ -3025,27 +2776,18 @@ async function logUserRequest(userId, requestType = 'chat', tokensUsed = 0) {
 // Helper function to check if user can make requests (under 15/month limit)
 async function checkUserRequestLimit(userId) {
     try {
-        console.log('🔍 Checking request limit for user:', userId);
         
         // Get current month's request count (only count 'chat' requests, not 'regenerate')
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         
-        console.log('🔍 [REQUEST COUNT] Query parameters:', {
-            userId,
-            startOfMonth,
-            query: `requests?user_id=eq.${userId}&timestamp=gte.${startOfMonth}&request_type=eq.chat&select=id`
-        });
-        
         const requests = await supabaseRequest(`requests?user_id=eq.${userId}&timestamp=gte.${startOfMonth}&request_type=eq.chat&select=id`);
         
-        console.log('🔍 [REQUEST COUNT] Raw database response:', requests);
         
         const requestCount = requests ? requests.length : 0;
         const limit = 15; // Free tier limit
         const canMakeRequest = requestCount < limit;
         
-        console.log(`📊 User ${userId} has made ${requestCount}/${limit} chat requests this month (regenerates are free)`);
         
         return {
             canMakeRequest,
@@ -3068,7 +2810,6 @@ async function checkUserRequestLimit(userId) {
 // OpenAI API proxy endpoint - PHASE 1: Intent Detection
 app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
-        console.log('🔍 [API/GENERATE] Request received for user:', req.userId);
         
         // NEW: Accept server-side prompt building parameters
         const { 
@@ -3086,62 +2827,28 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             mode
         } = req.body;
         
-        console.log('🔍 [API/GENERATE] Extracted parameters:', {
-            hasModel: !!model,
-            hasMessages: !!messages,
-            hasMessage: !!message,
-            hasUserProfile: !!userProfile,
-            hasJobContext: !!jobContext,
-            hasSessionId: !!sessionId,
-            toggleState: toggleState,
-            mode: mode,
-            isRegenerate: isRegenerate,
-            messagePreview: message ? message.substring(0, 100) : 'No message'
-        });
         
-        // 🔍 DEBUG: Check resume data in userProfile
-        if (userProfile) {
-            console.log('🔍 [API/GENERATE] UserProfile debug:', {
-                userProfileKeys: Object.keys(userProfile),
-                hasResumeText: !!(userProfile.resumeText),
-                resumeTextLength: userProfile.resumeText ? userProfile.resumeText.length : 0,
-                resumeTextPreview: userProfile.resumeText ? userProfile.resumeText.substring(0, 200) + '...' : 'No resume text'
-            });
-        } else {
-            console.log('❌ [API/GENERATE] No userProfile received!');
-        }
         
         // ✅ RESTORE ORIGINAL SINGLE-CALL ARCHITECTURE
         let finalMessages = messages;
         
         // SERVER-SIDE PROMPT BUILDING: Build complete prompt and return final response
         if (message && userProfile && toggleState !== undefined) {
-            console.log('🔧 [SINGLE-CALL] Building complete prompt server-side for mode:', mode);
-            console.log('🔧 [SINGLE-CALL] Toggle state:', toggleState);
             
             try {
                 // Build the complete prompt based on mode (like original client-side)
                 let prompt;
-                console.log('🔍 [DEBUG] Building prompt for mode:', mode);
                 
                 if (mode === 'natural') {
                     // For natural mode, build the complete conversation prompt (not just intent detection)
                     prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 } else if (mode === 'analysis') {
                     // For analysis mode, build the detailed analysis prompt
-                    console.log('🔍 [API/GENERATE] About to call buildDetailedAnalysisPrompt with userId:', req.userId);
                     prompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 } else if (mode === 'generate') {
                     // For generate mode, determine what to generate based on message content
-                    console.log('🔍 [GENERATE MODE] Job context check:', {
-                        hasJobContext: !!jobContext,
-                        hasJobDescription: !!(jobContext && jobContext.jobDescription),
-                        jobDescriptionLength: jobContext && jobContext.jobDescription ? jobContext.jobDescription.length : 0,
-                        messagePreview: message.substring(0, 100)
-                    });
                     
                     // Get conversation context from chat history (retrieval only)
-                    console.log('🔍 [GENERATE MODE] Retrieving existing chat history for session:', sessionId);
                     const chatHistoryData = await manageChatHistory(sessionId, [], null, req.userId);
                     
                     if (message.toLowerCase().includes('resume') || message.toLowerCase().includes('tailored resume')) {
@@ -3157,24 +2864,18 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     prompt = await buildNaturalIntentPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 }
                 
-                console.log('🔍 [DEBUG] Prompt built:', {
-                    hasPrompt: !!prompt,
-                    promptLength: prompt ? prompt.length : 0,
-                    promptType: typeof prompt
-                });
-                
                 const systemMessage = SYSTEM_PROMPT;
+                const guard = "You MUST respond strictly in english. Do not switch languages even if the user writes in another language.";
                 
                 // Build the complete message structure (like original client-side)
                 finalMessages = [{
                     role: 'system',
-                    content: systemMessage
+                    content: systemMessage + '\n\n' + guard
                 }, {
                     role: 'user',
-                    content: prompt
+                    content: guard + '\n\n' + prompt
                 }];
                 
-                console.log('✅ [SINGLE-CALL] Complete prompt built server-side, returning final response');
             } catch (error) {
                 console.error('❌ [SINGLE-CALL] Error building complete prompt:', error);
                 return res.status(500).json({
@@ -3184,7 +2885,6 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             }
         } else {
             // Use client-provided messages (backward compatibility)
-            console.log('🔄 [API/GENERATE] Using client-provided messages (backward compatibility)');
         }
         
         if (!model || !finalMessages) {
@@ -3196,7 +2896,6 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         // Check if this is a regenerate request
         const isRegenerateRequest = isRegenerate === true;
-        console.log('🔄 [API/GENERATE] Request type:', isRegenerateRequest ? 'REGENERATE (FREE)' : 'NEW REQUEST');
         
         // Only check request limit for new requests, not regenerates
         if (!isRegenerateRequest) {
@@ -3212,12 +2911,9 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                     limit: requestLimit.limit
                 });
             }
-        } else {
-            console.log('🆓 [API/GENERATE] Regenerate request - skipping limit check');
         }
         
         // Get API key from the 10-key rotation system
-        console.log('🔍 [DEBUG] Getting API key from rotation system...');
         const apiKey = getNextApiKey();
         if (!apiKey) {
             console.error('❌ No API keys available');
@@ -3226,19 +2922,9 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
                 error: 'No API keys available'
             });
         }
-        console.log('✅ [DEBUG] API key obtained successfully');
-        console.log(`🔑 [DEBUG] Using key: ${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}`);
         
         // Call OpenAI API with rotated key
-        console.log('🔍 [DEBUG] Making OpenAI API call with:', {
-            model,
-            messagesCount: finalMessages ? finalMessages.length : 0,
-            maxTokens: max_tokens || 3500,
-            temperature: temperature || 0.7,
-            hasApiKey: !!apiKey
-        });
         
-        console.log('🔍 [DEBUG] About to make OpenAI API call...');
         const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -3253,7 +2939,6 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
             })
         });
         
-        console.log('🔍 [DEBUG] OpenAI API call completed, status:', openaiResponse.status);
         
         if (!openaiResponse.ok) {
             const errorData = await openaiResponse.text();
@@ -3272,44 +2957,19 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         const data = await openaiResponse.json();
         
-        console.log('🔍 [DEBUG] OpenAI API response data structure:', {
-            hasData: !!data,
-            dataKeys: data ? Object.keys(data) : [],
-            hasChoices: !!data.choices,
-            choicesLength: data.choices ? data.choices.length : 0,
-            rawData: data
-        });
-        
         // Log the request (but don't count regenerates against monthly limit)
         if (data.usage) {
             const requestType = isRegenerateRequest ? 'regenerate' : 'chat';
-            console.log('🔄 [API/GENERATE] Logging request for user:', req.userId, 'type:', requestType, 'tokens:', data.usage.total_tokens);
             await logUserRequest(req.userId, requestType, data.usage.total_tokens);
-            console.log('✅ [API/GENERATE] Request logged successfully');
         } else {
             const requestType = isRegenerateRequest ? 'regenerate' : 'chat';
-            console.log('⚠️ [API/GENERATE] No usage data in OpenAI response, logging basic request');
             await logUserRequest(req.userId, requestType, 0);
         }
-        
-        console.log('✅ OpenAI API call successful for user:', req.userId);
-        console.log('🔍 [DEBUG] OpenAI response structure:', {
-            hasChoices: !!data.choices,
-            choicesLength: data.choices ? data.choices.length : 0,
-            choices: data.choices,
-            hasUsage: !!data.usage,
-            usage: data.usage
-        });
         
         // Extract the response content from OpenAI with better error handling
         let responseContent = '';
         if (data.choices && data.choices.length > 0 && data.choices[0] && data.choices[0].message) {
             responseContent = data.choices[0].message.content || '';
-            console.log('🔍 [DEBUG] Response content extracted:', {
-                hasContent: !!responseContent,
-                contentLength: responseContent ? responseContent.length : 0,
-                contentPreview: responseContent ? responseContent.substring(0, 100) + '...' : 'empty'
-            });
         } else {
             console.error('❌ [ERROR] Invalid OpenAI response structure:', data);
             return res.status(500).json({
@@ -3329,65 +2989,49 @@ app.post('/api/generate', cors(SECURITY_CONFIG.cors), authenticateSession, async
         
         // Strip decision tags from response before sending to client
         const parsedResponse = parseAIDecision(responseContent);
-        console.log('🔍 [DEBUG] Parsed response:', {
-            type: parsedResponse.type,
-            hasTags: responseContent.includes('[') && responseContent.includes(']'),
-            originalLength: responseContent.length,
-            cleanedLength: parsedResponse.response.length
-        });
         
         // 🎯 EXECUTE AI DECISION - Switch to appropriate function based on AI's intent
         let finalResponse = parsedResponse.response;
         let finalUsage = data.usage;
         
         if (parsedResponse.type === 'ANALYSIS') {
-            console.log('🔄 [EXECUTE AI DECISION] Switching to detailed analysis mode...');
             try {
                 const analysisPrompt = await buildDetailedAnalysisPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 const analysisData = await callOpenAI(analysisPrompt, 'gpt-4o', 4000, 0.7);
                 finalResponse = analysisData.choices[0].message.content;
                 finalUsage = analysisData.usage;
-                console.log('✅ [EXECUTE AI DECISION] Analysis completed successfully');
             } catch (error) {
                 console.error('❌ [EXECUTE AI DECISION] Analysis failed, using original response:', error);
                 // Keep original response if analysis fails
             }
         } else if (parsedResponse.type === 'RESUME_GENERATION') {
-            console.log('🔄 [EXECUTE AI DECISION] Switching to resume generation mode...');
             try {
                 const resumePrompt = await buildResumePrompt(message, sessionId, userProfile, toggleState, req.userId);
                 const resumeData = await callOpenAI(resumePrompt, 'gpt-4o', 4000, 0.7);
                 finalResponse = resumeData.choices[0].message.content;
                 finalUsage = resumeData.usage;
-                console.log('✅ [EXECUTE AI DECISION] Resume generation completed successfully');
             } catch (error) {
                 console.error('❌ [EXECUTE AI DECISION] Resume generation failed, using original response:', error);
                 // Keep original response if resume generation fails
             }
         } else if (parsedResponse.type === 'COVER_LETTER_GENERATION') {
-            console.log('🔄 [EXECUTE AI DECISION] Switching to cover letter generation mode...');
             try {
                 const coverLetterPrompt = await buildCoverLetterPrompt(message, sessionId, userProfile, toggleState, req.userId);
                 const coverLetterData = await callOpenAI(coverLetterPrompt, 'gpt-4o', 4000, 0.7);
                 finalResponse = coverLetterData.choices[0].message.content;
                 finalUsage = coverLetterData.usage;
-                console.log('✅ [EXECUTE AI DECISION] Cover letter generation completed successfully');
             } catch (error) {
                 console.error('❌ [EXECUTE AI DECISION] Cover letter generation failed, using original response:', error);
                 // Keep original response if cover letter generation fails
             }
-        } else {
-            console.log('🔄 [EXECUTE AI DECISION] Using original response for type:', parsedResponse.type);
         }
         
         // 💾 SAVE CONVERSATION TO REDIS
         try {
-            console.log('💾 [CHAT HISTORY] Saving conversation to Redis...');
             await manageChatHistory(sessionId, [
                 { role: 'user', content: message },
                 { role: 'assistant', content: finalResponse }
             ], null, req.userId);
-            console.log('✅ [CHAT HISTORY] Conversation saved successfully');
         } catch (error) {
             console.error('❌ [CHAT HISTORY] Error saving conversation:', error);
             // Don't fail the request if chat history saving fails
@@ -3436,19 +3080,15 @@ app.use((error, req, res, next) => {
 
 async function handleCheckoutCompleted(session) {
     try {
-        console.log('🔄 Handling checkout completed:', session.id);
         
         // Get subscription details from Stripe
         const subscription = await stripe.subscriptions.retrieve(session.subscription);
-        console.log('📦 Subscription details:', subscription.id, subscription.status);
         
         // Get customer details from Stripe
         const customer = await stripe.customers.retrieve(subscription.customer);
-        console.log('👤 Customer details:', customer.email);
         
         // Find user by email in Supabase
         try {
-            console.log('🔍 Looking for user with email:', customer.email);
             
             // Use the correct Supabase admin API endpoint
             const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
@@ -3466,16 +3106,12 @@ async function handleCheckoutCompleted(session) {
             }
             
             const users = await response.json();
-            console.log('📋 Found users in Supabase:', users.length);
             
             const user = users.find(u => u.email === customer.email);
             if (!user) {
-                console.log('❌ No user found for email:', customer.email);
-                console.log('📧 Available emails:', users.map(u => u.email));
                 return;
             }
             
-            console.log('✅ Found user:', user.id);
             
             // Update or create subscription record
             const subscriptionData = {
@@ -3490,7 +3126,6 @@ async function handleCheckoutCompleted(session) {
                 updated_at: new Date().toISOString()
             };
             
-            console.log('💾 Saving subscription data:', subscriptionData);
             
             const subResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
                 method: 'POST',
@@ -3511,9 +3146,7 @@ async function handleCheckoutCompleted(session) {
             }
             
             const savedSubscription = await subResponse.json();
-            console.log('✅ Subscription saved successfully:', savedSubscription);
             
-            console.log('✅ Subscription record created/updated for user:', user.id);
             
         } catch (supabaseError) {
             console.error('❌ Error saving subscription to Supabase:', supabaseError);
@@ -3526,7 +3159,6 @@ async function handleCheckoutCompleted(session) {
 
 async function handleSubscriptionCreated(subscription) {
     try {
-        console.log('🔄 Handling subscription created:', subscription.id);
         
         // Get customer details from Stripe
         const customer = await stripe.customers.retrieve(subscription.customer);
@@ -3542,7 +3174,6 @@ async function handleSubscriptionCreated(subscription) {
             
             const user = users.find(u => u.email === customer.email);
             if (!user) {
-                console.log('No user found for email:', customer.email);
                 return;
             }
             
@@ -3561,7 +3192,6 @@ async function handleSubscriptionCreated(subscription) {
                 }
             });
             
-            console.log('✅ Subscription saved to Supabase for user:', user.id);
             
         } catch (supabaseError) {
             console.error('Error saving subscription to Supabase:', supabaseError);
@@ -3574,7 +3204,6 @@ async function handleSubscriptionCreated(subscription) {
 
 async function handleSubscriptionUpdated(subscription) {
     try {
-        console.log('🔄 Handling subscription updated:', subscription.id);
         
         // Update subscription record using PATCH request
         await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
@@ -3587,7 +3216,6 @@ async function handleSubscriptionUpdated(subscription) {
             }
         });
         
-        console.log('✅ Subscription updated in Supabase');
         
     } catch (error) {
         console.error('Error updating subscription in Supabase:', error);
@@ -3596,7 +3224,6 @@ async function handleSubscriptionUpdated(subscription) {
 
 async function handleSubscriptionDeleted(subscription) {
     try {
-        console.log('🔄 Handling subscription deleted:', subscription.id);
         
         // Update subscription status to canceled
         await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${subscription.id}`, {
@@ -3608,7 +3235,6 @@ async function handleSubscriptionDeleted(subscription) {
             }
         });
         
-        console.log('✅ Subscription marked as canceled in Supabase');
         
     } catch (error) {
         console.error('Error updating deleted subscription in Supabase:', error);
@@ -3617,7 +3243,6 @@ async function handleSubscriptionDeleted(subscription) {
 
 async function handlePaymentSucceeded(invoice) {
     try {
-        console.log('🔄 Handling payment succeeded for invoice:', invoice.id);
         
         // If this is a subscription invoice, update the subscription
         if (invoice.subscription) {
@@ -3636,7 +3261,6 @@ async function handlePaymentSucceeded(invoice) {
 
 async function handlePaymentFailed(invoice) {
     try {
-        console.log('🔄 Handling payment failed for invoice:', invoice.id);
         
         // Update subscription status to past_due
         if (invoice.subscription) {
@@ -3648,7 +3272,6 @@ async function handlePaymentFailed(invoice) {
                 }
             });
             
-            console.log('✅ Payment failure recorded in Supabase');
         }
         
     } catch (error) {
@@ -3659,7 +3282,6 @@ async function handlePaymentFailed(invoice) {
 // Job Description Detection and Storage Endpoint
 app.post('/api/detect-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
-        console.log('🔍 [API/JD-DETECT] Job description detection request received for user:', req.userId);
         
         const { message } = req.body;
         
@@ -3675,15 +3297,9 @@ app.post('/api/detect-job-description', cors(SECURITY_CONFIG.cors), authenticate
         
         if (isJobDescription) {
             // Save to Redis
-            console.log('🔄 [API/JD-DETECT] Job description detected, starting save process...');
-            console.log('📝 [API/JD-DETECT] Message length:', message.length);
-            console.log('📝 [API/JD-DETECT] User ID for saving:', req.userId);
-            console.log('📝 [API/JD-DETECT] Redis key will be: jd:' + req.userId);
             
             await saveJobDescriptionToRedis(req.userId, message);
             
-            console.log('✅ [API/JD-DETECT] Job description detected and saved for user:', req.userId);
-            console.log('🎯 [API/JD-DETECT] JD will now be available for all subsequent operations');
             
             return res.json({
                 success: true,
@@ -3715,42 +3331,27 @@ What would you like to do?`
 
 // Test endpoint to verify server is working
 app.post('/api/test-endpoint', cors(SECURITY_CONFIG.cors), (req, res) => {
-    console.log('🧪 [TEST] Test endpoint called');
     return res.json({ success: true, message: 'Test endpoint working' });
 });
 
 // Test endpoint without authentication
 app.post('/api/test-no-auth', cors(SECURITY_CONFIG.cors), (req, res) => {
-    console.log('🧪 [TEST] Test endpoint without auth called');
     return res.json({ success: true, message: 'Test endpoint without auth working' });
 });
 
 
 // Debug: Log all POST requests to see what's being received
 app.post('*', (req, res, next) => {
-    console.log('🔍 [DEBUG] POST request received:', {
-        url: req.url,
-        path: req.path,
-        method: req.method,
-        headers: req.headers
-    });
     next();
 });
 
 // Clear Job Description Endpoint
 app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
-    console.log('🔍 [API/CLEAR-JD] Endpoint reached - request received');
     try {
-        console.log('🔍 [API/CLEAR-JD] Clear job description request received for user:', req.userId);
-        console.log('🔍 [API/CLEAR-JD] Redis client status:', {
-            redisClientExists: !!redisClient,
-            redisClientType: typeof redisClient
-        });
         
         // Delete job description from Redis
         await deleteJobDescriptionFromRedis(req.userId);
         
-        console.log('✅ [API/CLEAR-JD] Job description cleared for user:', req.userId);
         
         return res.json({
             success: true,
@@ -3774,7 +3375,6 @@ app.post('/api/clear-job-description', cors(SECURITY_CONFIG.cors), authenticateS
 // Supabase fallback endpoint for display name when /api/me fails
 app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        console.log('🔍 [SUPABASE_USER] Fallback request received');
         
         const { user_id, email } = req.body;
         
@@ -3808,7 +3408,6 @@ app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
         }
         
         if (!userResponse.ok) {
-            console.log('❌ [SUPABASE_USER] Failed to fetch user from Admin API:', userResponse.status);
             return res.status(404).json({
                 success: false,
                 error: 'User not found'
@@ -3827,8 +3426,6 @@ app.post('/api/supabase-user', cors(SECURITY_CONFIG.cors), async (req, res) => {
         
         // Only use display_name from metadata, don't fall back to full_name (which might be email prefix)
         const displayName = user.user_metadata?.display_name || 'User';
-        
-        console.log('✅ [SUPABASE_USER] User found via fallback:', { userId: user.id, displayName });
         
         res.json({
             success: true,
@@ -4040,7 +3637,7 @@ LANGUAGE AND COMMUNICATION PREFERENCES:
 - ALWAYS respond in the user's preferred language (check user profile for language preference)
 - CRITICAL: If the user's language preference is "spanish", respond entirely in Spanish
 - CRITICAL: If the user's language preference is "french", respond entirely in French
-- CRITICAL: If the user's language preference is "arabic", respond entirely in Arabic
+- CRITICAL: If the user's language preference is "german", respond entirely in German
 - CRITICAL: If the user's language preference is any other language, respond entirely in that language
 - CRITICAL: If the user's language preference is "english", respond in English
 - Generate resumes and cover letters in the user's preferred language
@@ -4249,16 +3846,8 @@ async function buildUserPromptServerSide(message, userProfile, jobContext, sessi
     const isProfileEnabled = !isProfileToggleOff;
     
     // Get conversation context from server-side chat history management (retrieval only)
-    console.log('🔍 [TOKEN MANAGEMENT] Retrieving existing chat history for session:', sessionId);
     const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
     const conversationContext = chatHistoryData.conversationContext;
-    
-    console.log('📊 [TOKEN MANAGEMENT] Server-side conversation context:', {
-        hasSummary: !!chatHistoryData.summary,
-        recentMessagesCount: chatHistoryData.recentMessages.length,
-        totalMessages: chatHistoryData.totalMessages,
-        conversationContextLength: conversationContext.length
-    });
     
     // Build user context
     let userContext = '';
@@ -4323,10 +3912,6 @@ Respond naturally and helpfully based on the user's request.`;
         return await buildDetailedAnalysisPrompt(message, sessionId, userProfile, toggleState, userId);
     }
     
-    // ✅ CRITICAL FIX: Log total prompt length for token management
-    console.log('📊 [TOKEN MANAGEMENT] Total user prompt length:', message.length, 'characters');
-    console.log('📊 [TOKEN MANAGEMENT] Estimated tokens:', Math.ceil(message.length / 4)); // Rough estimate: 4 chars per token
-    
     return message;
 }
 
@@ -4342,17 +3927,9 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, toggleS
   var isProfileEnabled = !isProfileToggleOff;
 
   // Get conversation context from server-side chat history management (retrieval only)
-  console.log('🔍 [BUILD NATURAL INTENT] Retrieving existing chat history for session:', sessionId);
   var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   var conversationContext = chatHistoryData.conversationContext;
   
-  // ✅ DEBUG: Log server-side conversation context
-  console.log('🔍 [CONVERSATION HISTORY DEBUG] Server-side conversation context:', {
-    hasSummary: !!chatHistoryData.summary,
-    recentMessagesCount: chatHistoryData.recentMessages.length,
-    totalMessages: chatHistoryData.totalMessages,
-    conversationContextLength: conversationContext.length
-  });
 
   // Build user context
   var userContext = '';
@@ -4369,18 +3946,8 @@ async function buildNaturalIntentPrompt(message, sessionId, userProfile, toggleS
   var jobContextText = '';
   var effectiveJobDescription = await getJobDescriptionFromRedis(userId);
   
-  console.log('🔍 [BUILD CONTEXT] Job description usage check:', {
-    userId: userId,
-    hasJobDescription: !!effectiveJobDescription,
-    jobDescriptionLength: effectiveJobDescription ? effectiveJobDescription.length : 0,
-    willIncludeInContext: !!effectiveJobDescription
-  });
-  
   if (effectiveJobDescription) {
     jobContextText = "\n\nJOB CONTEXT:\n".concat(effectiveJobDescription);
-    console.log('✅ [BUILD CONTEXT] Job context added to prompt, length:', jobContextText.length);
-  } else {
-    console.log('⚠️ [BUILD CONTEXT] No job description available - context will be empty');
   }
   return "MANDATORY: You MUST start every response with a tag. NO EXCEPTIONS.\n\nTAG RULES:\n- If user says 'analyze my resume' or 'analyze my resume against this job' → use [ANALYSIS]\n- If user asks to generate/create a resume → use [RESUME_GENERATION]\n- If user mentions cover letter → use [COVER_LETTER_GENERATION]\n- If user asks to see their resume → use [SHOW_RESUME]\n- For general questions → use [CONVERSATION]\n- For clarifying questions → use [CLARIFICATION]\n\nYou are an AI assistant responsible for interpreting user intent and determining the appropriate response. You have full autonomy to decide how to respond based on the user's message, conversation history, and available context.\n\nCRITICAL INSTRUCTION: You MUST use the tag system. If the user says 'analyze my resume' or 'analyze my resume against this job', you MUST start your response with [ANALYSIS]. This is mandatory, not optional.\n\nMANDATORY TAG RULE: You CANNOT respond without a tag. Every response MUST start with [ANALYSIS], [RESUME_GENERATION], [COVER_LETTER_GENERATION], [SHOW_RESUME], [CONVERSATION], or [CLARIFICATION]. No exceptions.\n\nUSER PREFERENCES:\n- Language: ".concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- Preferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- Education Level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n\nLANGUAGE AND COMMUNICATION REQUIREMENTS:\n- ALWAYS respond in the user's preferred language: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- If language is \"spanish\", respond entirely in Spanish\n- If language is \"french\", respond entirely in French\n- If language is \"german\", respond entirely in German\n- If language is \"arabic\", respond entirely in Arabic\n\nTONE REQUIREMENTS:\n- Match the user's preferred tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- If tone is \"professional\": Use formal, business-like language\n- If tone is \"casual\": Use friendly, conversational language\n- If tone is \"enthusiastic\": Use energetic, positive language\n- If tone is \"confident\": Use assertive, self-assured language\n- If tone is \"friendly\": Use warm, approachable language\n\nEDUCATION LEVEL ADAPTATION:\n- Adapt to user's education level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n- If education level is \"high_school\": Use simpler language, avoid complex jargon\n- If education level is \"undergraduate\": Use standard professional language\n- If education level is \"graduate\": Use advanced terminology with explanations\n- If education level is \"doctorate\": Use sophisticated language, technical jargon\n- If education level is \"none\": Use clear, accessible language\n\nYOUR RESPONSIBILITIES:\n1. Analyze the user's intent based on their message and conversation history\n2. Determine the most appropriate response type\n3. Provide natural, contextual responses\n4. Ask clarifying questions when needed\n5. Maintain conversation flow\n\nAVAILABLE RESPONSE TYPES:\n").concat(isProfileToggleOff ? "\n- CONVERSATION: General conversation, career advice, interview tips, general job guidance\n- CLARIFICATION: Ask clarifying questions when intent is unclear\n- GENERAL_GUIDANCE: Provide general advice and best practices for job applications\n" : "\n- ANALYSIS: Provide detailed job/resume analysis (when job description is provided)\n- RESUME_GENERATION: Generate a tailored resume (when user explicitly requests or confirms)\n- COVER_LETTER_GENERATION: Generate a cover letter (when user explicitly requests or confirms)\n- SHOW_RESUME: Display the user's raw resume (when user asks to see their resume)\n- CONVERSATION: General conversation, career advice, interview tips, etc.\n- CLARIFICATION: Ask clarifying questions when intent is unclear\n", "\n\nNATURAL INTENT DETECTION:\n- Use semantic understanding, not keyword matching\n- Consider conversation context and user's actual intent\n- Understand implied requests and follow-up questions\n- Respond naturally like ChatGPT would\n").concat(isProfileToggleOff ? "\n- When profile toggle is OFF: Provide general guidance and advice only\n- If user asks about resume analysis or tailoring: Explain that personal data is needed and suggest enabling profile toggle\n- If user asks about their qualifications: Provide general advice about how to assess qualifications\n- Focus on universal career advice and best practices\n" : "\n- If user asks \"can you see my resume?\", respond conversationally about what you can see\n- If user asks about their qualifications or fit, provide conversational analysis\n- If user wants to generate documents, they'll explicitly say so\n- Maintain natural conversation flow without rigid categorization\n", "\n\nCONVERSATION FLOW:\n- Respond naturally and conversationally\n- Answer questions based on available context\n- Ask follow-up questions when appropriate\n- Provide helpful insights without forcing specific modes\n- Let the conversation flow naturally like ChatGPT\n\n").concat(isProfileToggleOff ? "\nBehavior with Profile Toggle OFF (Resume Data Disabled) – Expert General Knowledge Mode\n\nScope & Identity\n\nYou are a broad, domain-general assistant for learning, research, reading & writing, and everyday questions.\n\nYou DO NOT provide personalized career coaching, resume/cover-letter tailoring, or job-application strategy while the toggle is OFF.\n\nData Constraints\n\nYou have no access to the user's resume data. Do not ask for it. Do not infer it.\n\nTreat every answer as general guidance that anyone could use.\n\nWhat You're Expert At (examples, not limits)\n\nAcademic help (high school through doctoral): explain concepts, outline essays, solve step-by-step math/stats, propose study plans, compare theories, generate citations (APA/MLA/Chicago etc.), and produce literature-style summaries (with sources if provided).\n\nResearch workflows: question decomposition, search-query design (without browsing if the host doesn't allow it), argument mapping, extracting claims from provided texts, and drafting structured abstracts.\n\nReading & writing: rewriting for clarity/tone, editing for grammar and logic, summarizing, paraphrasing, outlining, thesis statements, topic sentences, transitions, and rubric-aligned checklists.\n\nHard Boundaries (toggle OFF)\n\nDo NOT analyze resumes, job descriptions, interview prompts, or ATS strategy.\n\nDo NOT suggest resume bullets, cover-letter language, or job-fit claims.\n\nIf the user asks for career items, respond: \"I can give general information and help now. For career-specific tailoring, enable your profile data.\"\n\nResponse Style & Safety\n\nBe concise, structured, and source-aware: if the user provides texts, cite/quote those; otherwise offer neutral, broadly accepted explanations.\n\nPrefer numbered steps, short paragraphs, and small checklists. Offer optional templates for writing tasks.\n\nWhen unsure, ask a single clarifying question only if it meaningfully changes the result; otherwise state reasonable assumptions and proceed.\n\nTemplates You May Use (adapt as needed)\n\nStudy plan: Goal → Prereqs → Syllabus outline → Weekly plan → Practice set → Self-check rubric.\n\nWriting scaffold: Title → Thesis → Section outline → Evidence plan → Draft paragraph(s) → Edit checklist.\n\nResearch note: Question → Key terms → Hypotheses → Variables/metrics → Methods candidates → Limitations → Next steps.\n\nMode Reminder\n\nIf the user explicitly requests job description analysis, resume analysis, and career tailoring, politely explain the limitation and suggest switching the profile toggle ON for personalized help.\n\nCRITICAL FORMATTING REQUIREMENTS:\n- Use proper sequential numbering (1., 2., 3., 4., 5.) for all numbered lists\n- Do NOT use \"1.\" for every item in a list\n- Use bullet points (-) for sub-items within numbered sections\n- Maintain consistent formatting throughout your response\n- If you create a numbered list, ensure each item has the correct sequential number\n" : "\nPERSONALIZED MODE (Profile Toggle ON):\n- Use the user's actual experience and background\n- Provide tailored advice based on their resume\n- Reference their specific skills and achievements\n- Use phrases like \"your resume shows\", \"your experience with\", \"based on your background\"\n- Leverage every detail of the user's resume for maximum relevance\n- Perform comprehensive, line-by-line analysis of the user's resume against job requirements\n", "\n\nUSER PREFERENCES:\n- Preferred Tone: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.preferredTone) || 'professional', "\n- Language: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\n- Education Level: ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.educationLevel) || 'not specified', "\n\nCRITICAL LANGUAGE INSTRUCTION: The user's preferred language is \"").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'english', "\". You MUST respond entirely in ").concat((userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'spanish' ? 'Spanish' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'french' ? 'French' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'german' ? 'German' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) === 'english' ? 'English' : (userProfile === null || userProfile === void 0 ? void 0 : userProfile.language) || 'English', ".\n\nSYSTEM MODE MANAGEMENT:\n- Front-End Toggle Handling: Content script checks profile toggle state and sends appropriate data\n- Conditional Logic: Functions use presence/absence of userProfile.resumeText as a cue\n- System Prompt Adaptation: Includes explicit instructions for both modes\n- Minimal Profile Data Footprint: When toggle is OFF, only basic preferences are sent\n- No Cross-Over: Clear separation ensures no personal data leaks in general mode\n- Full Functionality: All features remain available in both modes with appropriate behavior\n\n").concat(userContext, "\n").concat(jobContextText, "\n").concat(conversationContext, "\n\nCURRENT MESSAGE: \"").concat(message, "\"\n\nRESPONSE FORMAT:\nYou MUST start your response with one of these tags - this is MANDATORY:\n[ANALYSIS] - for job/resume analysis (when user asks to analyze, compare, or evaluate their resume against a job)\n[RESUME_GENERATION] - for resume generation (when user explicitly asks to generate or create a resume)\n[COVER_LETTER_GENERATION] - for cover letter generation (when user mentions cover letter)\n[SHOW_RESUME] - for displaying resume (when user asks to see their resume)\n[CONVERSATION] - for general conversation (only for general questions, not analysis requests)\n[CLARIFICATION] - for asking clarifying questions\n\nCRITICAL: If user says \"analyze my resume\" or \"analyze my resume against this job\", you MUST use [ANALYSIS]. No exceptions.\n\nIMPORTANT: If the user mentions \"cover letter\" in their message, always use [COVER_LETTER_GENERATION] regardless of other context.\n\nIMPORTANT: If the user asks questions like \"will I get the job\", \"will this help me\", \"am I qualified\", or similar confidence/effectiveness questions, use [CONVERSATION] mode and provide a direct, encouraging answer.\n\nThen provide your natural response. Be conversational and contextual.\n\nFINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat \"1.\" for multiple items.");
 }
@@ -4392,13 +3959,6 @@ async function buildCoverLetterPrompt(message, sessionId, userProfile, toggleSta
 
   // Get job description from Redis
   var fullJobDescription = await getJobDescriptionFromRedis(userId);
-  
-  console.log('🔍 [COVER LETTER] Job description usage check:', {
-    userId: userId,
-    hasJobDescription: !!fullJobDescription,
-    jobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
-    willUseForCoverLetter: !!fullJobDescription
-  });
 
   // Get current date in proper format
   var currentDate = new Date().toLocaleDateString('en-US', {
@@ -4427,7 +3987,7 @@ async function buildCoverLetterPrompt(message, sessionId, userProfile, toggleSta
         userFullName = trontiqUser.user_metadata.full_name;
       }
     } catch (error) {
-      console.log('Error parsing trontiq_user:', error);
+      // Error parsing trontiq_user, continue with fallback
     }
   }
 
@@ -4439,35 +3999,9 @@ async function buildCoverLetterPrompt(message, sessionId, userProfile, toggleSta
     userEmail = (userProfile === null || userProfile === void 0 ? void 0 : userProfile.email) || '[Your Email]';
   }
 
-  // Log what GPT will see (for debugging)
-  console.log('🧠 Cover letter prompt being sent to GPT:', {
-    resumeLength: resumeText.length,
-    jobDescriptionLength: fullJobDescription.length,
-    totalLength: resumeText.length + fullJobDescription.length,
-    currentDate: currentDate,
-    userFullName: userFullName,
-    userEmail: userEmail,
-    userProfileKeys: Object.keys(userProfile || {}),
-    userProfileNameFields: {
-      fullName: userProfile === null || userProfile === void 0 ? void 0 : userProfile.fullName,
-      name: userProfile === null || userProfile === void 0 ? void 0 : userProfile.name,
-      trontiq_display_name: userProfile === null || userProfile === void 0 ? void 0 : userProfile.trontiq_display_name,
-      displayName: userProfile === null || userProfile === void 0 ? void 0 : userProfile.displayName
-    },
-    trontiqUserData: userProfile !== null && userProfile !== void 0 && userProfile.trontiq_user ? typeof userProfile.trontiq_user === 'string' ? JSON.parse(userProfile.trontiq_user) : userProfile.trontiq_user : null
-  });
-  
   // Get conversation context from server-side chat history management (retrieval only)
-  console.log('🔍 [BUILD COVER LETTER] Retrieving existing chat history for session:', sessionId);
   var chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   var conversationContext = chatHistoryData.conversationContext;
-  
-  console.log('🔍 [BUILD COVER LETTER PROMPT] Server-side conversation context:', {
-    hasSummary: !!chatHistoryData.summary,
-    recentMessagesCount: chatHistoryData.recentMessages.length,
-    totalMessages: chatHistoryData.totalMessages,
-    conversationContextLength: conversationContext.length
-  });
   
   return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED cover letter for this specific job. 
 This cover letter must maximize visibility in Applicant Tracking Systems and appeal directly to hiring managers.
@@ -4500,7 +4034,7 @@ CRITICAL INSTRUCTIONS:
 - Output the full cover letter only (no meta notes or commentary).
 - Use the user’s ACTUAL experience, companies, job titles, and achievements from the resume text. Do NOT invent or fabricate.
 - Tailor content specifically to the provided job description.
-- Include examples from at least 2–3 different roles to show progression and breadth. Do not miss any role that could most directly demonstrate relevant skills the job description emphasizes.
+- Include examples from at least 2–3 different roles to show progression and breadth.
 - Use today’s date automatically (not a placeholder).
 - Maintain honesty and accuracy based on the real background.
 
@@ -4595,23 +4129,11 @@ async function buildResumePrompt(message, sessionId, userProfile, toggleState, u
   var fullJobDescription = await getJobDescriptionFromRedis(userId);
   
   // Get conversation context from server-side chat history management (retrieval only)
-  console.log('🔍 [BUILD RESUME PROMPT] Retrieving existing chat history for session:', sessionId);
   const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
   const conversationContext = chatHistoryData.conversationContext;
-  
-  console.log('🔍 [BUILD RESUME PROMPT] Job description usage check:', {
-    userId: userId,
-    hasJobDescription: !!fullJobDescription,
-    jobDescriptionLength: fullJobDescription ? fullJobDescription.length : 0,
-    willUseForResumePrompt: !!fullJobDescription,
-    fullJobDescriptionPreview: fullJobDescription ? fullJobDescription.substring(0, 200) + '...' : 'EMPTY',
-    sessionId: sessionId,
-    conversationContextLength: conversationContext.length
-  });
 
   // Check if job description is missing and provide helpful message
   if (!fullJobDescription || fullJobDescription.trim().length === 0) {
-    console.log('⚠️ [BUILD RESUME PROMPT] No job description found, returning helpful message');
     return `I'm ready to help you create a highly optimized resume tailored to your specific job application needs. However, to proceed, I'll need the specific job description and details from your resume, including your work experience, skills, and education.
 
 If you've already enabled the profile data toggle and provided this information, I can analyze it and begin drafting the resume. If not, please provide the necessary details or toggle your profile data to ON for personalized assistance.
@@ -4657,18 +4179,6 @@ I'm here to help you create the perfect resume for your job application!`;
   };
   var careerLevel = analyzeCareerLevel(userProfile);
 
-  // Log what GPT will see (for debugging)
-  console.log('🧠 Resume prompt being sent to GPT:', {
-    profileLength: profileText.length,
-    jobDescriptionLength: fullJobDescription.length,
-    resumeLength: profileText.length,
-    totalLength: profileText.length + fullJobDescription.length,
-    requestedLines: requestedLines,
-    userRequest: conversationContext,
-    careerLevel: careerLevel,
-    detectedCareerLevel: careerLevel
-  });
-  
 
   return `Please create a 99% ATS-OPTIMIZED, HIRING MANAGER-TARGETED resume for this specific job. This resume must be meticulously tailored to maximize ATS visibility and to impress human readers (hiring managers), far surpassing a generic resume.
 
@@ -4755,36 +4265,15 @@ function parseAIDecision(response) {
 
 // Build detailed analysis prompt (exact copy from background.js)
 async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, toggleState, userId) {
-    console.log('�� [DETAILED ANALYSIS] Function called with parameters:', {
-        messageLength: message ? message.length : 0,
-        sessionId: sessionId,
-        hasUserProfile: !!userProfile,
-        toggleState: toggleState
-    });
     
     // 🔍 DEBUG: Check what userProfile contains
     if (userProfile) {
-        console.log('🔍 [DETAILED ANALYSIS] UserProfile received:', {
-            userProfileKeys: Object.keys(userProfile),
-            hasResumeText: !!(userProfile.resumeText),
-            resumeTextLength: userProfile.resumeText ? userProfile.resumeText.length : 0,
-            resumeTextPreview: userProfile.resumeText ? userProfile.resumeText.substring(0, 200) + '...' : 'No resume text'
-        });
-    } else {
-        console.log('❌ [DETAILED ANALYSIS] No userProfile received!');
     }
     
     // Use the toggleState parameter passed from client instead of inferring from profile data
     const isProfileToggleOff = toggleState === 'off';
 
     // Debug: Log resume data availability
-    console.log('�� [DETAILED ANALYSIS] Resume data check:', {
-        hasUserProfile: !!userProfile,
-        hasResumeText: !!(userProfile && userProfile.resumeText),
-        resumeLength: userProfile && userProfile.resumeText ? userProfile.resumeText.length : 0,
-        isProfileToggleOff: isProfileToggleOff,
-        profileToggleState: isProfileToggleOff ? 'OFF' : 'ON'
-    });
 
     // Format user profile based on toggle state
     const profileText = formatUserProfile(userProfile, {
@@ -4792,30 +4281,14 @@ async function buildDetailedAnalysisPrompt(message, sessionId, userProfile, togg
     });
     
     // Get job description from Redis and format as context
-    console.log('🔍 [DETAILED ANALYSIS] About to retrieve JD from Redis for userId:', userId);
     const jobDescription = await getJobDescriptionFromRedis(userId);
     const contextText = jobDescription ? `\n\nJOB CONTEXT:\n${jobDescription}` : '';
     
-    console.log('🔍 [CHAT PROCESSING] Job description usage check:', {
-      userId: userId,
-      sessionId: sessionId,
-      hasJobDescription: !!jobDescription,
-      jobDescriptionLength: jobDescription ? jobDescription.length : 0,
-      contextTextLength: contextText.length,
-      willIncludeInChatContext: !!jobDescription
-    });
-    
     // Get conversation context from server-side chat history management (retrieval only)
-    console.log('🔍 [BUILD DETAILED ANALYSIS] Retrieving existing chat history for session:', sessionId);
     const chatHistoryData = await manageChatHistory(sessionId, [], null, userId);
     const conversationContext = chatHistoryData.conversationContext;
 
     // Debug: Log what's included in the prompt
-    console.log('�� [DETAILED ANALYSIS] Prompt content check:', {
-        profileTextLength: profileText.length,
-        includesResume: profileText.includes('FULL RESUME TEXT'),
-        contextTextLength: contextText.length
-    });
 
     // User preferences for language, tone, and education level
     const userLanguage = userProfile?.language || 'english';
@@ -4879,41 +4352,25 @@ Do NOT suggest resume bullets, cover-letter language, or job-fit claims.
 Do NOT provide job analysis, job requirements analysis, or career advice.
 Do NOT create sections like "JOB ANALYSIS", "Job Requirements", "General Advice", "Skills Recommendations", or "Application Strategy".
 
-If the user asks for career items, respond: "I can provide general information and help now. For personalized career guidance or job application advice, please enable your profile data by turning the profile toggle ON."
+If the user asks for career items, respond: "I can give general information and help now. For career-specific tailoring, enable your profile data."
 
-Career-Related Queries:
-If the user explicitly asks for resume analysis, job description analysis, or any tailored career advice (e.g., "analyze my resume" or "how do I match this job?"), your response must begin with the tag [ANALYSIS] followed by the polite refusal message above.
+Response Style & Safety:
+Be concise, structured, and source-aware: if the user provides texts, cite/quote those; otherwise offer neutral, broadly accepted explanations.
+Prefer numbered steps, short paragraphs, and small checklists. Offer optional templates for writing tasks.
+When unsure, ask a single clarifying question only if it meaningfully changes the result; otherwise state reasonable assumptions and proceed.
 
-Example: [ANALYSIS] I can provide general information and help now. For personalized career guidance, please enable your profile data by turning the profile toggle ON.
+Mode Reminder:
+If the user explicitly requests job description analysis, resume analysis, and career tailoring, politely explain the limitation and suggest switching the profile toggle ON for personalized help.
 
-Response Style & Structure:
-Be concise and organized: Use short paragraphs (3-5 sentences each) and break information into numbered lists or bullet points where appropriate to make answers easy to read and scan.
-
-Sequential numbering: If numbered lists are used, follow standard sequential numbering (1., 2., 3., ...) without repeating numbers, and ensure list items follow logically in order.
-
-Neutral, clear tone: Provide explanations that are balanced and widely accepted, staying factual, and avoiding personal opinions or biases. If the user provides source text or data, quote or cite it accurately.
-
-Templates and examples: Offer optional outlines, templates, or illustrative examples to guide the user for writing or structuring tasks.
-
-Clarifications: If the user's question is ambiguous, you may ask one clarifying question only if it will significantly improve the answer. Otherwise, proceed by stating any reasonable assumptions you are making.
-
-Quality & Creativity:
-High quality: Strive for thorough, accurate, and well-reasoned answers, and double-check reasoning and correctness as if preparing a polished research answer.
-
-Innovation and insight: Go beyond standard explanations, introducing unique perspectives, cross-disciplinary insights, or creative examples to make the content engaging and informative in ways users may not have seen before.
-
-Depth of explanation: Cover multiple facets of the question when relevant, providing comprehensive detail where it adds value, while still being as clear and concise as possible.
-
-Formatting Rules:
-Markdown formatting: Use markdown features (headings, bullet points, numbered lists, bold/italic text) to make the answer well-structured and easy to follow.
-
-Consistent lists: In any list, use either all bullets or a properly numbered sequence. Remember not to repeat a number (e.g., do not use "1." for multiple items).
-
-No unsupported content: Do not embed images, PDFs, or any external content unless explicitly requested by the user.
+CRITICAL INSTRUCTION: If the user asks about job analysis, job requirements, or career advice, respond with: "I can provide general information and help with academic or research questions. For job-specific analysis and career tailoring, please enable your profile data by turning the profile toggle ON."
 
 USER REQUEST: "${message}"
 
-Please provide general guidance and information related to this question. Do NOT provide job analysis or career advice.`;
+Please provide general guidance and information related to this question. Do NOT provide job analysis or career advice.
+
+FINAL FORMATTING ENFORCEMENT: If you create any numbered list, you MUST use sequential numbering (1., 2., 3., 4., 5.) and NEVER repeat "1." for multiple items.
+
+CRITICAL: You MUST use the tag system. If the user says "analyze my resume" or "analyze my resume against this job", you MUST start your response with [ANALYSIS]. This is not optional.`;
     }
 
     // If profile toggle is ON but no resume data is available
@@ -5001,9 +4458,9 @@ USER REQUEST: "${message}"
 
 Provide **comprehensive, step-by-step analysis** with the following sections (in this exact order and format):
 
-- **RESUME OVERVIEW:** Begin by listing ALL work experiences from the resume. Use sequential numbering (1., 2., 3., ...) for each distinct role. Include company name, role/title, and dates. This gives a high-level picture of the candidate's experience timeline. **CRITICAL: You must scan the ENTIRE resume text to identify ALL work experiences, even if they're not in a traditional "work experience" section. Look for job titles, company names, and employment dates throughout the document. Do not miss any work experience.**
+- **RESUME OVERVIEW:** Begin by listing all work experiences from the resume. Use sequential numbering (1., 2., 3., ...) for each distinct role. Include company name, role/title, and dates. This gives a high-level picture of the candidate’s experience timeline.
 - **JOB TITLE ANALYSIS:** For each role listed above, analyze the job title in the context of the target position. Discuss how well each title aligns with the job being applied for. Provide a relevance rating for each title (1-10) and suggest any **optimized title phrasing** if it could improve alignment (while staying truthful). *Do not number each job title in this section; present as separate paragraphs or bullet points per job.*
-- **WORK EXPERIENCE ANALYSIS:** Dive deep into every single work experience in the candidate's resume, no exceptions. Do not skip or condense roles. Process each role one by one in the order they appear in the overview. **IMPORTANT: If you notice any work experiences in the resume text that were not captured in the overview, include them in this analysis as well. Your goal is to analyze 100% of the candidate's work experience.** For each role, output:
+- **WORK EXPERIENCE ANALYSIS:** Dive deep into every single work experience in the candidate’s resume, no exceptions. Do not skip or condense roles. Process each role one by one in the order they appear in the overview. For each role, output:
     - **Job Title Analysis (Relevance:** X/10): a brief note on the title’s relevance (this can reiterate the rating from the Job Title Analysis section in context).
     - **Overall Role Summary:** Write a full paragraph connecting this role’s responsibilities and achievements to the job description. Always reference specific duties from the resume and explicitly connect them to requirements in the JD. Highlight quantifiable results (numbers, percentages, improvements) where possible, and show how the candidate’s actions created impact.
     - **Key Skills from This Role:** Provide a bullet list of the 3–5 most relevant skills or technologies from this role that match the job Description. Always mirror the exact wording from the job Description for ATS alignment.
@@ -5037,18 +4494,9 @@ FORMAT & STYLE REMINDERS:
 
 Remember, the goal is to provide a level of feedback **beyond what automated tools or typical resume reviews offer**, giving the user **unprecedented insight** into how to tailor their resume to the job description.
 
-**CRITICAL WORK EXPERIENCE CAPTURE REQUIREMENT:**
-Before starting your analysis, perform a comprehensive scan of the entire resume text to identify ALL work experiences. Look for:
-- Job titles (any line that appears to be a professional role)
-- Company names (any organization or business name)
-- Employment dates (any date ranges that suggest work periods)
-- Work-related content (bullet points, achievements, responsibilities)
-
-Do not rely solely on section headers or traditional formatting. Many resumes have work experiences scattered throughout or in non-standard sections. Your analysis must capture 100% of the candidate's work experience in the first attempt.
-
 Now, begin the analysis following the structure and guidelines above. Start with "RESUME OVERVIEW:" and proceed step by step through each section. Make sure to maintain the format strictly and include all relevant details in each part.
 
-FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. **Most importantly, ensure you have captured every single work experience from the resume.** Let's deliver an analysis that truly stands out.
+FINAL NOTE: **Adhere to the exact format and instructions.** Do not omit sections or steps. Check that all numbering is correct and all content is directly relevant to the resume and job description provided. Let's deliver an analysis that truly stands out.
 
 ${conversationContext}
 
@@ -5067,7 +4515,6 @@ async function storeChatSession(sessionId, sessionData) {
     try {
         const key = `chat_session:${sessionId}`;
         await redisClient.setex(key, 4 * 60 * 60, JSON.stringify(sessionData)); // 4 hours TTL (safety net only)
-        console.log('✅ [UPSTASH] Chat session stored:', key);
     } catch (error) {
         console.error('❌ [UPSTASH] Error storing chat session:', error);
         throw error;
@@ -5079,7 +4526,6 @@ async function getChatSession(sessionId) {
         const key = `chat_session:${sessionId}`;
         const sessionData = await redisClient.get(key);
         if (sessionData) {
-            console.log('⚡ [UPSTASH] Chat session retrieved:', key);
             // Upstash Redis automatically parses JSON, so we can return it directly
             return sessionData;
         }
@@ -5094,7 +4540,6 @@ async function deleteChatSession(sessionId) {
     try {
         const key = `chat_session:${sessionId}`;
         await redisClient.del(key);
-        console.log('🗑️ [UPSTASH] Chat session deleted:', key);
     } catch (error) {
         console.error('❌ [UPSTASH] Error deleting chat session:', error);
     }
@@ -5119,7 +4564,6 @@ async function deleteUserChatSessions(userId) {
         
         if (userKeys.length > 0) {
             await redisClient.del(...userKeys);
-            console.log('🧹 [UPSTASH] Deleted', userKeys.length, 'chat sessions for user:', userId);
         }
     } catch (error) {
         console.error('❌ [UPSTASH] Error deleting user chat sessions:', error);
@@ -5170,40 +4614,22 @@ async function saveJobDescriptionToRedis(userId, jobDescription) {
         const key = `jd:${userId}`;
         const ttl = 4 * 60 * 60; // 4 hours TTL
         
-        console.log('🔄 [REDIS JD] Starting save operation...');
-        console.log('📝 [REDIS JD] Key:', key);
-        console.log('📝 [REDIS JD] TTL:', ttl, 'seconds (4 hours)');
-        console.log('📝 [REDIS JD] Content length:', jobDescription.length);
-        console.log('📝 [REDIS JD] Content preview:', jobDescription.substring(0, 100) + '...');
-        
         await redisClient.setex(key, ttl, jobDescription);
         
-        console.log('✅ [REDIS JD] Job description saved successfully!');
-        
         // Verify the save operation
-        console.log('🔍 [REDIS JD] Verifying save operation...');
         const verification = await redisClient.get(key);
         const ttlRemaining = await redisClient.ttl(key);
         
         if (verification) {
-            console.log('✅ [REDIS JD] Verification successful - data exists in Redis');
-            console.log('📊 [REDIS JD] Retrieved length:', verification.length);
-            console.log('⏰ [REDIS JD] TTL remaining:', ttlRemaining, 'seconds');
-            console.log('📊 [REDIS JD] TTL remaining (hours):', Math.round(ttlRemaining / 3600 * 100) / 100);
-            
             // Check if content matches
             if (verification === jobDescription) {
-                console.log('✅ [REDIS JD] Content verification: EXACT MATCH');
+                // Content verification: EXACT MATCH
             } else {
-                console.log('⚠️ [REDIS JD] Content verification: MISMATCH DETECTED');
-                console.log('📝 [REDIS JD] Original length:', jobDescription.length);
-                console.log('📝 [REDIS JD] Retrieved length:', verification.length);
+                // Content verification: MISMATCH DETECTED
             }
         } else {
-            console.log('❌ [REDIS JD] Verification failed - data not found in Redis');
+            // Verification failed - data not found in Redis
         }
-        
-        console.log('🎉 [REDIS JD] Save operation completed for user:', userId);
         
     } catch (error) {
         console.error('❌ [REDIS JD] Error saving job description:', error);
@@ -5225,27 +4651,16 @@ async function getJobDescriptionFromRedis(userId) {
     try {
         const key = `jd:${userId}`;
         
-        console.log('🔍 [REDIS JD] Starting retrieval operation...');
-        console.log('📝 [REDIS JD] Looking for key:', key);
-        
         const jobDescription = await redisClient.get(key);
         const ttlRemaining = await redisClient.ttl(key);
         
         if (jobDescription) {
-            console.log('✅ [REDIS JD] Job description found in Redis!');
-            console.log('📊 [REDIS JD] Retrieved length:', jobDescription.length);
-            console.log('⏰ [REDIS JD] TTL remaining:', ttlRemaining, 'seconds');
-            console.log('📊 [REDIS JD] TTL remaining (hours):', Math.round(ttlRemaining / 3600 * 100) / 100);
-            console.log('📝 [REDIS JD] Content preview:', jobDescription.substring(0, 100) + '...');
-            console.log('⚡ [REDIS JD] Job description retrieved for user:', userId);
             return jobDescription;
         } else {
-            console.log('❌ [REDIS JD] No job description found for user:', userId);
-            console.log('🔍 [REDIS JD] Key does not exist or has expired');
             if (ttlRemaining === -2) {
-                console.log('📊 [REDIS JD] Key status: EXPIRED or NEVER EXISTED');
+                // Key status: EXPIRED or NEVER EXISTED
             } else if (ttlRemaining === -1) {
-                console.log('📊 [REDIS JD] Key status: EXISTS but NO TTL (should not happen)');
+                // Key status: EXISTS but NO TTL (should not happen)
             }
             return null;
         }
@@ -5267,14 +4682,7 @@ async function getJobDescriptionFromRedis(userId) {
 async function deleteJobDescriptionFromRedis(userId) {
     try {
         const key = `jd:${userId}`;
-        console.log('🔍 [REDIS JD] Attempting to delete key:', key);
-        console.log('🔍 [REDIS JD] Redis client before delete:', {
-            redisClientExists: !!redisClient,
-            redisClientType: typeof redisClient
-        });
-        
         await redisClient.del(key);
-        console.log('🗑️ [REDIS JD] Job description deleted for user:', userId);
     } catch (error) {
         console.error('❌ [REDIS JD] Error deleting job description:', error);
         console.error('❌ [REDIS JD] Error details:', {
@@ -5317,14 +4725,12 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
             lastActivity: new Date().toISOString(),
             createdAt: new Date().toISOString()
         };
-        console.log('🆕 [REDIS] Created new chat session:', sessionId);
     }
     
     // Update job description if provided - RESET CONVERSATION for new job
     if (jobDescription) {
         // Check if this is a new job description (different from current one)
         if (session.jobDescription && session.jobDescription !== jobDescription) {
-            console.log('🔄 [JOB RESET] New job description detected, resetting conversation history');
             // Reset conversation history for new job
             session.messages = [];
             session.summary = null;
@@ -5343,7 +4749,6 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
             });
         });
         session.lastActivity = new Date().toISOString();
-        console.log(`💾 [CHAT HISTORY] Added ${newMessages.length} messages to session ${sessionId}`);
         
         // Update running summary with new messages
         if (session.messages.length >= CHAT_CONFIG.SUMMARY_THRESHOLD) {
@@ -5366,7 +4771,6 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
     // Add running summary if available (this contains all essential context)
     if (session.summary) {
         conversationContext += `\n\nCONVERSATION SUMMARY:\n${session.summary}`;
-        console.log(`📝 [CHAT HISTORY] Using running summary (${session.summary.length} chars) for context`);
     }
     
     // Add recent messages only if we don't have a summary yet (first few messages)
@@ -5374,7 +4778,6 @@ async function manageChatHistory(sessionId, newMessages = [], jobDescription = n
         conversationContext += '\n\nRECENT CONVERSATION:\n' + recentMessages.map(msg => 
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n');
-        console.log(`💬 [CHAT HISTORY] Using ${recentMessages.length} recent messages for context`);
     }
     
     // Add job description only if it's short and we don't have much context yet
@@ -5466,7 +4869,6 @@ SUMMARY:`;
                 session.messages = session.messages.slice(-CHAT_CONFIG.MAX_RECENT_MESSAGES);
             }
             
-            console.log(`📝 [RUNNING SUMMARY] Updated summary for session ${session.sessionId} (${newSummary.length} chars)`);
         } else {
             throw new Error(`OpenAI API error: ${response.status}`);
         }
@@ -5494,7 +4896,7 @@ setInterval(() => {
     }
     
     if (cleanedCount > 0) {
-        console.log(`🧹 [CHAT HISTORY] Cleaned up ${cleanedCount} old sessions`);
+        // Cleaned up old sessions
     }
 }, 60 * 60 * 1000);
 
@@ -5504,9 +4906,5 @@ app.use('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Trontiq Stripe API server running on port ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-    console.log(`🔒 Security: Rate limiting and CORS enabled`);
-    console.log(`🔗 Supabase integration: Active`);
-    console.log(`💾 Chat history management: Active`);
+    // Server started successfully
 });
