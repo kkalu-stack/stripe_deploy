@@ -484,7 +484,7 @@ app.get('/auth/confirm', async (req, res) => {
                     <style>
                         body {
                             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            background: #f8f9fa;
                             margin: 0;
                             padding: 0;
                             min-height: 100vh;
@@ -494,45 +494,48 @@ app.get('/auth/confirm', async (req, res) => {
                         }
                         .container {
                             background: white;
-                            border-radius: 12px;
+                            border-radius: 8px;
                             padding: 40px;
                             text-align: center;
-                            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
                             max-width: 400px;
                             width: 90%;
                         }
                         .success-icon {
                             font-size: 48px;
-                            color: #10B981;
+                            color: #2c3e50;
                             margin-bottom: 20px;
                         }
                         h1 {
-                            color: #1F2937;
+                            color: #2c3e50;
                             margin-bottom: 16px;
                             font-size: 24px;
                             font-weight: 600;
                         }
                         p {
-                            color: #6B7280;
+                            color: #6c757d;
                             line-height: 1.6;
                             margin-bottom: 24px;
                         }
                         .brand {
-                            color: #4F46E5;
+                            color: #2c3e50;
                             font-weight: 600;
                         }
                         .close-btn {
-                            background: #4F46E5;
+                            background: #2c3e50;
                             color: white;
                             border: none;
                             padding: 12px 24px;
                             border-radius: 8px;
                             font-size: 16px;
                             cursor: pointer;
-                            transition: background-color 0.2s;
+                            font-weight: 600;
+                            transition: all 0.2s;
                         }
                         .close-btn:hover {
-                            background: #4338CA;
+                            background: #34495e;
+                            transform: translateY(-1px);
+                            box-shadow: 0 4px 12px rgba(44, 62, 80, 0.3);
                         }
                     </style>
                 </head>
@@ -559,7 +562,7 @@ app.get('/auth/confirm', async (req, res) => {
                     <style>
                         body {
                             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            background: #f8f9fa;
                             margin: 0;
                             padding: 0;
                             min-height: 100vh;
@@ -569,10 +572,10 @@ app.get('/auth/confirm', async (req, res) => {
                         }
                         .container {
                             background: white;
-                            border-radius: 12px;
+                            border-radius: 8px;
                             padding: 40px;
                             text-align: center;
-                            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
                             max-width: 400px;
                             width: 90%;
                         }
@@ -582,32 +585,35 @@ app.get('/auth/confirm', async (req, res) => {
                             margin-bottom: 20px;
                         }
                         h1 {
-                            color: #1F2937;
+                            color: #2c3e50;
                             margin-bottom: 16px;
                             font-size: 24px;
                             font-weight: 600;
                         }
                         p {
-                            color: #6B7280;
+                            color: #6c757d;
                             line-height: 1.6;
                             margin-bottom: 24px;
                         }
                         .brand {
-                            color: #4F46E5;
+                            color: #2c3e50;
                             font-weight: 600;
                         }
                         .close-btn {
-                            background: #4F46E5;
+                            background: #2c3e50;
                             color: white;
                             border: none;
                             padding: 12px 24px;
                             border-radius: 8px;
                             font-size: 16px;
                             cursor: pointer;
-                            transition: background-color 0.2s;
+                            font-weight: 600;
+                            transition: all 0.2s;
                         }
                         .close-btn:hover {
-                            background: #4338CA;
+                            background: #34495e;
+                            transform: translateY(-1px);
+                            box-shadow: 0 4px 12px rgba(44, 62, 80, 0.3);
                         }
                     </style>
                 </head>
@@ -736,7 +742,7 @@ app.get('/auth/verify-complete', async (req, res) => {
                     <style>
                         body {
                             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            background: #f8f9fa;
                             margin: 0;
                             padding: 0;
                             min-height: 100vh;
@@ -746,45 +752,48 @@ app.get('/auth/verify-complete', async (req, res) => {
                         }
                         .container {
                             background: white;
-                            border-radius: 12px;
+                            border-radius: 8px;
                             padding: 40px;
                             text-align: center;
-                            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
                             max-width: 400px;
                             width: 90%;
                         }
                         .success-icon {
                             font-size: 48px;
-                            color: #10B981;
+                            color: #2c3e50;
                             margin-bottom: 20px;
                         }
                         h1 {
-                            color: #1F2937;
+                            color: #2c3e50;
                             margin-bottom: 16px;
                             font-size: 24px;
                             font-weight: 600;
                         }
                         p {
-                            color: #6B7280;
+                            color: #6c757d;
                             line-height: 1.6;
                             margin-bottom: 24px;
                         }
                         .brand {
-                            color: #4F46E5;
+                            color: #2c3e50;
                             font-weight: 600;
                         }
                         .close-btn {
-                            background: #4F46E5;
+                            background: #2c3e50;
                             color: white;
                             border: none;
                             padding: 12px 24px;
                             border-radius: 8px;
                             font-size: 16px;
                             cursor: pointer;
-                            transition: background-color 0.2s;
+                            font-weight: 600;
+                            transition: all 0.2s;
                         }
                         .close-btn:hover {
-                            background: #4338CA;
+                            background: #34495e;
+                            transform: translateY(-1px);
+                            box-shadow: 0 4px 12px rgba(44, 62, 80, 0.3);
                         }
                     </style>
                 </head>
@@ -811,7 +820,7 @@ app.get('/auth/verify-complete', async (req, res) => {
                     <style>
                         body {
                             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            background: #f8f9fa;
                             margin: 0;
                             padding: 0;
                             min-height: 100vh;
@@ -821,10 +830,10 @@ app.get('/auth/verify-complete', async (req, res) => {
                         }
                         .container {
                             background: white;
-                            border-radius: 12px;
+                            border-radius: 8px;
                             padding: 40px;
                             text-align: center;
-                            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
                             max-width: 400px;
                             width: 90%;
                         }
@@ -834,18 +843,18 @@ app.get('/auth/verify-complete', async (req, res) => {
                             margin-bottom: 20px;
                         }
                         h1 {
-                            color: #1F2937;
+                            color: #2c3e50;
                             margin-bottom: 16px;
                             font-size: 24px;
                             font-weight: 600;
                         }
                         p {
-                            color: #6B7280;
+                            color: #6c757d;
                             line-height: 1.6;
                             margin-bottom: 24px;
                         }
                         .brand {
-                            color: #4F46E5;
+                            color: #2c3e50;
                             font-weight: 600;
                         }
                     </style>
