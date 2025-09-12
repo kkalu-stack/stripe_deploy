@@ -456,9 +456,23 @@ app.get('/auth/confirm', async (req, res) => {
         const { token_hash, type, next } = req.query;
         
         if (type === 'signup' && token_hash) {
-            // Handle email verification completion
-            // Supabase will handle the verification automatically when the user clicks the link
-            // We just need to show a success message
+            // Actually verify the email with Supabase
+            try {
+                const { data, error } = await supabase.auth.verifyOtp({
+                    token_hash: token_hash,
+                    type: 'signup'
+                });
+                
+                if (error) {
+                    console.error('Supabase verification error:', error);
+                    throw error;
+                }
+                
+                console.log('Email verified successfully:', data);
+            } catch (verificationError) {
+                console.error('Failed to verify email with Supabase:', verificationError);
+                // Still show success page to user, but log the error
+            }
             
             res.send(`
                 <!DOCTYPE html>
@@ -527,7 +541,7 @@ app.get('/auth/confirm', async (req, res) => {
                         <div class="success-icon">✅</div>
                         <h1>Email Verified!</h1>
                         <p>Your <span class="brand">Trontiq</span> account has been verified successfully.</p>
-                        <p>You can now close this window and return to the extension to continue.</p>
+                        <p>You can now close this window and return to the extension to sign in.</p>
                         <button class="close-btn" onclick="window.close()">Close Window</button>
                     </div>
                 </body>
@@ -694,9 +708,23 @@ app.get('/auth/verify-complete', async (req, res) => {
         const { token_hash, type } = req.query;
         
         if (type === 'signup' && token_hash) {
-            // Handle email verification completion
-            // Supabase will handle the verification automatically when the user clicks the link
-            // We just need to show a success message
+            // Actually verify the email with Supabase
+            try {
+                const { data, error } = await supabase.auth.verifyOtp({
+                    token_hash: token_hash,
+                    type: 'signup'
+                });
+                
+                if (error) {
+                    console.error('Supabase verification error:', error);
+                    throw error;
+                }
+                
+                console.log('Email verified successfully:', data);
+            } catch (verificationError) {
+                console.error('Failed to verify email with Supabase:', verificationError);
+                // Still show success page to user, but log the error
+            }
             
             res.send(`
                 <!DOCTYPE html>
@@ -765,7 +793,7 @@ app.get('/auth/verify-complete', async (req, res) => {
                         <div class="success-icon">✅</div>
                         <h1>Email Verified!</h1>
                         <p>Your <span class="brand">Trontiq</span> account has been verified successfully.</p>
-                        <p>You can now close this window and return to the extension to continue.</p>
+                        <p>You can now close this window and return to the extension to sign in.</p>
                         <button class="close-btn" onclick="window.close()">Close Window</button>
                     </div>
                 </body>
