@@ -449,6 +449,216 @@ app.get('/api/session-health', cors(SECURITY_CONFIG.cors), (req, res) => {
     }
 });
 
+// Email verification completion endpoint
+app.get('/auth/verify-complete', async (req, res) => {
+    try {
+        // Extract token and type from query parameters
+        const { token_hash, type } = req.query;
+        
+        if (type === 'signup' && token_hash) {
+            // Handle email verification completion
+            // Supabase will handle the verification automatically when the user clicks the link
+            // We just need to show a success message
+            
+            res.send(`
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Email Verified - Trontiq</title>
+                    <style>
+                        body {
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            margin: 0;
+                            padding: 0;
+                            min-height: 100vh;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+                        .container {
+                            background: white;
+                            border-radius: 12px;
+                            padding: 40px;
+                            text-align: center;
+                            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                            max-width: 400px;
+                            width: 90%;
+                        }
+                        .success-icon {
+                            font-size: 48px;
+                            color: #10B981;
+                            margin-bottom: 20px;
+                        }
+                        h1 {
+                            color: #1F2937;
+                            margin-bottom: 16px;
+                            font-size: 24px;
+                            font-weight: 600;
+                        }
+                        p {
+                            color: #6B7280;
+                            line-height: 1.6;
+                            margin-bottom: 24px;
+                        }
+                        .brand {
+                            color: #4F46E5;
+                            font-weight: 600;
+                        }
+                        .close-btn {
+                            background: #4F46E5;
+                            color: white;
+                            border: none;
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            font-size: 16px;
+                            cursor: pointer;
+                            transition: background-color 0.2s;
+                        }
+                        .close-btn:hover {
+                            background: #4338CA;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="success-icon">✅</div>
+                        <h1>Email Verified!</h1>
+                        <p>Your <span class="brand">Trontiq</span> account has been verified successfully.</p>
+                        <p>You can now close this window and return to the extension to continue.</p>
+                        <button class="close-btn" onclick="window.close()">Close Window</button>
+                    </div>
+                </body>
+                </html>
+            `);
+        } else {
+            // Invalid or missing parameters
+            res.status(400).send(`
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Verification Error - Trontiq</title>
+                    <style>
+                        body {
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            margin: 0;
+                            padding: 0;
+                            min-height: 100vh;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+                        .container {
+                            background: white;
+                            border-radius: 12px;
+                            padding: 40px;
+                            text-align: center;
+                            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                            max-width: 400px;
+                            width: 90%;
+                        }
+                        .error-icon {
+                            font-size: 48px;
+                            color: #EF4444;
+                            margin-bottom: 20px;
+                        }
+                        h1 {
+                            color: #1F2937;
+                            margin-bottom: 16px;
+                            font-size: 24px;
+                            font-weight: 600;
+                        }
+                        p {
+                            color: #6B7280;
+                            line-height: 1.6;
+                            margin-bottom: 24px;
+                        }
+                        .brand {
+                            color: #4F46E5;
+                            font-weight: 600;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="error-icon">❌</div>
+                        <h1>Verification Error</h1>
+                        <p>Invalid verification link. Please try again or contact support.</p>
+                        <p><span class="brand">Trontiq</span> Support</p>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+    } catch (error) {
+        console.error('Verification endpoint error:', error);
+        res.status(500).send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Server Error - Trontiq</title>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        margin: 0;
+                        padding: 0;
+                        min-height: 100vh;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .container {
+                        background: white;
+                        border-radius: 12px;
+                        padding: 40px;
+                        text-align: center;
+                        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                        max-width: 400px;
+                        width: 90%;
+                    }
+                    .error-icon {
+                        font-size: 48px;
+                        color: #EF4444;
+                        margin-bottom: 20px;
+                    }
+                    h1 {
+                        color: #1F2937;
+                        margin-bottom: 16px;
+                        font-size: 24px;
+                        font-weight: 600;
+                    }
+                    p {
+                        color: #6B7280;
+                        line-height: 1.6;
+                        margin-bottom: 24px;
+                    }
+                    .brand {
+                        color: #4F46E5;
+                        font-weight: 600;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="error-icon">⚠️</div>
+                    <h1>Server Error</h1>
+                    <p>Something went wrong. Please try again later.</p>
+                    <p><span class="brand">Trontiq</span> Support</p>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+});
+
 // Auth exchange endpoint - exchange Supabase token for server session
 app.post('/api/auth/exchange', async (req, res) => {
     try {
