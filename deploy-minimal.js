@@ -5363,6 +5363,133 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
             maxAge: 15 * 60 * 1000 // 15 minutes
         });
 
+        // SECURITY: Send password reset form with NO tokens exposed
+        return res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Reset Password - Trontiq</title>
+                <style>
+                    body { 
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+                        margin: 0; padding: 0; min-height: 100vh;
+                        display: flex; align-items: center; justify-content: center;
+                    }
+                    .container { 
+                        background: white; padding: 40px; border-radius: 12px; 
+                        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                        max-width: 400px; width: 100%;
+                    }
+                    .logo { text-align: center; margin-bottom: 30px; }
+                    .logo h1 { color: #2c3e50; margin: 0; font-size: 28px; font-weight: 600; }
+                    .logo p { color: #7f8c8d; margin: 5px 0 0 0; font-size: 14px; }
+                    .form-group { margin-bottom: 20px; }
+                    label { display: block; margin-bottom: 8px; color: #2c3e50; font-weight: 500; }
+                    input { 
+                        width: 100%; padding: 12px; border: 2px solid #ecf0f1; 
+                        border-radius: 6px; font-size: 16px; box-sizing: border-box;
+                        transition: border-color 0.3s;
+                    }
+                    input:focus { outline: none; border-color: #2c3e50; }
+                    .btn { 
+                        width: 100%; padding: 12px; background: #2c3e50; color: white;
+                        border: none; border-radius: 6px; font-size: 16px; font-weight: 600;
+                        cursor: pointer; transition: background 0.3s;
+                    }
+                    .btn:hover { background: #34495e; }
+                    .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+                    .message { 
+                        padding: 12px; border-radius: 6px; margin-bottom: 20px; 
+                        text-align: center; font-weight: 500;
+                    }
+                    .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+                    .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+                    .hidden { display: none; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="logo">
+                        <h1>Trontiq</h1>
+                        <p>Smart browser assistant for job applications</p>
+                    </div>
+                    
+                    <div id="message" class="hidden"></div>
+                    
+                    <form id="resetForm">
+                        <div class="form-group">
+                            <label for="newPassword">New Password</label>
+                            <input type="password" id="newPassword" required minlength="8">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="confirmPassword">Confirm New Password</label>
+                            <input type="password" id="confirmPassword" required minlength="8">
+                        </div>
+                        
+                        <button type="submit" class="btn" id="resetBtn">Reset Password</button>
+                    </form>
+                </div>
+                
+                <script>
+                    const form = document.getElementById('resetForm');
+                    const message = document.getElementById('message');
+                    const resetBtn = document.getElementById('resetBtn');
+                    
+                    form.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        
+                        const newPassword = document.getElementById('newPassword').value;
+                        const confirmPassword = document.getElementById('confirmPassword').value;
+                        
+                        if (newPassword !== confirmPassword) {
+                            showMessage('Passwords do not match', 'error');
+                            return;
+                        }
+                        
+                        if (newPassword.length < 8) {
+                            showMessage('Password must be at least 8 characters', 'error');
+                            return;
+                        }
+                        
+                        resetBtn.disabled = true;
+                        resetBtn.textContent = 'Resetting...';
+                        
+                        try {
+                            const response = await fetch('/api/reset-password', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include', // Include reset_session cookie
+                                body: JSON.stringify({ password: newPassword })
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (response.ok) {
+                                showMessage('Password reset successfully! You can now close this page and sign in with your new password.', 'success');
+                                form.style.display = 'none';
+                            } else {
+                                showMessage(result.error || 'Failed to reset password', 'error');
+                            }
+                        } catch (error) {
+                            showMessage('Network error. Please try again.', 'error');
+                        } finally {
+                            resetBtn.disabled = false;
+                            resetBtn.textContent = 'Reset Password';
+                        }
+                    });
+                    
+                    function showMessage(text, type) {
+                        message.textContent = text;
+                        message.className = 'message ' + type;
+                        message.classList.remove('hidden');
+                    }
+                </script>
+            </body>
+            </html>
+        `);
+
     } catch (validationError) {
         console.error('Token validation error:', validationError);
         return res.status(400).send(`
@@ -5386,134 +5513,6 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
             </html>
         `);
     }
-    
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Reset Password - Trontiq</title>
-            <style>
-                body { 
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-                    margin: 0; padding: 0; min-height: 100vh;
-                    display: flex; align-items: center; justify-content: center;
-                }
-                .container { 
-                    background: white; padding: 40px; border-radius: 12px; 
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-                    max-width: 400px; width: 100%;
-                }
-                .logo { text-align: center; margin-bottom: 30px; }
-                .logo h1 { color: #2c3e50; margin: 0; font-size: 28px; font-weight: 600; }
-                .logo p { color: #7f8c8d; margin: 5px 0 0 0; font-size: 14px; }
-                .form-group { margin-bottom: 20px; }
-                label { display: block; margin-bottom: 8px; color: #2c3e50; font-weight: 500; }
-                input { 
-                    width: 100%; padding: 12px; border: 2px solid #ecf0f1; 
-                    border-radius: 6px; font-size: 16px; box-sizing: border-box;
-                    transition: border-color 0.3s;
-                }
-                input:focus { outline: none; border-color: #2c3e50; }
-                .btn { 
-                    width: 100%; padding: 12px; background: #2c3e50; color: white;
-                    border: none; border-radius: 6px; font-size: 16px; font-weight: 600;
-                    cursor: pointer; transition: background 0.3s;
-                }
-                .btn:hover { background: #34495e; }
-                .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
-                .message { 
-                    padding: 12px; border-radius: 6px; margin-bottom: 20px; 
-                    text-align: center; font-weight: 500;
-                }
-                .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-                .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-                .hidden { display: none; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="logo">
-                    <h1>Trontiq</h1>
-                    <p>Smart browser assistant for job applications</p>
-                </div>
-                
-                <div id="message" class="hidden"></div>
-                
-                <form id="resetForm">
-                    <div class="form-group">
-                        <label for="newPassword">New Password</label>
-                        <input type="password" id="newPassword" required minlength="6">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="confirmPassword">Confirm New Password</label>
-                        <input type="password" id="confirmPassword" required minlength="6">
-                    </div>
-                    
-                    <button type="submit" class="btn" id="resetBtn">Reset Password</button>
-                </form>
-            </div>
-            
-            <script>
-                const form = document.getElementById('resetForm');
-                const message = document.getElementById('message');
-                const resetBtn = document.getElementById('resetBtn');
-                
-                form.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    
-                    const newPassword = document.getElementById('newPassword').value;
-                    const confirmPassword = document.getElementById('confirmPassword').value;
-                    
-                    if (newPassword !== confirmPassword) {
-                        showMessage('Passwords do not match', 'error');
-                        return;
-                    }
-                    
-                    if (newPassword.length < 6) {
-                        showMessage('Password must be at least 6 characters', 'error');
-                        return;
-                    }
-                    
-                    resetBtn.disabled = true;
-                    resetBtn.textContent = 'Resetting...';
-                    
-                    try {
-                        const response = await fetch('/api/reset-password', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                token_hash: '${token_hash}',
-                                password: newPassword
-                            })
-                        });
-                        
-                        const result = await response.json();
-                        
-                        if (response.ok) {
-                            showMessage('Password reset successfully! You can now close this page and sign in with your new password.', 'success');
-                            form.style.display = 'none';
-                        } else {
-                            showMessage(result.error || 'Failed to reset password', 'error');
-                        }
-                    } catch (error) {
-                        showMessage('Network error. Please try again.', 'error');
-                    } finally {
-                        resetBtn.disabled = false;
-                        resetBtn.textContent = 'Reset Password';
-                    }
-                });
-                
-                function showMessage(text, type) {
-                    message.textContent = text;
-                    message.className = 'message ' + type;
-                    message.classList.remove('hidden');
-                }
-            </script>
-        </body>
-        </html>
-    `);
 });
 
 // Password reset endpoint
