@@ -5268,7 +5268,7 @@ setInterval(async () => {
 
 // 404 handler - must be last
 // Change password endpoint
-app.post('/api/change-password', async (req, res) => {
+app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
         const { password } = req.body;
         
@@ -5276,24 +5276,31 @@ app.post('/api/change-password', async (req, res) => {
             return res.status(400).json({ error: 'Password is required' });
         }
         
-        // Get the session from the cookie
-        const sessionCookie = req.cookies['sb-access-token'] || req.cookies['supabase-auth-token'];
-        
-        if (!sessionCookie) {
+        // Get user email from session
+        const session = getSession(req.cookies.sid);
+        if (!session || !session.email) {
             return res.status(401).json({ error: 'No active session found' });
         }
         
-        // Call Supabase to update the password
-        const { data, error } = await supabase.auth.updateUser({
-            password: password
+        // Call Supabase Admin API to update the password
+        const userResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${req.userId}`, {
+            method: 'PUT',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ password: password })
         });
         
-        if (error) {
-            console.error('Supabase password update error:', error);
-            return res.status(400).json({ error: error.message });
+        if (!userResponse.ok) {
+            const errorData = await userResponse.json();
+            console.error('Supabase password update error:', errorData);
+            return res.status(400).json({ error: errorData.message || 'Failed to update password' });
         }
         
-        res.json({ success: true, data });
+        const userData = await userResponse.json();
+        res.json({ success: true, data: userData });
         
     } catch (error) {
         console.error('Password change error:', error);
