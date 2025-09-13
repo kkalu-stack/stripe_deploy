@@ -5267,6 +5267,40 @@ setInterval(async () => {
 }, 60 * 60 * 1000);
 
 // 404 handler - must be last
+// Change password endpoint
+app.post('/api/change-password', async (req, res) => {
+    try {
+        const { password } = req.body;
+        
+        if (!password) {
+            return res.status(400).json({ error: 'Password is required' });
+        }
+        
+        // Get the session from the cookie
+        const sessionCookie = req.cookies['sb-access-token'] || req.cookies['supabase-auth-token'];
+        
+        if (!sessionCookie) {
+            return res.status(401).json({ error: 'No active session found' });
+        }
+        
+        // Call Supabase to update the password
+        const { data, error } = await supabase.auth.updateUser({
+            password: password
+        });
+        
+        if (error) {
+            console.error('Supabase password update error:', error);
+            return res.status(400).json({ error: error.message });
+        }
+        
+        res.json({ success: true, data });
+        
+    } catch (error) {
+        console.error('Password change error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 app.use('*', (req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
 });
