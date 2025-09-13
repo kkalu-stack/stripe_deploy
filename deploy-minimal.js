@@ -178,12 +178,13 @@ function handleSubscriptionCreationError(createError, res) {
 }
 
 // Session management functions
-function createSession(userId, userAgent) {
+function createSession(userId, userAgent, email) {
     const sessionId = 'sid_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const session = {
         id: sessionId,
         userId: userId,
         userAgent: userAgent,
+        email: email,
         createdAt: new Date(),
         expiresAt: new Date(Date.now() + SESSION_CONFIG.maxAge),
         lastActivity: new Date()
@@ -960,7 +961,7 @@ app.post('/api/auth/exchange', async (req, res) => {
         
         
         // Create server session
-        const sessionId = createSession(user.id, req.headers['user-agent']);
+        const sessionId = createSession(user.id, req.headers['user-agent'], user.email);
         
         // Set HttpOnly cookie
         res.cookie('sid', sessionId, SESSION_CONFIG);
