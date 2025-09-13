@@ -1,4 +1,3 @@
-
 // Trontiq Minimal Server Deployment
 // Single file deployment - includes all necessary code
 
