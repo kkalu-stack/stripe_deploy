@@ -5487,6 +5487,7 @@ app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
     }
 });
 
+
 // 404 handler - must be last
 // Change password endpoint
 app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
@@ -5544,6 +5545,7 @@ app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession
 });
 
 app.use('*', (req, res) => {
+    console.log('404 - Endpoint not found:', req.method, req.path, req.query);
     res.status(404).json({ error: 'Endpoint not found' });
 });
 
