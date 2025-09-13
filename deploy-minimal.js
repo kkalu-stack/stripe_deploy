@@ -5324,7 +5324,6 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
         access_token: !!access_token,
         refresh_token: !!refresh_token 
     });
-    console.log('Full query params:', req.query);
     
     // SECURITY: Handle multiple token formats (Supabase can send different formats)
     let isValidToken = false;
@@ -5332,52 +5331,35 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
     let tokenError = null;
     
     try {
-        // Method 1: Try access_token + refresh_token (newer Supabase format)
+        // Method 1: Try access_token + refresh_token (newer Supabase format) - FASTEST
         if (access_token && refresh_token) {
-            try {
-                console.log('Attempting token validation with access_token + refresh_token');
-                const { data: { user }, error } = await supabase.auth.getUser(access_token);
-                
-                if (!error && user) {
-                    isValidToken = true;
-                    userData = user;
-                    console.log('Token validation successful with access_token for user:', user.email);
-                } else {
-                    tokenError = error;
-                    console.log('Token validation failed with access_token:', error);
-                }
-            } catch (err) {
-                tokenError = err;
-                console.log('Token validation error with access_token:', err);
+            const { data: { user }, error } = await supabase.auth.getUser(access_token);
+            
+            if (!error && user) {
+                isValidToken = true;
+                userData = user;
+            } else {
+                tokenError = error;
             }
         }
         
-        // Method 2: Try token_hash (older Supabase format)
+        // Method 2: Try token_hash (older Supabase format) - SLOWER
         if (!isValidToken && token_hash && type === 'recovery') {
-            try {
-                console.log('Attempting token validation with token_hash');
-                const { data, error } = await supabase.auth.admin.verifyOtp({
-                    token_hash: token_hash,
-                    type: 'recovery'
-                });
-                
-                if (!error && data.user) {
-                    isValidToken = true;
-                    userData = data.user;
-                    console.log('Token validation successful with token_hash for user:', data.user.email);
-                } else {
-                    tokenError = error;
-                    console.log('Token validation failed with token_hash:', error);
-                }
-            } catch (err) {
-                tokenError = err;
-                console.log('Token validation error with token_hash:', err);
+            const { data, error } = await supabase.auth.admin.verifyOtp({
+                token_hash: token_hash,
+                type: 'recovery'
+            });
+            
+            if (!error && data.user) {
+                isValidToken = true;
+                userData = data.user;
+            } else {
+                tokenError = error;
             }
         }
         
         // SECURITY: Comprehensive error handling
         if (!isValidToken) {
-            console.log('All token validation methods failed:', tokenError);
             
             // Different error messages based on the issue
             let errorMessage = 'The password reset link is invalid or has expired.';
