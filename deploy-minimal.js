@@ -1,3 +1,4 @@
+
 // Trontiq Minimal Server Deployment
 // Single file deployment - includes all necessary code
 
@@ -5316,116 +5317,166 @@ app.get('/test-reset', async (req, res) => {
 // SECURE Password reset page - Fortune 500 level security
 app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('PASSWORD RESET ROUTE HIT: /auth/reset-password');
-    const { token_hash, type } = req.query;
+    const { token_hash, type, access_token, refresh_token } = req.query;
     
-    console.log('Password reset page accessed:', { token_hash: !!token_hash, type });
+    console.log('Password reset page accessed:', { 
+        token_hash: !!token_hash, 
+        type, 
+        access_token: !!access_token,
+        refresh_token: !!refresh_token 
+    });
     console.log('Full query params:', req.query);
     
-    // SECURITY: Validate token server-side immediately
-    if (!token_hash || type !== 'recovery') {
-        return res.status(400).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Invalid Reset Link</title>
-                <style>
-                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                    .container { max-width: 400px; margin: 0 auto; }
-                    .error { color: #e74c3c; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1 class="error">Invalid Reset Link</h1>
-                    <p>The password reset link is invalid or has expired.</p>
-                    <p>Please request a new password reset from the Trontiq extension.</p>
-                </div>
-            </body>
-            </html>
-        `);
-    }
-
-    // SECURITY: Validate token with Supabase server-side
+    // SECURITY: Handle multiple token formats (Supabase can send different formats)
+    let isValidToken = false;
+    let userData = null;
+    let tokenError = null;
+    
     try {
-        // For password reset tokens, we need to use the Admin API to verify the token
-        // The token_hash from the URL needs to be validated against Supabase
-        // Try using the correct method for password reset token validation
-        // For password reset tokens, we need to use the Admin API
-        const { data, error } = await supabase.auth.admin.verifyOtp({
-            token_hash: token_hash,
-            type: 'recovery'
-        });
-
-        if (error || !data.user) {
-            console.log('Token validation failed:', error);
-            console.log('Token hash received:', token_hash);
-            console.log('Type received:', type);
-            console.log('Data received:', data);
+        // Method 1: Try access_token + refresh_token (newer Supabase format)
+        if (access_token && refresh_token) {
+            try {
+                console.log('Attempting token validation with access_token + refresh_token');
+                const { data: { user }, error } = await supabase.auth.getUser(access_token);
+                
+                if (!error && user) {
+                    isValidToken = true;
+                    userData = user;
+                    console.log('Token validation successful with access_token for user:', user.email);
+                } else {
+                    tokenError = error;
+                    console.log('Token validation failed with access_token:', error);
+                }
+            } catch (err) {
+                tokenError = err;
+                console.log('Token validation error with access_token:', err);
+            }
+        }
+        
+        // Method 2: Try token_hash (older Supabase format)
+        if (!isValidToken && token_hash && type === 'recovery') {
+            try {
+                console.log('Attempting token validation with token_hash');
+                const { data, error } = await supabase.auth.admin.verifyOtp({
+                    token_hash: token_hash,
+                    type: 'recovery'
+                });
+                
+                if (!error && data.user) {
+                    isValidToken = true;
+                    userData = data.user;
+                    console.log('Token validation successful with token_hash for user:', data.user.email);
+                } else {
+                    tokenError = error;
+                    console.log('Token validation failed with token_hash:', error);
+                }
+            } catch (err) {
+                tokenError = err;
+                console.log('Token validation error with token_hash:', err);
+            }
+        }
+        
+        // SECURITY: Comprehensive error handling
+        if (!isValidToken) {
+            console.log('All token validation methods failed:', tokenError);
+            
+            // Different error messages based on the issue
+            let errorMessage = 'The password reset link is invalid or has expired.';
+            let errorTitle = 'Invalid Reset Link';
+            
+            if (tokenError && tokenError.message) {
+                if (tokenError.message.includes('expired')) {
+                    errorMessage = 'This password reset link has expired. Please request a new one.';
+                    errorTitle = 'Link Expired';
+                } else if (tokenError.message.includes('invalid')) {
+                    errorMessage = 'This password reset link is invalid. Please request a new one.';
+                    errorTitle = 'Invalid Link';
+                }
+            }
+            
             return res.status(400).send(`
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>Invalid Reset Link</title>
+                    <title>${errorTitle}</title>
                     <style>
-                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                        .container { max-width: 400px; margin: 0 auto; }
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                        .container { max-width: 400px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
                         .error { color: #e74c3c; }
+                        .btn { background: #2c3e50; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 20px; }
+                        .btn:hover { background: #34495e; }
                     </style>
                 </head>
                 <body>
                     <div class="container">
-                        <h1 class="error">Invalid Reset Link</h1>
-                        <p>The password reset link is invalid or has expired.</p>
+                        <h1 class="error">${errorTitle}</h1>
+                        <p>${errorMessage}</p>
                         <p>Please request a new password reset from the Trontiq extension.</p>
+                        <a href="https://chrome.google.com/webstore" class="btn">Open Trontiq Extension</a>
                     </div>
                 </body>
                 </html>
             `);
         }
 
-        console.log('Token validated successfully for user:', data.user.email);
+        console.log('Token validated successfully for user:', userData.email);
 
-        // SECURITY: Create temporary session for password reset
+        // SECURITY: Create secure temporary session for password reset
         const resetSessionId = crypto.randomUUID();
         if (!global.resetSessions) {
             global.resetSessions = new Map();
         }
+        
+        // Store session with comprehensive data
         global.resetSessions.set(resetSessionId, {
-            userId: data.user.id,
-            email: data.user.email,
+            userId: userData.id,
+            email: userData.email,
             expires: Date.now() + (15 * 60 * 1000), // 15 minutes
-            token_hash: token_hash
+            token_hash: token_hash,
+            access_token: access_token,
+            refresh_token: refresh_token,
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            createdAt: new Date().toISOString()
         });
 
-        // SECURITY: Set secure session cookie
+        // SECURITY: Set secure session cookie with proper security headers
         res.cookie('reset_session', resetSessionId, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-            maxAge: 15 * 60 * 1000 // 15 minutes
+            maxAge: 15 * 60 * 1000, // 15 minutes
+            path: '/'
         });
 
-        // SECURITY: Send password reset form with NO tokens exposed
+        // SECURITY: Send secure password reset form with NO tokens exposed
         return res.send(`
             <!DOCTYPE html>
-            <html>
+            <html lang="en">
             <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Reset Password - Trontiq</title>
                 <style>
+                    * { box-sizing: border-box; }
                     body { 
                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                         background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-                        margin: 0; padding: 0; min-height: 100vh;
+                        margin: 0; padding: 20px; min-height: 100vh;
                         display: flex; align-items: center; justify-content: center;
                     }
                     .container { 
                         background: white; padding: 40px; border-radius: 12px; 
                         box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-                        max-width: 400px; width: 100%;
+                        max-width: 450px; width: 100%;
                     }
                     .logo { text-align: center; margin-bottom: 30px; }
                     .logo h1 { color: #2c3e50; margin: 0; font-size: 28px; font-weight: 600; }
                     .logo p { color: #7f8c8d; margin: 5px 0 0 0; font-size: 14px; }
+                    .user-info { 
+                        background: #f8f9fa; padding: 15px; border-radius: 8px; 
+                        margin-bottom: 25px; text-align: center; font-size: 14px;
+                    }
                     .form-group { margin-bottom: 20px; }
                     .form-group label { 
                         display: block; margin-bottom: 8px; 
@@ -5440,6 +5491,14 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                         outline: none; border-color: #3498db;
                         box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
                     }
+                    .form-group input.error { border-color: #e74c3c; }
+                    .password-strength { 
+                        margin-top: 5px; font-size: 12px; 
+                        padding: 5px; border-radius: 4px;
+                    }
+                    .strength-weak { background: #ffe6e6; color: #c0392b; }
+                    .strength-medium { background: #fff3cd; color: #856404; }
+                    .strength-strong { background: #d4edda; color: #155724; }
                     .btn {
                         width: 100%; padding: 14px; background: #2c3e50;
                         color: white; border: none; border-radius: 8px;
@@ -5450,6 +5509,11 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                     .btn:disabled { background: #bdc3c7; cursor: not-allowed; transform: none; }
                     .error { color: #e74c3c; font-size: 14px; margin-top: 10px; }
                     .success { color: #27ae60; font-size: 14px; margin-top: 10px; }
+                    .security-notice { 
+                        background: #e8f4fd; border: 1px solid #bee5eb; 
+                        padding: 15px; border-radius: 8px; margin-top: 20px;
+                        font-size: 13px; color: #0c5460;
+                    }
                 </style>
             </head>
             <body>
@@ -5459,24 +5523,84 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                         <p>Smart browser assistant for job applications</p>
                     </div>
                     
+                    <div class="user-info">
+                        <strong>Resetting password for:</strong><br>
+                        ${userData.email}
+                    </div>
+                    
                     <form id="resetForm">
                         <div class="form-group">
                             <label for="password">New Password</label>
-                            <input type="password" id="password" name="password" required minlength="8">
+                            <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
+                            <div id="passwordStrength" class="password-strength" style="display: none;"></div>
                         </div>
                         
                         <div class="form-group">
                             <label for="confirmPassword">Confirm New Password</label>
-                            <input type="password" id="confirmPassword" name="confirmPassword" required>
+                            <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
                         </div>
                         
                         <button type="submit" class="btn" id="resetBtn">Reset Password</button>
                         
                         <div id="message"></div>
                     </form>
+                    
+                    <div class="security-notice">
+                        <strong>Security Notice:</strong> This link will expire in 15 minutes for your security. 
+                        If you didn't request this password reset, please ignore this email.
+                    </div>
                 </div>
 
                 <script>
+                    // Password strength validation
+                    function checkPasswordStrength(password) {
+                        const strengthDiv = document.getElementById('passwordStrength');
+                        if (!password) {
+                            strengthDiv.style.display = 'none';
+                            return false;
+                        }
+                        
+                        let score = 0;
+                        let feedback = [];
+                        
+                        if (password.length >= 8) score++;
+                        else feedback.push('At least 8 characters');
+                        
+                        if (/[a-z]/.test(password)) score++;
+                        else feedback.push('Lowercase letter');
+                        
+                        if (/[A-Z]/.test(password)) score++;
+                        else feedback.push('Uppercase letter');
+                        
+                        if (/[0-9]/.test(password)) score++;
+                        else feedback.push('Number');
+                        
+                        if (/[^A-Za-z0-9]/.test(password)) score++;
+                        else feedback.push('Special character');
+                        
+                        strengthDiv.style.display = 'block';
+                        
+                        if (score < 3) {
+                            strengthDiv.className = 'password-strength strength-weak';
+                            strengthDiv.textContent = 'Weak password. Add: ' + feedback.slice(0, 2).join(', ');
+                            return false;
+                        } else if (score < 4) {
+                            strengthDiv.className = 'password-strength strength-medium';
+                            strengthDiv.textContent = 'Medium strength. Consider adding: ' + feedback.slice(0, 1).join(', ');
+                            return true;
+                        } else {
+                            strengthDiv.className = 'password-strength strength-strong';
+                            strengthDiv.textContent = 'Strong password!';
+                            return true;
+                        }
+                    }
+                    
+                    // Real-time password strength checking
+                    document.getElementById('password').addEventListener('input', function(e) {
+                        checkPasswordStrength(e.target.value);
+                    });
+                    
+                    // Form submission with comprehensive validation
                     document.getElementById('resetForm').addEventListener('submit', async (e) => {
                         e.preventDefault();
                         
@@ -5485,24 +5609,46 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                         const resetBtn = document.getElementById('resetBtn');
                         const message = document.getElementById('message');
                         
-                        if (password !== confirmPassword) {
-                            message.innerHTML = '<div class="error">Passwords do not match</div>';
-                            return;
-                        }
+                        // Clear previous errors
+                        message.innerHTML = '';
+                        document.getElementById('password').classList.remove('error');
+                        document.getElementById('confirmPassword').classList.remove('error');
+                        
+                        // Comprehensive validation
+                        let hasErrors = false;
                         
                         if (password.length < 8) {
-                            message.innerHTML = '<div class="error">Password must be at least 8 characters</div>';
-                            return;
+                            message.innerHTML += '<div class="error">Password must be at least 8 characters long</div>';
+                            document.getElementById('password').classList.add('error');
+                            hasErrors = true;
                         }
                         
+                        if (!checkPasswordStrength(password)) {
+                            message.innerHTML += '<div class="error">Password is too weak. Please use a stronger password.</div>';
+                            document.getElementById('password').classList.add('error');
+                            hasErrors = true;
+                        }
+                        
+                        if (password !== confirmPassword) {
+                            message.innerHTML += '<div class="error">Passwords do not match</div>';
+                            document.getElementById('confirmPassword').classList.add('error');
+                            hasErrors = true;
+                        }
+                        
+                        if (hasErrors) return;
+                        
+                        // Secure form submission
                         resetBtn.disabled = true;
-                        resetBtn.textContent = 'Resetting...';
-                        message.innerHTML = '';
+                        resetBtn.textContent = 'Resetting Password...';
+                        message.innerHTML = '<div style="color: #3498db;">Resetting your password securely...</div>';
                         
                         try {
                             const response = await fetch('/api/reset-password', {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                },
                                 credentials: 'include',
                                 body: JSON.stringify({ password: password })
                             });
@@ -5510,19 +5656,27 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                             const result = await response.json();
                             
                             if (response.ok) {
-                                message.innerHTML = '<div class="success">Password reset successfully! You can now close this window and sign in with your new password.</div>';
+                                message.innerHTML = '<div class="success">✅ Password reset successfully! You can now close this window and sign in with your new password.</div>';
                                 resetBtn.textContent = 'Password Reset Complete';
                                 resetBtn.style.background = '#27ae60';
                                 
+                                // Clear form
                                 document.getElementById('password').value = '';
                                 document.getElementById('confirmPassword').value = '';
+                                document.getElementById('passwordStrength').style.display = 'none';
+                                
+                                // Auto-close after 5 seconds
+                                setTimeout(() => {
+                                    window.close();
+                                }, 5000);
                             } else {
-                                message.innerHTML = '<div class="error">' + (result.error || 'Password reset failed') + '</div>';
+                                message.innerHTML = '<div class="error">❌ ' + (result.error || 'Password reset failed. Please try again.') + '</div>';
                                 resetBtn.disabled = false;
                                 resetBtn.textContent = 'Reset Password';
                             }
                         } catch (error) {
-                            message.innerHTML = '<div class="error">Network error. Please try again.</div>';
+                            console.error('Password reset error:', error);
+                            message.innerHTML = '<div class="error">❌ Network error. Please check your connection and try again.</div>';
                             resetBtn.disabled = false;
                             resetBtn.textContent = 'Reset Password';
                         }
@@ -5534,22 +5688,34 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
 
     } catch (validationError) {
         console.error('Token validation error:', validationError);
+        
+        // Log security event for monitoring
+        console.log('SECURITY_EVENT: Password reset validation failed', {
+            error: validationError.message,
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            timestamp: new Date().toISOString()
+        });
+        
         return res.status(400).send(`
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Invalid Reset Link</title>
+                <title>Security Error - Trontiq</title>
                 <style>
-                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                    .container { max-width: 400px; margin: 0 auto; }
+                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                    .container { max-width: 400px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
                     .error { color: #e74c3c; }
+                    .btn { background: #2c3e50; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 20px; }
+                    .btn:hover { background: #34495e; }
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <h1 class="error">Invalid Reset Link</h1>
-                    <p>The password reset link is invalid or has expired.</p>
+                    <h1 class="error">Security Error</h1>
+                    <p>There was a security issue processing your password reset request.</p>
                     <p>Please request a new password reset from the Trontiq extension.</p>
+                    <a href="https://chrome.google.com/webstore" class="btn">Open Trontiq Extension</a>
                 </div>
             </body>
             </html>
@@ -5557,14 +5723,24 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
     }
 });
 
-// Password reset endpoint
-// SECURE Password reset endpoint - uses session-based authentication
+// ENTERPRISE-GRADE Password Reset API Endpoint
+// Follows OWASP security standards and industry best practices
 app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    const startTime = Date.now();
+    const clientIP = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    
     try {
         const { password } = req.body;
         const resetSessionId = req.cookies.reset_session;
         
+        // ENTERPRISE: Comprehensive input validation
         if (!resetSessionId) {
+            console.log('SECURITY_EVENT: Password reset attempt without session', {
+                ip: clientIP,
+                userAgent: userAgent,
+                timestamp: new Date().toISOString()
+            });
             return res.status(401).json({ error: 'No reset session found' });
         }
         
@@ -5574,15 +5750,71 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
         
         const resetSession = global.resetSessions.get(resetSessionId);
         if (!resetSession || Date.now() > resetSession.expires) {
-            global.resetSessions.delete(resetSessionId);
+            if (resetSession) {
+                global.resetSessions.delete(resetSessionId);
+            }
+            console.log('SECURITY_EVENT: Password reset attempt with expired session', {
+                ip: clientIP,
+                userAgent: userAgent,
+                sessionId: resetSessionId,
+                timestamp: new Date().toISOString()
+            });
             return res.status(401).json({ error: 'Reset session expired' });
         }
         
-        if (!password || password.length < 8) {
+        // ENTERPRISE: Advanced password validation
+        if (!password || typeof password !== 'string') {
+            return res.status(400).json({ error: 'Password is required' });
+        }
+        
+        if (password.length < 8) {
             return res.status(400).json({ error: 'Password must be at least 8 characters' });
         }
         
-        // SECURITY: Update password using Supabase Admin API
+        if (password.length > 128) {
+            return res.status(400).json({ error: 'Password is too long' });
+        }
+        
+        // ENTERPRISE: Password strength validation
+        const hasUpperCase = /[A-Z]/.test(password);
+        const hasLowerCase = /[a-z]/.test(password);
+        const hasNumbers = /\d/.test(password);
+        const hasSpecialChar = /[^A-Za-z0-9]/.test(password);
+        
+        if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+            return res.status(400).json({ 
+                error: 'Password must contain at least one uppercase letter, one lowercase letter, and one number' 
+            });
+        }
+        
+        // ENTERPRISE: Rate limiting check
+        const rateLimitKey = `password_reset_${clientIP}`;
+        if (!global.rateLimitStore) {
+            global.rateLimitStore = new Map();
+        }
+        
+        const now = Date.now();
+        const rateLimitData = global.rateLimitStore.get(rateLimitKey) || { count: 0, resetTime: now + 3600000 }; // 1 hour
+        
+        if (now > rateLimitData.resetTime) {
+            rateLimitData.count = 0;
+            rateLimitData.resetTime = now + 3600000;
+        }
+        
+        if (rateLimitData.count >= 5) { // Max 5 password resets per hour per IP
+            console.log('SECURITY_EVENT: Password reset rate limit exceeded', {
+                ip: clientIP,
+                userAgent: userAgent,
+                count: rateLimitData.count,
+                timestamp: new Date().toISOString()
+            });
+            return res.status(429).json({ error: 'Too many password reset attempts. Please try again later.' });
+        }
+        
+        rateLimitData.count++;
+        global.rateLimitStore.set(rateLimitKey, rateLimitData);
+        
+        // ENTERPRISE: Update password using Supabase Admin API with comprehensive error handling
         const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${resetSession.userId}`, {
             method: 'PUT',
             headers: {
@@ -5590,23 +5822,65 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ password: password })
+            body: JSON.stringify({ 
+                password: password,
+                email_confirm: true // Ensure email is confirmed after password reset
+            })
         });
         
         if (!updateResponse.ok) {
             const errorData = await updateResponse.json();
+            console.error('ENTERPRISE: Supabase password update failed', {
+                userId: resetSession.userId,
+                error: errorData,
+                ip: clientIP,
+                timestamp: new Date().toISOString()
+            });
             return res.status(400).json({ error: errorData.message || 'Failed to update password' });
         }
         
-        // SECURITY: Clean up reset session
+        // ENTERPRISE: Log successful password reset
+        console.log('SECURITY_EVENT: Password reset successful', {
+            userId: resetSession.userId,
+            email: resetSession.email,
+            ip: clientIP,
+            userAgent: userAgent,
+            processingTime: Date.now() - startTime,
+            timestamp: new Date().toISOString()
+        });
+        
+        // ENTERPRISE: Clean up reset session and invalidate all user sessions
         global.resetSessions.delete(resetSessionId);
         res.clearCookie('reset_session');
         
-        res.json({ success: true, message: 'Password reset successfully' });
+        // ENTERPRISE: Invalidate all existing sessions for this user (security best practice)
+        if (sessions) {
+            for (const [sessionId, session] of sessions.entries()) {
+                if (session.userId === resetSession.userId) {
+                    sessions.delete(sessionId);
+                }
+            }
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'Password reset successfully. Please sign in with your new password.',
+            requiresReauth: true
+        });
         
     } catch (error) {
-        console.error('Password reset error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('ENTERPRISE: Password reset error:', error);
+        
+        // ENTERPRISE: Log security event for monitoring
+        console.log('SECURITY_EVENT: Password reset system error', {
+            error: error.message,
+            ip: clientIP,
+            userAgent: userAgent,
+            processingTime: Date.now() - startTime,
+            timestamp: new Date().toISOString()
+        });
+        
+        res.status(500).json({ error: 'Internal server error. Please try again later.' });
     }
 });
 
