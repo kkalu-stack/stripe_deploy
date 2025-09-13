@@ -5271,6 +5271,8 @@ setInterval(async () => {
 app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), (req, res) => {
     const { token_hash, type } = req.query;
     
+    console.log('Password reset page accessed:', { token_hash: !!token_hash, type, query: req.query });
+    
     if (!token_hash || type !== 'recovery') {
         return res.status(400).send(`
             <!DOCTYPE html>
@@ -5467,6 +5469,21 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
     } catch (error) {
         console.error('Password reset error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Handle Supabase's default auth callback
+app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
+    const { token_hash, type } = req.query;
+    
+    console.log('Auth callback received:', { token_hash, type });
+    
+    if (token_hash && type === 'recovery') {
+        // Redirect to our password reset page
+        res.redirect(`/auth/reset-password?token_hash=${token_hash}&type=${type}`);
+    } else {
+        // Handle other auth callbacks
+        res.redirect('/');
     }
 });
 
