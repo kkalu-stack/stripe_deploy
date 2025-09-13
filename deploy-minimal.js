@@ -5267,6 +5267,11 @@ setInterval(async () => {
     }
 }, 60 * 60 * 1000);
 
+// Test route to verify server is working
+app.get('/test-password-reset', (req, res) => {
+    res.send('Password reset test route is working!');
+});
+
 // Password reset page - serves the reset password form
 app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), (req, res) => {
     const { token_hash, type } = req.query;
@@ -5488,7 +5493,6 @@ app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
 });
 
 
-// 404 handler - must be last
 // Change password endpoint
 app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
     try {
@@ -5543,6 +5547,8 @@ app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+// 404 handler - must be last
 
 app.use('*', (req, res) => {
     console.log('404 - Endpoint not found:', req.method, req.path, req.query);
