@@ -5268,7 +5268,7 @@ setInterval(async () => {
 }, 60 * 60 * 1000);
 
 // Password reset page - serves the reset password form
-app.get('/auth/reset-password', (req, res) => {
+app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), (req, res) => {
     const { token_hash, type } = req.query;
     
     if (!token_hash || type !== 'recovery') {
@@ -5424,7 +5424,7 @@ app.get('/auth/reset-password', (req, res) => {
 });
 
 // Password reset endpoint
-app.post('/api/reset-password', async (req, res) => {
+app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
         const { token_hash, password } = req.body;
         
