@@ -5279,12 +5279,47 @@ app.get('/simple-test', (req, res) => {
     res.send('Simple test route is working!');
 });
 
+// Test route for password reset debugging
+app.get('/test-reset', async (req, res) => {
+    console.log('TEST RESET ROUTE HIT');
+    const { token_hash, type } = req.query;
+    
+    console.log('Test reset params:', { token_hash, type });
+    
+    if (!token_hash || type !== 'recovery') {
+        return res.json({ error: 'Missing or invalid parameters' });
+    }
+    
+    try {
+        const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: token_hash,
+            type: 'recovery'
+        });
+        
+        return res.json({
+            success: !error && !!data.user,
+            error: error,
+            data: data,
+            token_hash: token_hash,
+            type: type
+        });
+    } catch (err) {
+        return res.json({
+            success: false,
+            error: err.message,
+            token_hash: token_hash,
+            type: type
+        });
+    }
+});
+
 // SECURE Password reset page - Fortune 500 level security
 app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('PASSWORD RESET ROUTE HIT: /auth/reset-password');
     const { token_hash, type } = req.query;
     
     console.log('Password reset page accessed:', { token_hash: !!token_hash, type });
+    console.log('Full query params:', req.query);
     
     // SECURITY: Validate token server-side immediately
     if (!token_hash || type !== 'recovery') {
@@ -5312,13 +5347,20 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
 
     // SECURITY: Validate token with Supabase server-side
     try {
-        const { data, error } = await supabase.auth.verifyOtp({
+        // For password reset tokens, we need to use the Admin API to verify the token
+        // The token_hash from the URL needs to be validated against Supabase
+        // Try using the correct method for password reset token validation
+        // For password reset tokens, we need to use the Admin API
+        const { data, error } = await supabase.auth.admin.verifyOtp({
             token_hash: token_hash,
             type: 'recovery'
         });
 
         if (error || !data.user) {
             console.log('Token validation failed:', error);
+            console.log('Token hash received:', token_hash);
+            console.log('Type received:', type);
+            console.log('Data received:', data);
             return res.status(400).send(`
                 <!DOCTYPE html>
                 <html>
@@ -5385,27 +5427,29 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                     .logo h1 { color: #2c3e50; margin: 0; font-size: 28px; font-weight: 600; }
                     .logo p { color: #7f8c8d; margin: 5px 0 0 0; font-size: 14px; }
                     .form-group { margin-bottom: 20px; }
-                    label { display: block; margin-bottom: 8px; color: #2c3e50; font-weight: 500; }
-                    input { 
-                        width: 100%; padding: 12px; border: 2px solid #ecf0f1; 
-                        border-radius: 6px; font-size: 16px; box-sizing: border-box;
-                        transition: border-color 0.3s;
+                    .form-group label { 
+                        display: block; margin-bottom: 8px; 
+                        color: #2c3e50; font-weight: 600; font-size: 14px;
                     }
-                    input:focus { outline: none; border-color: #2c3e50; }
-                    .btn { 
-                        width: 100%; padding: 12px; background: #2c3e50; color: white;
-                        border: none; border-radius: 6px; font-size: 16px; font-weight: 600;
-                        cursor: pointer; transition: background 0.3s;
+                    .form-group input {
+                        width: 100%; padding: 12px 16px; border: 2px solid #ecf0f1;
+                        border-radius: 8px; font-size: 16px; transition: border-color 0.3s;
+                        box-sizing: border-box;
                     }
-                    .btn:hover { background: #34495e; }
-                    .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
-                    .message { 
-                        padding: 12px; border-radius: 6px; margin-bottom: 20px; 
-                        text-align: center; font-weight: 500;
+                    .form-group input:focus {
+                        outline: none; border-color: #3498db;
+                        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
                     }
-                    .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-                    .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-                    .hidden { display: none; }
+                    .btn {
+                        width: 100%; padding: 14px; background: #2c3e50;
+                        color: white; border: none; border-radius: 8px;
+                        font-size: 16px; font-weight: 600; cursor: pointer;
+                        transition: all 0.3s;
+                    }
+                    .btn:hover { background: #34495e; transform: translateY(-1px); }
+                    .btn:disabled { background: #bdc3c7; cursor: not-allowed; transform: none; }
+                    .error { color: #e74c3c; font-size: 14px; margin-top: 10px; }
+                    .success { color: #27ae60; font-size: 14px; margin-top: 10px; }
                 </style>
             </head>
             <body>
@@ -5415,76 +5459,74 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                         <p>Smart browser assistant for job applications</p>
                     </div>
                     
-                    <div id="message" class="hidden"></div>
-                    
                     <form id="resetForm">
                         <div class="form-group">
-                            <label for="newPassword">New Password</label>
-                            <input type="password" id="newPassword" required minlength="8">
+                            <label for="password">New Password</label>
+                            <input type="password" id="password" name="password" required minlength="8">
                         </div>
                         
                         <div class="form-group">
                             <label for="confirmPassword">Confirm New Password</label>
-                            <input type="password" id="confirmPassword" required minlength="8">
+                            <input type="password" id="confirmPassword" name="confirmPassword" required>
                         </div>
                         
                         <button type="submit" class="btn" id="resetBtn">Reset Password</button>
+                        
+                        <div id="message"></div>
                     </form>
                 </div>
-                
+
                 <script>
-                    const form = document.getElementById('resetForm');
-                    const message = document.getElementById('message');
-                    const resetBtn = document.getElementById('resetBtn');
-                    
-                    form.addEventListener('submit', async (e) => {
+                    document.getElementById('resetForm').addEventListener('submit', async (e) => {
                         e.preventDefault();
                         
-                        const newPassword = document.getElementById('newPassword').value;
+                        const password = document.getElementById('password').value;
                         const confirmPassword = document.getElementById('confirmPassword').value;
+                        const resetBtn = document.getElementById('resetBtn');
+                        const message = document.getElementById('message');
                         
-                        if (newPassword !== confirmPassword) {
-                            showMessage('Passwords do not match', 'error');
+                        if (password !== confirmPassword) {
+                            message.innerHTML = '<div class="error">Passwords do not match</div>';
                             return;
                         }
                         
-                        if (newPassword.length < 8) {
-                            showMessage('Password must be at least 8 characters', 'error');
+                        if (password.length < 8) {
+                            message.innerHTML = '<div class="error">Password must be at least 8 characters</div>';
                             return;
                         }
                         
                         resetBtn.disabled = true;
                         resetBtn.textContent = 'Resetting...';
+                        message.innerHTML = '';
                         
                         try {
                             const response = await fetch('/api/reset-password', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                credentials: 'include', // Include reset_session cookie
-                                body: JSON.stringify({ password: newPassword })
+                                credentials: 'include',
+                                body: JSON.stringify({ password: password })
                             });
                             
                             const result = await response.json();
                             
                             if (response.ok) {
-                                showMessage('Password reset successfully! You can now close this page and sign in with your new password.', 'success');
-                                form.style.display = 'none';
+                                message.innerHTML = '<div class="success">Password reset successfully! You can now close this window and sign in with your new password.</div>';
+                                resetBtn.textContent = 'Password Reset Complete';
+                                resetBtn.style.background = '#27ae60';
+                                
+                                document.getElementById('password').value = '';
+                                document.getElementById('confirmPassword').value = '';
                             } else {
-                                showMessage(result.error || 'Failed to reset password', 'error');
+                                message.innerHTML = '<div class="error">' + (result.error || 'Password reset failed') + '</div>';
+                                resetBtn.disabled = false;
+                                resetBtn.textContent = 'Reset Password';
                             }
                         } catch (error) {
-                            showMessage('Network error. Please try again.', 'error');
-                        } finally {
+                            message.innerHTML = '<div class="error">Network error. Please try again.</div>';
                             resetBtn.disabled = false;
                             resetBtn.textContent = 'Reset Password';
                         }
                     });
-                    
-                    function showMessage(text, type) {
-                        message.textContent = text;
-                        message.className = 'message ' + type;
-                        message.classList.remove('hidden');
-                    }
                 </script>
             </body>
             </html>
@@ -5583,6 +5625,20 @@ app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
     }
 });
 
+// Catch-all route for password reset (handles any URL format Supabase might use)
+app.get('/auth/*', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    console.log('Catch-all auth route hit:', req.path);
+    console.log('Query params:', req.query);
+    
+    // If it looks like a password reset request, redirect to the main reset page
+    if (req.path.includes('reset') || req.query.type === 'recovery' || req.query.token_hash) {
+        const redirectUrl = `/auth/reset-password?${new URLSearchParams(req.query).toString()}`;
+        return res.redirect(redirectUrl);
+    }
+    
+    // Otherwise, return 404
+    return res.status(404).json({ error: 'Endpoint not found' });
+});
 
 // Change password endpoint
 app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
