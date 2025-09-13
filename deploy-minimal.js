@@ -5301,7 +5301,21 @@ app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession
         }
         
         const userData = await userResponse.json();
-        res.json({ success: true, data: userData });
+        
+        // SECURITY: Invalidate current session after password change
+        // This forces the user to reauthenticate with their new password
+        const sessionId = req.cookies.sid;
+        if (sessionId) {
+            sessions.delete(sessionId);
+            res.clearCookie('sid');
+        }
+        
+        res.json({ 
+            success: true, 
+            data: userData,
+            requiresReauth: true,
+            message: 'Password changed successfully. Please log in again.'
+        });
         
     } catch (error) {
         console.error('Password change error:', error);
