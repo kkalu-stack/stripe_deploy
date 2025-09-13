@@ -5279,14 +5279,92 @@ app.get('/simple-test', (req, res) => {
     res.send('Simple test route is working!');
 });
 
-// Password reset page - serves the reset password form
-app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), (req, res) => {
+// SECURE Password reset page - Fortune 500 level security
+app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('PASSWORD RESET ROUTE HIT: /auth/reset-password');
     const { token_hash, type } = req.query;
     
-    console.log('Password reset page accessed:', { token_hash: !!token_hash, type, query: req.query });
+    console.log('Password reset page accessed:', { token_hash: !!token_hash, type });
     
+    // SECURITY: Validate token server-side immediately
     if (!token_hash || type !== 'recovery') {
+        return res.status(400).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Invalid Reset Link</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                    .container { max-width: 400px; margin: 0 auto; }
+                    .error { color: #e74c3c; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1 class="error">Invalid Reset Link</h1>
+                    <p>The password reset link is invalid or has expired.</p>
+                    <p>Please request a new password reset from the Trontiq extension.</p>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+
+    // SECURITY: Validate token with Supabase server-side
+    try {
+        const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: token_hash,
+            type: 'recovery'
+        });
+
+        if (error || !data.user) {
+            console.log('Token validation failed:', error);
+            return res.status(400).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Invalid Reset Link</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                        .container { max-width: 400px; margin: 0 auto; }
+                        .error { color: #e74c3c; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1 class="error">Invalid Reset Link</h1>
+                        <p>The password reset link is invalid or has expired.</p>
+                        <p>Please request a new password reset from the Trontiq extension.</p>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+
+        console.log('Token validated successfully for user:', data.user.email);
+
+        // SECURITY: Create temporary session for password reset
+        const resetSessionId = crypto.randomUUID();
+        if (!global.resetSessions) {
+            global.resetSessions = new Map();
+        }
+        global.resetSessions.set(resetSessionId, {
+            userId: data.user.id,
+            email: data.user.email,
+            expires: Date.now() + (15 * 60 * 1000), // 15 minutes
+            token_hash: token_hash
+        });
+
+        // SECURITY: Set secure session cookie
+        res.cookie('reset_session', resetSessionId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+
+    } catch (validationError) {
+        console.error('Token validation error:', validationError);
         return res.status(400).send(`
             <!DOCTYPE html>
             <html>
@@ -5439,30 +5517,32 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), (req, res) => {
 });
 
 // Password reset endpoint
+// SECURE Password reset endpoint - uses session-based authentication
 app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
     try {
-        const { token_hash, password } = req.body;
+        const { password } = req.body;
+        const resetSessionId = req.cookies.reset_session;
         
-        if (!token_hash || !password) {
-            return res.status(400).json({ error: 'Token and password are required' });
+        if (!resetSessionId) {
+            return res.status(401).json({ error: 'No reset session found' });
         }
         
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        if (!global.resetSessions) {
+            global.resetSessions = new Map();
         }
         
-        // Verify the token with Supabase
-        const { data: { user }, error } = await supabase.auth.verifyOtp({
-            token_hash: token_hash,
-            type: 'recovery'
-        });
-        
-        if (error || !user) {
-            return res.status(400).json({ error: 'Invalid or expired reset token' });
+        const resetSession = global.resetSessions.get(resetSessionId);
+        if (!resetSession || Date.now() > resetSession.expires) {
+            global.resetSessions.delete(resetSessionId);
+            return res.status(401).json({ error: 'Reset session expired' });
         }
         
-        // Update the user's password using Supabase Admin API
-        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${user.id}`, {
+        if (!password || password.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters' });
+        }
+        
+        // SECURITY: Update password using Supabase Admin API
+        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${resetSession.userId}`, {
             method: 'PUT',
             headers: {
                 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -5476,6 +5556,10 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
             const errorData = await updateResponse.json();
             return res.status(400).json({ error: errorData.message || 'Failed to update password' });
         }
+        
+        // SECURITY: Clean up reset session
+        global.resetSessions.delete(resetSessionId);
+        res.clearCookie('reset_session');
         
         res.json({ success: true, message: 'Password reset successfully' });
         
@@ -5555,6 +5639,18 @@ app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+// SECURITY: Clean up expired reset sessions every 5 minutes
+setInterval(() => {
+    if (global.resetSessions) {
+        const now = Date.now();
+        for (const [sessionId, session] of global.resetSessions.entries()) {
+            if (now > session.expires) {
+                global.resetSessions.delete(sessionId);
+            }
+        }
+    }
+}, 5 * 60 * 1000);
 
 // 404 handler - must be last
 
