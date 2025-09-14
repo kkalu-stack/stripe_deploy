@@ -5317,13 +5317,164 @@ app.get('/test-reset', async (req, res) => {
 app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('PASSWORD RESET ROUTE HIT: /auth/reset-password');
     const { token_hash, type, access_token, refresh_token } = req.query;
+    const resetSessionId = req.cookies.reset_session;
     
     console.log('Password reset page accessed:', { 
         token_hash: !!token_hash, 
         type, 
         access_token: !!access_token,
-        refresh_token: !!refresh_token 
+        refresh_token: !!refresh_token,
+        reset_session: !!resetSessionId
     });
+    
+    // SECURITY: Check for existing session first (from secure token processing)
+    if (resetSessionId && global.resetSessions) {
+        const resetSession = global.resetSessions.get(resetSessionId);
+        if (resetSession && Date.now() <= resetSession.expires) {
+            console.log('Valid reset session found for user:', resetSession.email);
+            
+            // SECURITY: Send secure password reset form with NO tokens exposed
+            return res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Reset Password - Trontiq</title>
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f8f9fa; }
+                        .container { max-width: 400px; margin: 50px auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                        h1 { color: #2c3e50; text-align: center; margin-bottom: 30px; }
+                        .user-info { background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+                        .form-group { margin-bottom: 20px; }
+                        label { display: block; margin-bottom: 5px; color: #2c3e50; font-weight: 500; }
+                        input[type="password"] { width: 100%; padding: 12px; border: 2px solid #e1e5e9; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+                        input[type="password"]:focus { outline: none; border-color: #3498db; }
+                        .password-strength { margin-top: 5px; font-size: 12px; }
+                        .strength-weak { color: #e74c3c; }
+                        .strength-medium { color: #f39c12; }
+                        .strength-strong { color: #27ae60; }
+                        .btn { width: 100%; padding: 14px; background: #3498db; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 20px; }
+                        .btn:hover { background: #2980b9; }
+                        .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+                        .security-notice { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 8px; margin-top: 20px; font-size: 14px; }
+                        .error { color: #e74c3c; margin-top: 10px; }
+                        .success { color: #27ae60; margin-top: 10px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>Reset Password</h1>
+                        <div class="user-info">
+                            <strong>Resetting password for:</strong><br>
+                            ${resetSession.email}
+                        </div>
+                        <form id="resetForm">
+                            <div class="form-group">
+                                <label for="newPassword">New Password</label>
+                                <input type="password" id="newPassword" name="password" required minlength="8">
+                                <div id="passwordStrength" class="password-strength"></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="confirmPassword">Confirm New Password</label>
+                                <input type="password" id="confirmPassword" name="confirmPassword" required>
+                            </div>
+                            <button type="submit" class="btn" id="submitBtn">Reset Password</button>
+                        </form>
+                        <div id="message"></div>
+                        <div class="security-notice">
+                            <strong>Security Notice:</strong> This link will expire in 15 minutes for your security. If you didn't request this password reset, please ignore this email.
+                        </div>
+                    </div>
+                    <script>
+                        const form = document.getElementById('resetForm');
+                        const newPassword = document.getElementById('newPassword');
+                        const confirmPassword = document.getElementById('confirmPassword');
+                        const passwordStrength = document.getElementById('passwordStrength');
+                        const submitBtn = document.getElementById('submitBtn');
+                        const message = document.getElementById('message');
+                        
+                        // Password strength validation
+                        function checkPasswordStrength(password) {
+                            let strength = 0;
+                            if (password.length >= 8) strength++;
+                            if (/[a-z]/.test(password)) strength++;
+                            if (/[A-Z]/.test(password)) strength++;
+                            if (/[0-9]/.test(password)) strength++;
+                            if (/[^A-Za-z0-9]/.test(password)) strength++;
+                            
+                            if (strength < 3) {
+                                passwordStrength.textContent = 'Password strength: Weak';
+                                passwordStrength.className = 'password-strength strength-weak';
+                                return false;
+                            } else if (strength < 5) {
+                                passwordStrength.textContent = 'Password strength: Medium';
+                                passwordStrength.className = 'password-strength strength-medium';
+                                return true;
+                            } else {
+                                passwordStrength.textContent = 'Password strength: Strong';
+                                passwordStrength.className = 'password-strength strength-strong';
+                                return true;
+                            }
+                        }
+                        
+                        newPassword.addEventListener('input', function() {
+                            checkPasswordStrength(this.value);
+                        });
+                        
+                        form.addEventListener('submit', async function(e) {
+                            e.preventDefault();
+                            
+                            const password = newPassword.value;
+                            const confirm = confirmPassword.value;
+                            
+                            if (password !== confirm) {
+                                message.innerHTML = '<div class="error">Passwords do not match.</div>';
+                                return;
+                            }
+                            
+                            if (!checkPasswordStrength(password)) {
+                                message.innerHTML = '<div class="error">Password is too weak. Please use at least 8 characters with a mix of letters, numbers, and symbols.</div>';
+                                return;
+                            }
+                            
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = 'Resetting Password...';
+                            
+                            try {
+                                const response = await fetch('/api/reset-password', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ password: password })
+                                });
+                                
+                                const data = await response.json();
+                                
+                                if (response.ok) {
+                                    message.innerHTML = '<div class="success">Password reset successfully! You can now close this window and log in with your new password.</div>';
+                                    form.style.display = 'none';
+                                } else {
+                                    message.innerHTML = '<div class="error">Error: ' + (data.error || 'Failed to reset password') + '</div>';
+                                }
+                            } catch (error) {
+                                message.innerHTML = '<div class="error">Network error. Please try again.</div>';
+                            } finally {
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = 'Reset Password';
+                            }
+                        });
+                    </script>
+                </body>
+                </html>
+            `);
+        } else {
+            // Session expired or invalid
+            if (resetSession) {
+                global.resetSessions.delete(resetSessionId);
+            }
+            console.log('Reset session expired or invalid');
+        }
+    }
     
     // SECURITY: Handle multiple token formats (Supabase can send different formats)
     let isValidToken = false;
