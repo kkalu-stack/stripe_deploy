@@ -5340,51 +5340,243 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                 <head>
                     <title>Reset Password - Trontiq</title>
                     <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f8f9fa; }
-                        .container { max-width: 400px; margin: 50px auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-                        h1 { color: #2c3e50; text-align: center; margin-bottom: 30px; }
-                        .user-info { background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-                        .form-group { margin-bottom: 20px; }
-                        label { display: block; margin-bottom: 5px; color: #2c3e50; font-weight: 500; }
-                        input[type="password"] { width: 100%; padding: 12px; border: 2px solid #e1e5e9; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-                        input[type="password"]:focus { outline: none; border-color: #3498db; }
-                        .password-strength { margin-top: 5px; font-size: 12px; }
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body { 
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                            background: #f8f9fa; 
+                            color: #333; 
+                            min-height: 100vh; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                        }
+                        .container { 
+                            max-width: 500px; 
+                            width: 90%; 
+                            background: white; 
+                            border-radius: 12px; 
+                            overflow: hidden; 
+                            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); 
+                        }
+                        .header { 
+                            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); 
+                            color: white; 
+                            padding: 30px; 
+                            text-align: center; 
+                        }
+                        .header h1 { 
+                            font-size: 28px; 
+                            margin-bottom: 8px; 
+                            font-weight: 600; 
+                        }
+                        .header p { 
+                            font-size: 16px; 
+                            opacity: 0.9; 
+                        }
+                        .content { 
+                            padding: 30px; 
+                        }
+                        .user-info { 
+                            background: #f8f9fa; 
+                            border: 1px solid #e9ecef; 
+                            border-radius: 8px; 
+                            padding: 20px; 
+                            margin-bottom: 25px; 
+                            text-align: center; 
+                        }
+                        .user-info strong { 
+                            color: #2c3e50; 
+                            font-weight: 600; 
+                            display: block; 
+                            margin-bottom: 8px; 
+                        }
+                        .user-email { 
+                            color: #6c757d; 
+                            font-size: 16px; 
+                        }
+                        .form-group { 
+                            margin-bottom: 20px; 
+                        }
+                        .form-group label { 
+                            display: block; 
+                            margin-bottom: 8px; 
+                            color: #2c3e50; 
+                            font-weight: 500; 
+                            font-size: 14px; 
+                        }
+                        .password-input-container { 
+                            position: relative; 
+                            display: flex; 
+                            align-items: center; 
+                        }
+                        input[type="password"], input[type="text"] { 
+                            width: 100%; 
+                            padding: 12px 40px 12px 12px; 
+                            border: 2px solid #e9ecef; 
+                            border-radius: 8px; 
+                            font-size: 16px; 
+                            transition: border-color 0.3s ease; 
+                        }
+                        input[type="password"]:focus, input[type="text"]:focus { 
+                            outline: none; 
+                            border-color: #2c3e50; 
+                            box-shadow: 0 0 0 3px rgba(44, 62, 80, 0.1); 
+                        }
+                        .password-toggle { 
+                            position: absolute; 
+                            right: 8px; 
+                            top: 50%; 
+                            transform: translateY(-50%); 
+                            background: none; 
+                            border: none; 
+                            cursor: pointer; 
+                            padding: 4px; 
+                            border-radius: 4px; 
+                            transition: background-color 0.2s ease; 
+                        }
+                        .password-toggle:hover { 
+                            background-color: #f8f9fa; 
+                        }
+                        .eye-icon { 
+                            width: 20px; 
+                            height: 20px; 
+                            opacity: 0.7; 
+                            color: #6c757d; 
+                        }
+                        .password-toggle:hover .eye-icon { 
+                            opacity: 0.8; 
+                            color: #495057; 
+                        }
+                        .password-toggle.showing .eye-icon { 
+                            opacity: 1; 
+                            color: #2c3e50; 
+                        }
+                        .password-strength { 
+                            margin-top: 8px; 
+                            font-size: 13px; 
+                            font-weight: 500; 
+                        }
                         .strength-weak { color: #e74c3c; }
                         .strength-medium { color: #f39c12; }
                         .strength-strong { color: #27ae60; }
-                        .btn { width: 100%; padding: 14px; background: #3498db; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 20px; }
-                        .btn:hover { background: #2980b9; }
-                        .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
-                        .security-notice { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 8px; margin-top: 20px; font-size: 14px; }
-                        .error { color: #e74c3c; margin-top: 10px; }
-                        .success { color: #27ae60; margin-top: 10px; }
+                        .btn { 
+                            width: 100%; 
+                            padding: 16px 24px; 
+                            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); 
+                            color: white; 
+                            border: none; 
+                            border-radius: 8px; 
+                            font-size: 16px; 
+                            font-weight: 600; 
+                            cursor: pointer; 
+                            transition: all 0.3s ease; 
+                            margin-top: 25px; 
+                            box-shadow: 0 4px 12px rgba(44, 62, 80, 0.2); 
+                        }
+                        .btn:hover:not(:disabled) { 
+                            background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%); 
+                            transform: translateY(-2px); 
+                            box-shadow: 0 6px 20px rgba(44, 62, 80, 0.3); 
+                        }
+                        .btn:disabled { 
+                            background: #dee2e6; 
+                            color: #6c757d; 
+                            cursor: not-allowed; 
+                            transform: none; 
+                            box-shadow: none; 
+                        }
+                        .security-notice { 
+                            background: #fff3cd; 
+                            border: 1px solid #ffeaa7; 
+                            color: #856404; 
+                            padding: 15px; 
+                            border-radius: 8px; 
+                            margin-top: 25px; 
+                            font-size: 14px; 
+                            line-height: 1.5; 
+                        }
+                        .security-notice strong { 
+                            color: #856404; 
+                        }
+                        .error { 
+                            color: #e74c3c; 
+                            margin-top: 15px; 
+                            padding: 12px 15px; 
+                            background: #f8d7da; 
+                            border: 1px solid #f5c6cb; 
+                            border-radius: 6px; 
+                            font-size: 14px; 
+                        }
+                        .success { 
+                            color: #155724; 
+                            margin-top: 15px; 
+                            padding: 12px 15px; 
+                            background: #d4edda; 
+                            border: 1px solid #c3e6cb; 
+                            border-radius: 6px; 
+                            font-size: 14px; 
+                        }
                     </style>
                 </head>
                 <body>
                     <div class="container">
-                        <h1>Reset Password</h1>
-                        <div class="user-info">
-                            <strong>Resetting password for:</strong><br>
-                            ${resetSession.email}
+                        <div class="header">
+                            <h1>Trontiq</h1>
+                            <p>Reset Your Password</p>
                         </div>
-                        <form id="resetForm">
-                            <div class="form-group">
-                                <label for="newPassword">New Password</label>
-                                <input type="password" id="newPassword" name="password" required minlength="8">
-                                <div id="passwordStrength" class="password-strength"></div>
+                        <div class="content">
+                            <div class="user-info">
+                                <strong>Resetting password for:</strong>
+                                <div class="user-email">${resetSession.email}</div>
                             </div>
-                            <div class="form-group">
-                                <label for="confirmPassword">Confirm New Password</label>
-                                <input type="password" id="confirmPassword" name="confirmPassword" required>
+                            <form id="resetForm">
+                                <div class="form-group">
+                                    <label for="newPassword">New Password</label>
+                                    <div class="password-input-container">
+                                        <input type="password" id="newPassword" name="password" required minlength="8" placeholder="Enter your new password">
+                                        <button type="button" class="password-toggle" onclick="togglePassword('newPassword')">
+                                            <span class="eye-icon">👁️</span>
+                                        </button>
+                                    </div>
+                                    <div id="passwordStrength" class="password-strength"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="confirmPassword">Confirm New Password</label>
+                                    <div class="password-input-container">
+                                        <input type="password" id="confirmPassword" name="confirmPassword" required placeholder="Confirm your new password">
+                                        <button type="button" class="password-toggle" onclick="togglePassword('confirmPassword')">
+                                            <span class="eye-icon">👁️</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn" id="submitBtn">
+                                    <span class="btn-text">Reset Password</span>
+                                </button>
+                            </form>
+                            <div id="message"></div>
+                            <div class="security-notice">
+                                <strong>Security Notice:</strong> This link will expire in 15 minutes for your security. If you didn't request this password reset, please ignore this email.
                             </div>
-                            <button type="submit" class="btn" id="submitBtn">Reset Password</button>
-                        </form>
-                        <div id="message"></div>
-                        <div class="security-notice">
-                            <strong>Security Notice:</strong> This link will expire in 15 minutes for your security. If you didn't request this password reset, please ignore this email.
                         </div>
                     </div>
                     <script>
+                        // Password toggle functionality
+                        function togglePassword(inputId) {
+                            const input = document.getElementById(inputId);
+                            const toggle = input.parentElement.querySelector('.password-toggle');
+                            const icon = toggle.querySelector('.eye-icon');
+                            
+                            if (input.type === 'password') {
+                                input.type = 'text';
+                                toggle.classList.add('showing');
+                                icon.textContent = '🙈';
+                            } else {
+                                input.type = 'password';
+                                toggle.classList.remove('showing');
+                                icon.textContent = '👁️';
+                            }
+                        }
+                        
                         const form = document.getElementById('resetForm');
                         const newPassword = document.getElementById('newPassword');
                         const confirmPassword = document.getElementById('confirmPassword');
