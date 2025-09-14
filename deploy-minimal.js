@@ -6003,6 +6003,58 @@ app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, r
     }
 });
 
+// Handle root path with hash fragments (newer Supabase format)
+app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    console.log('Root path hit with query params:', req.query);
+    
+    // Check if this is a password reset callback with hash fragments
+    if (req.query.type === 'recovery' || req.query.access_token) {
+        // Redirect to a page that can handle hash fragments
+        return res.redirect('/auth/reset-password');
+    }
+    
+    // Default response for root path
+    return res.status(200).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Trontiq Password Reset</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                .container { max-width: 400px; margin: 0 auto; }
+                .loading { color: #3498db; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="loading">Processing Password Reset...</h1>
+                <p>Please wait while we process your password reset request.</p>
+                <script>
+                    // Extract tokens from hash fragment
+                    const hash = window.location.hash.substring(1);
+                    const params = new URLSearchParams(hash);
+                    
+                    const accessToken = params.get('access_token');
+                    const refreshToken = params.get('refresh_token');
+                    const type = params.get('type');
+                    
+                    if (accessToken && type === 'recovery') {
+                        // Redirect to password reset page with tokens as query params
+                        const redirectUrl = '/auth/reset-password?access_token=' + encodeURIComponent(accessToken) + 
+                                          '&refresh_token=' + encodeURIComponent(refreshToken) + 
+                                          '&type=' + encodeURIComponent(type);
+                        window.location.href = redirectUrl;
+                    } else {
+                        // No valid tokens found
+                        document.body.innerHTML = '<div class="container"><h1 style="color: #e74c3c;">Invalid Reset Link</h1><p>The password reset link is invalid or has expired.</p><p>Please request a new password reset from the Trontiq extension.</p></div>';
+                    }
+                </script>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
 // Catch-all route for password reset (handles any URL format Supabase might use)
 app.get('/auth/*', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('Catch-all auth route hit:', req.path);
