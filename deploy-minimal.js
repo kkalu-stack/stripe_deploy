@@ -5880,6 +5880,129 @@ app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
     }
 });
 
+// Handle JWT token in URL path (newer Supabase format)
+app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    console.log('JWT token route hit:', req.params.token);
+    
+    const token = req.params.token;
+    
+    try {
+        // Decode the JWT token to get user information
+        const tokenParts = token.split('.');
+        if (tokenParts.length !== 3) {
+            return res.status(400).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Invalid Reset Link</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                        .container { max-width: 400px; margin: 0 auto; }
+                        .error { color: #e74c3c; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1 class="error">Invalid Reset Link</h1>
+                        <p>The password reset link is invalid or has expired.</p>
+                        <p>Please request a new password reset from the Trontiq extension.</p>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+        
+        // Decode the JWT payload
+        const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
+        console.log('JWT payload:', payload);
+        
+        // Check if token is expired
+        if (payload.exp && Date.now() / 1000 > payload.exp) {
+            return res.status(400).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Link Expired</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                        .container { max-width: 400px; margin: 0 auto; }
+                        .error { color: #e74c3c; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1 class="error">Link Expired</h1>
+                        <p>This password reset link has expired. Please request a new one.</p>
+                        <p>Please request a new password reset from the Trontiq extension.</p>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+        
+        // Create user data from JWT payload
+        const userData = {
+            id: payload.sub,
+            email: payload.email,
+            email_verified: payload.user_metadata?.email_verified || false
+        };
+        
+        console.log('Token validated successfully for user:', userData.email);
+        
+        // Create secure temporary session for password reset
+        const resetSessionId = crypto.randomUUID();
+        if (!global.resetSessions) {
+            global.resetSessions = new Map();
+        }
+        
+        // Store session with comprehensive data
+        global.resetSessions.set(resetSessionId, {
+            userId: userData.id,
+            email: userData.email,
+            expires: Date.now() + (15 * 60 * 1000), // 15 minutes
+            token: token,
+            ip: req.ip || req.connection.remoteAddress,
+            userAgent: req.headers['user-agent'],
+            createdAt: new Date().toISOString()
+        });
+        
+        // Set secure session cookie
+        res.cookie('reset_session', resetSessionId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 15 * 60 * 1000, // 15 minutes
+            path: '/'
+        });
+        
+        // Redirect to the main reset password page
+        return res.redirect('/auth/reset-password');
+        
+    } catch (error) {
+        console.error('JWT token validation error:', error);
+        return res.status(400).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Invalid Reset Link</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                    .container { max-width: 400px; margin: 0 auto; }
+                    .error { color: #e74c3c; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1 class="error">Invalid Reset Link</h1>
+                    <p>The password reset link is invalid or has expired.</p>
+                    <p>Please request a new password reset from the Trontiq extension.</p>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+});
+
 // Catch-all route for password reset (handles any URL format Supabase might use)
 app.get('/auth/*', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('Catch-all auth route hit:', req.path);
