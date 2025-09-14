@@ -5880,7 +5880,7 @@ app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
     }
 });
 
-// Handle JWT token in URL path (newer Supabase format)
+// Handle JWT token in URL path (newer Supabase format) - MUST be before catch-all route
 app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('JWT token route hit:', req.params.token);
     
