@@ -6003,7 +6003,7 @@ app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, r
     }
 });
 
-// Handle root path with hash fragments (newer Supabase format)
+// Handle root path with hash fragments (newer Supabase format) - SECURE
 app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
     console.log('Root path hit with query params:', req.query);
     
@@ -6013,7 +6013,7 @@ app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
         return res.redirect('/auth/reset-password');
     }
     
-    // Default response for root path
+    // Default response for root path - SECURE TOKEN PROCESSING
     return res.status(200).send(`
         <!DOCTYPE html>
         <html>
@@ -6028,9 +6028,9 @@ app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
         <body>
             <div class="container">
                 <h1 class="loading">Processing Password Reset...</h1>
-                <p>Please wait while we process your password reset request.</p>
+                <p>Please wait while we process your password reset request securely.</p>
                 <script>
-                    // Extract tokens from hash fragment
+                    // SECURITY: Extract tokens from hash fragment and process server-side
                     const hash = window.location.hash.substring(1);
                     const params = new URLSearchParams(hash);
                     
@@ -6039,11 +6039,32 @@ app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
                     const type = params.get('type');
                     
                     if (accessToken && type === 'recovery') {
-                        // Redirect to password reset page with tokens as query params
-                        const redirectUrl = '/auth/reset-password?access_token=' + encodeURIComponent(accessToken) + 
-                                          '&refresh_token=' + encodeURIComponent(refreshToken) + 
-                                          '&type=' + encodeURIComponent(type);
-                        window.location.href = redirectUrl;
+                        // SECURITY: Send tokens to server via POST to avoid URL exposure
+                        fetch('/api/process-reset-token', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                access_token: accessToken,
+                                refresh_token: refreshToken,
+                                type: type
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                // SECURITY: Redirect to clean URL without tokens
+                                window.location.href = '/auth/reset-password';
+                            } else {
+                                // Error handling
+                                document.body.innerHTML = '<div class="container"><h1 style="color: #e74c3c;">Invalid Reset Link</h1><p>The password reset link is invalid or has expired.</p><p>Please request a new password reset from the Trontiq extension.</p></div>';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error processing reset token:', error);
+                            document.body.innerHTML = '<div class="container"><h1 style="color: #e74c3c;">Error Processing Reset</h1><p>There was an error processing your password reset request.</p><p>Please try again or contact support.</p></div>';
+                        });
                     } else {
                         // No valid tokens found
                         document.body.innerHTML = '<div class="container"><h1 style="color: #e74c3c;">Invalid Reset Link</h1><p>The password reset link is invalid or has expired.</p><p>Please request a new password reset from the Trontiq extension.</p></div>';
@@ -6053,6 +6074,94 @@ app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
         </body>
         </html>
     `);
+});
+
+// SECURE API endpoint to process reset tokens without exposing them in URL
+app.post('/api/process-reset-token', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    const startTime = Date.now();
+    const clientIP = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    
+    try {
+        const { access_token, refresh_token, type } = req.body;
+        
+        // SECURITY: Validate input
+        if (!access_token || !type || type !== 'recovery') {
+            console.log('SECURITY_EVENT: Invalid reset token processing attempt', {
+                ip: clientIP,
+                userAgent: userAgent,
+                timestamp: new Date().toISOString()
+            });
+            return res.status(400).json({ success: false, error: 'Invalid token data' });
+        }
+        
+        // SECURITY: Validate token with Supabase
+        const { data: { user }, error } = await supabase.auth.getUser(access_token);
+        
+        if (error || !user) {
+            console.log('SECURITY_EVENT: Invalid reset token validation failed', {
+                ip: clientIP,
+                userAgent: userAgent,
+                error: error?.message,
+                timestamp: new Date().toISOString()
+            });
+            return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+        }
+        
+        // SECURITY: Create secure session for password reset
+        const resetSessionId = crypto.randomUUID();
+        if (!global.resetSessions) {
+            global.resetSessions = new Map();
+        }
+        
+        // Store session with comprehensive data
+        global.resetSessions.set(resetSessionId, {
+            userId: user.id,
+            email: user.email,
+            expires: Date.now() + (15 * 60 * 1000), // 15 minutes
+            access_token: access_token,
+            refresh_token: refresh_token,
+            ip: clientIP,
+            userAgent: userAgent,
+            createdAt: new Date().toISOString()
+        });
+        
+        // SECURITY: Set secure session cookie
+        res.cookie('reset_session', resetSessionId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 15 * 60 * 1000, // 15 minutes
+            path: '/'
+        });
+        
+        // SECURITY: Log successful token processing
+        console.log('SECURITY_EVENT: Reset token processed successfully', {
+            userId: user.id,
+            email: user.email,
+            ip: clientIP,
+            userAgent: userAgent,
+            processingTime: Date.now() - startTime,
+            timestamp: new Date().toISOString()
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Token processed successfully' 
+        });
+        
+    } catch (error) {
+        console.error('SECURITY_EVENT: Error processing reset token', {
+            ip: clientIP,
+            userAgent: userAgent,
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error' 
+        });
+    }
 });
 
 // Catch-all route for password reset (handles any URL format Supabase might use)
