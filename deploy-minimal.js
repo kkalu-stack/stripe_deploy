@@ -465,13 +465,10 @@ app.get('/auth/confirm', async (req, res) => {
                 });
                 
                 if (error) {
-                    console.error('Supabase verification error:', error);
                     throw error;
                 }
                 
-                console.log('Email verified successfully:', data);
             } catch (verificationError) {
-                console.error('Failed to verify email with Supabase:', verificationError);
                 // Still show success page to user, but log the error
             }
             
@@ -631,7 +628,6 @@ app.get('/auth/confirm', async (req, res) => {
             `);
         }
     } catch (error) {
-        console.error('Email verification error:', error);
         res.status(500).send(`
             <!DOCTYPE html>
             <html lang="en">
@@ -723,13 +719,10 @@ app.get('/auth/verify-complete', async (req, res) => {
                 });
                 
                 if (error) {
-                    console.error('Supabase verification error:', error);
                     throw error;
                 }
                 
-                console.log('Email verified successfully:', data);
             } catch (verificationError) {
-                console.error('Failed to verify email with Supabase:', verificationError);
                 // Still show success page to user, but log the error
             }
             
@@ -872,7 +865,6 @@ app.get('/auth/verify-complete', async (req, res) => {
             `);
         }
     } catch (error) {
-        console.error('Verification endpoint error:', error);
         res.status(500).send(`
             <!DOCTYPE html>
             <html lang="en">
@@ -2939,10 +2931,7 @@ app.post('/api/account/clear', async (req, res) => {
 app.post('/api/delete-account', async (req, res) => {
     try {
         const { userId } = req.body;
-        console.log('Delete account request received for user:', userId);
-        
         if (!userId) {
-            console.log('Error: User ID is required');
             return res.status(400).json({ error: 'User ID is required' });
         }
         
@@ -2988,7 +2977,6 @@ app.post('/api/delete-account', async (req, res) => {
         
         // 3. Delete user from Supabase auth
         try {
-            console.log('Deleting user from Supabase auth:', userId);
             const deleteResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
                 method: 'DELETE',
                 headers: {
@@ -2999,13 +2987,10 @@ app.post('/api/delete-account', async (req, res) => {
             });
             
             
-            console.log('Supabase delete response status:', deleteResponse.status);
             if (!deleteResponse.ok) {
                 const errorText = await deleteResponse.text();
-                console.log('Supabase delete error response:', errorText);
                 throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText} - ${errorText}`);
             }
-            console.log('User successfully deleted from Supabase auth');
             
         } catch (authError) {
             // Error: Error deleting user from auth:', authError);
@@ -3065,9 +3050,6 @@ app.get('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
         const user = await userResponse.json();
         const resumeText = user.user_metadata?.resume_text || '';
         const savedDate = user.user_metadata?.resume_saved_date || null;
-        
-        console.log('Resume data check - resume_text length:', resumeText.length);
-        console.log('Resume data check - saved_date:', savedDate);
         
         res.json({
             success: true,
@@ -3160,8 +3142,6 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
         }
         
         // Clear user metadata (resume, profile, preferences) but keep account
-        console.log('Clearing user metadata for user:', session.userId);
-        
         const clearMetadata = {
             user_metadata: {
                 // Keep only essential account data, clear user content
@@ -3177,8 +3157,6 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
             }
         };
         
-        console.log('Sending clear metadata:', JSON.stringify(clearMetadata, null, 2));
-        
         const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
             method: 'PUT',
             headers: {
@@ -3188,8 +3166,6 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
             },
             body: JSON.stringify(clearMetadata)
         });
-        
-        console.log('Clear user metadata response status:', updateResponse.status);
         
         if (!updateResponse.ok) {
             return res.status(500).json({ success: false, error: 'Failed to clear user data' });
@@ -3202,7 +3178,6 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
             });
         } catch (profileError) {
             // Profile table might not exist or user might not have profile data
-            console.log('No profile data to clear or error clearing profile:', profileError.message);
         }
         
         res.json({
@@ -3211,7 +3186,6 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
         });
         
     } catch (error) {
-        console.error('Clear user data error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -5349,22 +5323,18 @@ setInterval(async () => {
 
 // Test route to verify server is working
 app.get('/test-password-reset', (req, res) => {
-    console.log('TEST ROUTE HIT: /test-password-reset');
     res.send('Password reset test route is working!');
 });
 
 // Simple test route without CORS
 app.get('/simple-test', (req, res) => {
-    console.log('SIMPLE TEST ROUTE HIT: /simple-test');
     res.send('Simple test route is working!');
 });
 
 // Test route for password reset debugging
 app.get('/test-reset', async (req, res) => {
-    console.log('TEST RESET ROUTE HIT');
     const { token_hash, type } = req.query;
     
-    console.log('Test reset params:', { token_hash, type });
     
     if (!token_hash || type !== 'recovery') {
         return res.json({ error: 'Missing or invalid parameters' });
@@ -5395,23 +5365,14 @@ app.get('/test-reset', async (req, res) => {
 
 // SECURE Password reset page - Fortune 500 level security
 app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    console.log('PASSWORD RESET ROUTE HIT: /auth/reset-password');
     const { token_hash, type, access_token, refresh_token } = req.query;
     const resetSessionId = req.cookies.reset_session;
     
-    console.log('Password reset page accessed:', { 
-        token_hash: !!token_hash, 
-        type, 
-        access_token: !!access_token,
-        refresh_token: !!refresh_token,
-        reset_session: !!resetSessionId
-    });
     
     // SECURITY: Check for existing session first (from secure token processing)
     if (resetSessionId && global.resetSessions) {
         const resetSession = global.resetSessions.get(resetSessionId);
         if (resetSession && Date.now() <= resetSession.expires) {
-            console.log('Valid reset session found for user:', resetSession.email);
             
             // SECURITY: Send secure password reset form with NO tokens exposed
             return res.send(`
@@ -5744,7 +5705,6 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
             if (resetSession) {
                 global.resetSessions.delete(resetSessionId);
             }
-            console.log('Reset session expired or invalid');
         }
     }
     
@@ -5823,7 +5783,6 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
             `);
         }
 
-        console.log('Token validated successfully for user:', userData.email);
 
         // SECURITY: Create secure temporary session for password reset
         const resetSessionId = crypto.randomUUID();
@@ -6079,7 +6038,6 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
                                 resetBtn.textContent = 'Reset Password';
                             }
                         } catch (error) {
-                            console.error('Password reset error:', error);
                             message.innerHTML = '<div class="error">❌ Network error. Please check your connection and try again.</div>';
                             resetBtn.disabled = false;
                             resetBtn.textContent = 'Reset Password';
@@ -6091,15 +6049,8 @@ app.get('/auth/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
         `);
 
     } catch (validationError) {
-        console.error('Token validation error:', validationError);
         
         // Log security event for monitoring
-        console.log('SECURITY_EVENT: Password reset validation failed', {
-            error: validationError.message,
-            ip: req.ip || req.connection.remoteAddress,
-            userAgent: req.headers['user-agent'],
-            timestamp: new Date().toISOString()
-        });
         
         return res.status(400).send(`
             <!DOCTYPE html>
@@ -6140,11 +6091,6 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
         
         // ENTERPRISE: Comprehensive input validation
         if (!resetSessionId) {
-            console.log('SECURITY_EVENT: Password reset attempt without session', {
-                ip: clientIP,
-                userAgent: userAgent,
-                timestamp: new Date().toISOString()
-            });
             return res.status(401).json({ error: 'No reset session found' });
         }
         
@@ -6157,12 +6103,6 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
             if (resetSession) {
                 global.resetSessions.delete(resetSessionId);
             }
-            console.log('SECURITY_EVENT: Password reset attempt with expired session', {
-                ip: clientIP,
-                userAgent: userAgent,
-                sessionId: resetSessionId,
-                timestamp: new Date().toISOString()
-            });
             return res.status(401).json({ error: 'Reset session expired' });
         }
         
@@ -6206,12 +6146,6 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
         }
         
         if (rateLimitData.count >= 5) { // Max 5 password resets per hour per IP
-            console.log('SECURITY_EVENT: Password reset rate limit exceeded', {
-                ip: clientIP,
-                userAgent: userAgent,
-                count: rateLimitData.count,
-                timestamp: new Date().toISOString()
-            });
             return res.status(429).json({ error: 'Too many password reset attempts. Please try again later.' });
         }
         
@@ -6234,24 +6168,10 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
         
         if (!updateResponse.ok) {
             const errorData = await updateResponse.json();
-            console.error('ENTERPRISE: Supabase password update failed', {
-                userId: resetSession.userId,
-                error: errorData,
-                ip: clientIP,
-                timestamp: new Date().toISOString()
-            });
             return res.status(400).json({ error: errorData.message || 'Failed to update password' });
         }
         
         // ENTERPRISE: Log successful password reset
-        console.log('SECURITY_EVENT: Password reset successful', {
-            userId: resetSession.userId,
-            email: resetSession.email,
-            ip: clientIP,
-            userAgent: userAgent,
-            processingTime: Date.now() - startTime,
-            timestamp: new Date().toISOString()
-        });
         
         // ENTERPRISE: Clean up reset session and invalidate all user sessions
         global.resetSessions.delete(resetSessionId);
@@ -6273,16 +6193,8 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
         });
         
     } catch (error) {
-        console.error('ENTERPRISE: Password reset error:', error);
         
         // ENTERPRISE: Log security event for monitoring
-        console.log('SECURITY_EVENT: Password reset system error', {
-            error: error.message,
-            ip: clientIP,
-            userAgent: userAgent,
-            processingTime: Date.now() - startTime,
-            timestamp: new Date().toISOString()
-        });
         
         res.status(500).json({ error: 'Internal server error. Please try again later.' });
     }
@@ -6292,7 +6204,6 @@ app.post('/api/reset-password', cors(SECURITY_CONFIG.cors), async (req, res) => 
 app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
     const { token_hash, type } = req.query;
     
-    console.log('Auth callback received:', { token_hash, type });
     
     if (token_hash && type === 'recovery') {
         // Redirect to our password reset page
@@ -6305,7 +6216,6 @@ app.get('/auth/callback', cors(SECURITY_CONFIG.cors), (req, res) => {
 
 // Handle JWT token in URL path (newer Supabase format) - MUST be before catch-all route
 app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    console.log('JWT token route hit:', req.params.token);
     
     const token = req.params.token;
     
@@ -6337,7 +6247,6 @@ app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, r
         
         // Decode the JWT payload
         const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-        console.log('JWT payload:', payload);
         
         // Check if token is expired
         if (payload.exp && Date.now() / 1000 > payload.exp) {
@@ -6370,7 +6279,6 @@ app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, r
             email_verified: payload.user_metadata?.email_verified || false
         };
         
-        console.log('Token validated successfully for user:', userData.email);
         
         // Create secure temporary session for password reset
         const resetSessionId = crypto.randomUUID();
@@ -6402,7 +6310,6 @@ app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, r
         return res.redirect('/auth/reset-password');
         
     } catch (error) {
-        console.error('JWT token validation error:', error);
         return res.status(400).send(`
             <!DOCTYPE html>
             <html>
@@ -6428,7 +6335,6 @@ app.get('/auth/reset-password/:token', cors(SECURITY_CONFIG.cors), async (req, r
 
 // Handle root path with hash fragments (newer Supabase format) - SECURE
 app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    console.log('Root path hit with query params:', req.query);
     
     // Check if this is a password reset callback with hash fragments
     if (req.query.type === 'recovery' || req.query.access_token) {
@@ -6485,7 +6391,6 @@ app.get('/', cors(SECURITY_CONFIG.cors), async (req, res) => {
                             }
                         })
                         .catch(error => {
-                            console.error('Error processing reset token:', error);
                             document.body.innerHTML = '<div class="container"><h1 style="color: #e74c3c;">Error Processing Reset</h1><p>There was an error processing your password reset request.</p><p>Please try again or contact support.</p></div>';
                         });
                     } else {
@@ -6510,11 +6415,6 @@ app.post('/api/process-reset-token', cors(SECURITY_CONFIG.cors), async (req, res
         
         // SECURITY: Validate input
         if (!access_token || !type || type !== 'recovery') {
-            console.log('SECURITY_EVENT: Invalid reset token processing attempt', {
-                ip: clientIP,
-                userAgent: userAgent,
-                timestamp: new Date().toISOString()
-            });
             return res.status(400).json({ success: false, error: 'Invalid token data' });
         }
         
@@ -6522,12 +6422,6 @@ app.post('/api/process-reset-token', cors(SECURITY_CONFIG.cors), async (req, res
         const { data: { user }, error } = await supabase.auth.getUser(access_token);
         
         if (error || !user) {
-            console.log('SECURITY_EVENT: Invalid reset token validation failed', {
-                ip: clientIP,
-                userAgent: userAgent,
-                error: error?.message,
-                timestamp: new Date().toISOString()
-            });
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
         
@@ -6559,14 +6453,6 @@ app.post('/api/process-reset-token', cors(SECURITY_CONFIG.cors), async (req, res
         });
         
         // SECURITY: Log successful token processing
-        console.log('SECURITY_EVENT: Reset token processed successfully', {
-            userId: user.id,
-            email: user.email,
-            ip: clientIP,
-            userAgent: userAgent,
-            processingTime: Date.now() - startTime,
-            timestamp: new Date().toISOString()
-        });
         
         res.json({ 
             success: true, 
@@ -6574,12 +6460,6 @@ app.post('/api/process-reset-token', cors(SECURITY_CONFIG.cors), async (req, res
         });
         
     } catch (error) {
-        console.error('SECURITY_EVENT: Error processing reset token', {
-            ip: clientIP,
-            userAgent: userAgent,
-            error: error.message,
-            timestamp: new Date().toISOString()
-        });
         res.status(500).json({ 
             success: false, 
             error: 'Internal server error' 
@@ -6589,8 +6469,6 @@ app.post('/api/process-reset-token', cors(SECURITY_CONFIG.cors), async (req, res
 
 // Catch-all route for password reset (handles any URL format Supabase might use)
 app.get('/auth/*', cors(SECURITY_CONFIG.cors), async (req, res) => {
-    console.log('Catch-all auth route hit:', req.path);
-    console.log('Query params:', req.query);
     
     // If it looks like a password reset request, redirect to the main reset page
     if (req.path.includes('reset') || req.query.type === 'recovery' || req.query.token_hash) {
@@ -6630,7 +6508,6 @@ app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession
         
         if (!userResponse.ok) {
             const errorData = await userResponse.json();
-            console.error('Supabase password update error:', errorData);
             return res.status(400).json({ error: errorData.message || 'Failed to update password' });
         }
         
@@ -6652,7 +6529,6 @@ app.post('/api/change-password', cors(SECURITY_CONFIG.cors), authenticateSession
         });
         
     } catch (error) {
-        console.error('Password change error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -6672,7 +6548,6 @@ setInterval(() => {
 // 404 handler - must be last
 
 app.use('*', (req, res) => {
-    console.log('404 - Endpoint not found:', req.method, req.path, req.query);
     res.status(404).json({ error: 'Endpoint not found' });
 });
 
