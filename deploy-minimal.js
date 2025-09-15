@@ -2939,8 +2939,10 @@ app.post('/api/account/clear', async (req, res) => {
 app.post('/api/delete-account', async (req, res) => {
     try {
         const { userId } = req.body;
+        console.log('Delete account request received for user:', userId);
         
         if (!userId) {
+            console.log('Error: User ID is required');
             return res.status(400).json({ error: 'User ID is required' });
         }
         
@@ -2986,7 +2988,7 @@ app.post('/api/delete-account', async (req, res) => {
         
         // 3. Delete user from Supabase auth
         try {
-            
+            console.log('Deleting user from Supabase auth:', userId);
             const deleteResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
                 method: 'DELETE',
                 headers: {
@@ -2997,11 +2999,13 @@ app.post('/api/delete-account', async (req, res) => {
             });
             
             
+            console.log('Supabase delete response status:', deleteResponse.status);
             if (!deleteResponse.ok) {
                 const errorText = await deleteResponse.text();
-                // Error: Supabase delete error response:', errorText);
+                console.log('Supabase delete error response:', errorText);
                 throw new Error(`Supabase API error: ${deleteResponse.status} ${deleteResponse.statusText} - ${errorText}`);
             }
+            console.log('User successfully deleted from Supabase auth');
             
         } catch (authError) {
             // Error: Error deleting user from auth:', authError);
