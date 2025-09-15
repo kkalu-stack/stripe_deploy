@@ -3062,6 +3062,9 @@ app.get('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
         const resumeText = user.user_metadata?.resume_text || '';
         const savedDate = user.user_metadata?.resume_saved_date || null;
         
+        console.log('Resume data check - resume_text length:', resumeText.length);
+        console.log('Resume data check - saved_date:', savedDate);
+        
         res.json({
             success: true,
             data: {
@@ -3153,6 +3156,7 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
         }
         
         // Clear user metadata (resume, profile, preferences) but keep account
+        console.log('Clearing user metadata for user:', session.userId);
         const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
             method: 'PUT',
             headers: {
@@ -3167,6 +3171,8 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
                 }
             })
         });
+        
+        console.log('Clear user metadata response status:', updateResponse.status);
         
         if (!updateResponse.ok) {
             return res.status(500).json({ success: false, error: 'Failed to clear user data' });
