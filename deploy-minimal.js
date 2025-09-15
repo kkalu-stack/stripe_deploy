@@ -3139,6 +3139,63 @@ app.post('/api/resume', cors(SECURITY_CONFIG.cors), async (req, res) => {
     }
 });
 
+// Clear user data endpoint (clears resume, profile, preferences but keeps account)
+app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const sessionId = req.cookies.sid;
+        if (!sessionId) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'SESSION_EXPIRED' });
+        }
+        
+        // Clear user metadata (resume, profile, preferences) but keep account
+        const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
+            method: 'PUT',
+            headers: {
+                'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_metadata: {
+                    // Keep only essential account data, clear user content
+                    privacy_version: 'v1'
+                }
+            })
+        });
+        
+        if (!updateResponse.ok) {
+            return res.status(500).json({ success: false, error: 'Failed to clear user data' });
+        }
+        
+        // Also clear user profile data from user_profiles table if it exists
+        try {
+            await supabaseRequest(`user_profiles?user_id=eq.${session.userId}`, {
+                method: 'DELETE'
+            });
+        } catch (profileError) {
+            // Profile table might not exist or user might not have profile data
+            console.log('No profile data to clear or error clearing profile:', profileError.message);
+        }
+        
+        res.json({
+            success: true,
+            message: 'User data cleared successfully'
+        });
+        
+    } catch (error) {
+        console.error('Clear user data error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Helper function to check user subscription status
 async function checkUserSubscriptionStatus(userId) {
     try {
