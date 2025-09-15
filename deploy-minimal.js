@@ -3157,6 +3157,24 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
         
         // Clear user metadata (resume, profile, preferences) but keep account
         console.log('Clearing user metadata for user:', session.userId);
+        
+        const clearMetadata = {
+            user_metadata: {
+                // Keep only essential account data, clear user content
+                privacy_version: 'v1',
+                // Explicitly clear resume data
+                resume_text: null,
+                resume_saved_date: null,
+                // Clear any other user content fields
+                display_name: null,
+                education_level: null,
+                preferred_language: null,
+                preferred_tone: null
+            }
+        };
+        
+        console.log('Sending clear metadata:', JSON.stringify(clearMetadata, null, 2));
+        
         const updateResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${session.userId}`, {
             method: 'PUT',
             headers: {
@@ -3164,12 +3182,7 @@ app.post('/api/clear-user-data', cors(SECURITY_CONFIG.cors), async (req, res) =>
                 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                user_metadata: {
-                    // Keep only essential account data, clear user content
-                    privacy_version: 'v1'
-                }
-            })
+            body: JSON.stringify(clearMetadata)
         });
         
         console.log('Clear user metadata response status:', updateResponse.status);
