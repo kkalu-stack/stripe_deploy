@@ -331,7 +331,9 @@ app.use(cors(SECURITY_CONFIG.cors));
 // Additional CORS headers for preflight requests
 app.options('*', cors(SECURITY_CONFIG.cors));
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Webhook handler for Stripe events (MUST come before JSON parsing middleware)
+/*
 app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -383,6 +385,7 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
 
     res.json({ received: true });
 });
+*/
 
 // JSON parsing middleware (MUST come after webhook handler)
 app.use(express.json({ limit: '10mb' }));
@@ -1128,7 +1131,9 @@ app.get('/api/test-supabase', async (req, res) => {
     }
 });
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Test webhook secret
+/*
 app.get('/api/test-webhook-secret', (req, res) => {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     res.json({
@@ -1139,8 +1144,10 @@ app.get('/api/test-webhook-secret', (req, res) => {
         stripeMode: process.env.STRIPE_SECRET_KEY ? (process.env.STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' : 'live') : 'unknown'
     });
 });
+*/
 
 // Test webhook processing manually
+/*
 app.post('/api/test-webhook-processing', async (req, res) => {
     try {
         const { email } = req.body;
@@ -1182,6 +1189,7 @@ app.post('/api/test-webhook-processing', async (req, res) => {
         });
     }
 });
+*/
 
 // Test subscription creation manually
 app.post('/api/test-create-subscription', async (req, res) => {
