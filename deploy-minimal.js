@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
 const cookieParser = require('cookie-parser');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Redis } = require('@upstash/redis');
 
 // Supabase configuration for direct HTTP requests
@@ -318,7 +319,7 @@ const SECURITY_CONFIG = {
         'X-Frame-Options': 'DENY',
         'X-XSS-Protection': '1; mode=block',
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self';"
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.stripe.com;"
     }
 };
 
@@ -330,6 +331,58 @@ app.use(cors(SECURITY_CONFIG.cors));
 // Additional CORS headers for preflight requests
 app.options('*', cors(SECURITY_CONFIG.cors));
 
+// Webhook handler for Stripe events (MUST come before JSON parsing middleware)
+app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+
+    let event;
+
+    try {
+        event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    } catch (err) {
+        // Webhook signature verification failed
+        return res.status(400).send('Webhook signature verification failed');
+    }
+
+    // Handle the event with Supabase database operations
+    try {
+        
+        switch (event.type) {
+            case 'checkout.session.completed':
+                await handleCheckoutCompleted(event.data.object);
+                break;
+                
+            case 'customer.subscription.created':
+                await handleSubscriptionCreated(event.data.object);
+                break;
+                
+            case 'customer.subscription.updated':
+                await handleSubscriptionUpdated(event.data.object);
+                break;
+                
+            case 'customer.subscription.deleted':
+                await handleSubscriptionDeleted(event.data.object);
+                break;
+                
+            case 'invoice.payment_succeeded':
+                await handlePaymentSucceeded(event.data.object);
+                break;
+                
+            case 'invoice.payment_failed':
+                await handlePaymentFailed(event.data.object);
+                break;
+                
+            default:
+        }
+        
+    } catch (error) {
+        // Error: Error processing webhook event:', error.message);
+    }
+
+    res.json({ received: true });
+});
 
 // JSON parsing middleware (MUST come after webhook handler)
 app.use(express.json({ limit: '10mb' }));
@@ -349,7 +402,7 @@ app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'ok', 
         timestamp: new Date().toISOString(),
-        message: 'Trontiq API is running',
+        message: 'Trontiq Stripe API is running',
         environment: process.env.NODE_ENV || 'production'
     });
 });
@@ -1075,9 +1128,19 @@ app.get('/api/test-supabase', async (req, res) => {
     }
 });
 
+// Test webhook secret
+app.get('/api/test-webhook-secret', (req, res) => {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    res.json({
+        hasWebhookSecret: !!webhookSecret,
+        secretLength: webhookSecret ? webhookSecret.length : 0,
+        secretPrefix: webhookSecret ? webhookSecret.substring(0, 5) + '...' : 'none',
+        message: webhookSecret ? 'Webhook secret is configured' : 'Webhook secret is missing',
+        stripeMode: process.env.STRIPE_SECRET_KEY ? (process.env.STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' : 'live') : 'unknown'
+    });
+});
 
 // Test webhook processing manually
-/*
 app.post('/api/test-webhook-processing', async (req, res) => {
     try {
         const { email } = req.body;
@@ -1119,10 +1182,8 @@ app.post('/api/test-webhook-processing', async (req, res) => {
         });
     }
 });
-*/
 
 // Test subscription creation manually
-/*
 app.post('/api/test-create-subscription', async (req, res) => {
     try {
         const { userId, email } = req.body;
@@ -1154,7 +1215,6 @@ app.post('/api/test-create-subscription', async (req, res) => {
         });
     }
 });
-*/
 
 // Success page endpoint
 app.get('/success', (req, res) => {
@@ -1234,12 +1294,516 @@ app.get('/cancel', (req, res) => {
     `);
 });
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// Create checkout session (REQUIRES AUTHENTICATION)
+/*
+app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        // SECURITY: Validate user session before allowing checkout
+        
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({ error: 'No session cookie found' });
+        }
+
+        // Get user from session
+        
+        const session = sessions.get(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({ error: 'Invalid session' });
+        }
+
+        // Validate session hasn't expired
+        
+        if (Date.now() > session.expiresAt) {
+            sessions.delete(sessionId);
+            return res.status(401).json({ error: 'Session expired' });
+        }
+        
+
+        // Get user email from session for Stripe checkout
+        // Note: We can't query auth.users directly, so we'll use a placeholder
+        // The actual user email will be handled by Stripe's customer creation
+        let userEmail = null;
+        
+        // For now, we'll create the checkout without customer_email
+        // Stripe will prompt the user to enter their email during checkout
+        // This prevents cross-user data leakage since each user enters their own email
+
+        // Handle both JSON and form data
+        const priceId = req.body.priceId;
+
+        if (!priceId) {
+            return res.status(400).json({ error: 'Price ID is required' });
+        }
+
+        // Use hardcoded base URL
+        const baseUrl = 'https://stripe-deploy.onrender.com';
+
+        // Create Stripe checkout session for Prebuilt Checkout
+        const stripeSession = await stripe.checkout.sessions.create({
+            // SECURITY: Unique client reference to prevent cross-user data
+            client_reference_id: `user_${session.userId}_${Date.now()}`,
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price: priceId, // Your $4.99/month price ID
+                    quantity: 1,
+                },
+            ],
+            mode: 'subscription',
+            success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&user_id=${session.userId}&timestamp=${Date.now()}&subscription=active`,
+            cancel_url: `${baseUrl}/cancel?user_id=${session.userId}&timestamp=${Date.now()}`,
+            // SECURITY: Force fresh checkout to prevent cross-user data leakage
+            billing_address_collection: 'required', // Force address collection
+            // SECURITY: Force Stripe to ignore cached customer data
+            locale: 'auto', // Force locale detection
+            // Enable all the features you want
+            allow_promotion_codes: true,
+            automatic_tax: {
+                enabled: true
+            },
+            // Store user-specific metadata in Stripe session to prevent cross-user data
+            metadata: {
+                user_id: session.userId,
+                created_at: new Date().toISOString(),
+                session_id: sessionId,
+                browser_session: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                force_fresh_checkout: 'true',
+                prevent_caching: 'true'
+            }
+        });
+
+        
+        // Return the checkout URL for the frontend to handle
+        res.json({ 
+            success: true, 
+            checkoutUrl: stripeSession.url,
+            sessionId: stripeSession.id
+        });
+        
+        
+        // Note: The success page will handle immediate subscription activation
+        // while the webhook processes in the background for redundancy
+        
+    } catch (error) {
+        // Error:Error creating checkout session:', error);
+        res.status(500).json({ error: 'Failed to create checkout session' });
+    }
+});
+*/
+
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// Success page handler - immediately activate subscription
+/*
+app.get('/success', async (req, res) => {
+    try {
+        const { session_id, user_id, subscription } = req.query;
+        
+        if (subscription === 'active' && user_id) {
+            
+            // Create a temporary subscription record immediately
+            const tempSubscriptionData = {
+                user_id: user_id,
+                stripe_subscription_id: `temp_${Date.now()}`, // Temporary ID
+                stripe_customer_id: `temp_customer_${Date.now()}`,
+                status: 'active',
+                current_period_start: new Date().toISOString(),
+                current_period_end: new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString(), // 30 days from now
+                tokens_limit: -1, // Unlimited for Pro
+                tokens_used: 0,
+                updated_at: new Date().toISOString(),
+                is_temp: true // Mark as temporary
+            };
+            
+            
+            // Save to database immediately
+            const subResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'resolution=merge-duplicates'
+                },
+                body: JSON.stringify(tempSubscriptionData)
+            });
+            
+            if (subResponse.ok) {
+            } else {
+            }
+        }
+        
+        // Send success page HTML
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Payment Successful - Trontiq Pro</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f8f9fa; }
+                    .success { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    .checkmark { color: #28a745; font-size: 48px; margin-bottom: 20px; }
+                    h1 { color: #333; }
+                    p { color: #666; line-height: 1.6; }
+                    .close { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; }
+                </style>
+            </head>
+            <body>
+                <div class="success">
+                    <div class="checkmark">✅</div>
+                    <h1>Payment Successful!</h1>
+                    <p>Welcome to Trontiq Pro! Your subscription has been activated.</p>
+                    <p>You can now close this window and return to your extension.</p>
+                    <p><strong>Note:</strong> Your subscription status will update in the extension within a few minutes.</p>
+                    <button class="close" onclick="window.close()">Close Window</button>
+                </div>
+            </body>
+            </html>
+        `);
+        
+    } catch (error) {
+        // Error: [SUCCESS] Error handling success page:', error);
+        res.status(500).send('Error processing success page');
+    }
+});
+*/
+
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// Verify payment (no user data storage)
+/*
+app.post('/api/verify-payment', async (req, res) => {
+    try {
+        const { sessionId } = req.body;
 
 
+        // Retrieve the session from Stripe
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        
+        if (session.payment_status !== 'paid') {
+            return res.status(400).json({ error: 'Payment not completed' });
+        }
+
+        // Get subscription details from Stripe
+        const subscription = await stripe.subscriptions.retrieve(session.subscription);
 
 
+        res.json({ 
+            success: true, 
+            subscription: {
+                id: subscription.id,
+                status: subscription.status,
+                customer: subscription.customer,
+                current_period_start: subscription.current_period_start,
+                current_period_end: subscription.current_period_end
+            }
+        });
+    } catch (error) {
+        // Error:Error verifying payment:', error);
+        res.status(500).json({ error: 'Failed to verify payment' });
+    }
+});
+*/
+
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// Cancel subscription (session-based authentication)
+/*
+app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const { subscriptionId } = req.body;
+
+        if (!subscriptionId) {
+            return res.status(400).json({ error: 'Subscription ID is required' });
+        }
 
 
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+
+        // Verify that the user owns this subscription
+        try {
+            const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}&select=*`);
+            
+            if (!subscriptionData || subscriptionData.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'FORBIDDEN',
+                    reason: 'User does not own this subscription'
+                });
+            }
+            
+        } catch (verificationError) {
+            // Error: [CANCEL_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
+            return res.status(500).json({
+                success: false,
+                error: 'VERIFICATION_FAILED',
+                reason: 'Failed to verify subscription ownership'
+            });
+        }
+
+        // Cancel subscription directly in Stripe
+        const subscription = await stripe.subscriptions.update(subscriptionId, {
+            cancel_at_period_end: true
+        });
+
+
+        // Update Supabase to track cancellation
+        try {
+            await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}`, {
+                method: 'PATCH',
+                body: {
+                    cancelled_at: new Date().toISOString(),
+                    cancel_at_period_end: true,
+                    current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
+                }
+            });
+        } catch (supabaseError) {
+            // Error:⚠️ [CANCEL_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
+            // Don't fail the cancellation if Supabase update fails
+        }
+
+        res.json({
+            success: true,
+            subscription: {
+                id: subscription.id,
+                status: subscription.status,
+                cancel_at_period_end: subscription.cancel_at_period_end,
+                cancelled_at: new Date().toISOString(),
+                current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
+            }
+        });
+    } catch (error) {
+        // Error: [CANCEL_SUBSCRIPTION] Error canceling subscription:', error);
+        res.status(500).json({ error: 'Failed to cancel subscription' });
+    }
+});
+*/
+
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// Reactivate cancelled subscription
+/*
+app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
+    try {
+        const { subscriptionId } = req.body;
+
+        if (!subscriptionId) {
+            return res.status(400).json({ error: 'Subscription ID is required' });
+        }
+
+
+        // Get session from HttpOnly cookie
+        const sessionId = req.cookies.sid;
+        
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'No session cookie'
+            });
+        }
+        
+        // Get session from storage
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'SESSION_EXPIRED',
+                reason: 'Invalid or expired session'
+            });
+        }
+        
+
+        // Verify that the user owns this subscription
+        try {
+            const subscriptionData = await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}&select=*`);
+            
+            if (!subscriptionData || subscriptionData.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'FORBIDDEN',
+                    reason: 'User does not own this subscription'
+                });
+            }
+            
+        } catch (verificationError) {
+            // Error: [REACTIVATE_SUBSCRIPTION] Error verifying subscription ownership:', verificationError);
+            return res.status(500).json({
+                success: false,
+                error: 'VERIFICATION_FAILED',
+                reason: 'Failed to verify subscription ownership'
+            });
+        }
+
+        // Reactivate subscription in Stripe
+        const subscription = await stripe.subscriptions.update(subscriptionId, {
+            cancel_at_period_end: false
+        });
+
+
+        // Update Supabase to clear cancellation
+        try {
+            await supabaseRequest(`user_subscriptions?user_id=eq.${session.userId}&stripe_subscription_id=eq.${subscriptionId}`, {
+                method: 'PATCH',
+                body: {
+                    cancelled_at: null,
+                    cancel_at_period_end: false
+                }
+            });
+        } catch (supabaseError) {
+            // Error:⚠️ [REACTIVATE_SUBSCRIPTION] Failed to update Supabase:', supabaseError);
+            // Don't fail the reactivation if Supabase update fails
+        }
+
+        res.json({
+            success: true,
+            subscription: {
+                id: subscription.id,
+                status: subscription.status,
+                cancel_at_period_end: subscription.cancel_at_period_end
+            }
+        });
+    } catch (error) {
+        // Error: [REACTIVATE_SUBSCRIPTION] Error reactivating subscription:', error);
+        res.status(500).json({ error: 'Failed to reactivate subscription' });
+    }
+});
+*/
+
+// Get subscription status from Supabase (preferred method)
+app.get('/api/subscription-status/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // First, test if we can connect to Supabase at all
+        try {
+            const testData = await supabaseRequest('user_subscriptions?limit=1');
+        } catch (connectionError) {
+            // Error: Supabase connection failed:', connectionError);
+            return res.status(500).json({ 
+                error: 'Supabase connection failed',
+                details: connectionError.message
+            });
+        }
+        
+        // Get subscription from Supabase
+        try {
+            const data = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&select=*`);
+            
+            if (data && data.length > 0) {
+                const subscription = data[0];
+                
+                // Determine subscription status with cancellation logic
+                let displayStatus = subscription.status;
+                let isCancelled = false;
+                let canReactivate = false;
+                
+                // Check if subscription is cancelled
+                if (subscription.cancelled_at && subscription.cancel_at_period_end) {
+                    const cancelledAt = new Date(subscription.cancelled_at);
+                    const currentPeriodEnd = new Date(subscription.current_period_end);
+                    const now = new Date();
+                    
+                    if (now < currentPeriodEnd) {
+                        // Still within paid period - show as "cancelled" but with access
+                        displayStatus = 'cancelled_with_access';
+                        isCancelled = true;
+                        canReactivate = true;
+                    } else {
+                        // Past billing period - show as "cancelled"
+                        displayStatus = 'cancelled';
+                        isCancelled = true;
+                        canReactivate = true;
+                    }
+                }
+                
+                res.json({
+                    status: displayStatus,
+                    isCancelled: isCancelled,
+                    canReactivate: canReactivate,
+                    cancelled_at: subscription.cancelled_at,
+                    cancel_at_period_end: subscription.cancel_at_period_end,
+                    requests_used_this_month: subscription.requests_used_this_month || 0,
+                    monthly_request_limit: subscription.monthly_request_limit || 75,
+                    is_unlimited: subscription.is_unlimited || false,
+                    current_period_end: subscription.current_period_end,
+                    stripe_subscription_id: subscription.stripe_subscription_id
+                });
+            } else {
+                // Don't try to create subscription record - just return free tier status
+                // This avoids foreign key constraint issues with test users
+                res.json({
+                    status: 'free',
+                    requestsUsed: 0,
+                    monthlyLimit: 75,
+                    is_unlimited: false,
+                    current_period_end: null
+                });
+            }
+        } catch (supabaseError) {
+            // Error: Supabase query error:', supabaseError);
+            // For any query error, just return free tier status
+            res.json({
+                status: 'free',
+                requestsUsed: 0,
+                monthlyLimit: 75,
+                is_unlimited: false,
+                current_period_end: null
+            });
+        }
+    } catch (error) {
+        // Error: Error retrieving subscription from Supabase:', error);
+        // Error: Error details:', JSON.stringify(error, null, 2));
+        res.status(500).json({ 
+            error: 'Failed to retrieve subscription'
+        });
+    }
+});
+
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// Get subscription status from Stripe (fallback method)
+/*
+app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
+    try {
+        const { subscriptionId } = req.params;
+        
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        
+        res.json({
+            id: subscription.id,
+            status: subscription.status,
+            current_period_start: subscription.current_period_start,
+            current_period_end: subscription.current_period_end,
+            cancel_at_period_end: subscription.cancel_at_period_end
+        });
+    } catch (error) {
+        // Error:Error retrieving subscription from Stripe:', error);
+        res.status(500).json({ error: 'Failed to retrieve subscription' });
+    }
+});
+*/
 
 // Update token usage in Supabase
 app.post('/api/update-token-usage', async (req, res) => {
@@ -1263,7 +1827,6 @@ app.post('/api/update-token-usage', async (req, res) => {
 
 // DEPRECATED: Create subscription record for existing user (admin endpoint)
 // This endpoint is no longer used since we switched to the waitlist system
-/*
 app.post('/api/create-subscription-record', async (req, res) => {
     try {
         const { userId, status = 'free' } = req.body;
@@ -1289,7 +1852,6 @@ app.post('/api/create-subscription-record', async (req, res) => {
         res.status(500).json({ error: 'Failed to process request' });
     }
 });
-*/
 
 // Waitlist endpoints
 app.post('/api/waitlist', async (req, res) => {
@@ -1404,6 +1966,7 @@ app.get('/api/waitlist/status', async (req, res) => {
     }
 });
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Create customer portal session (for subscription management)
 /*
 app.post('/api/create-portal-session', async (req, res) => {
@@ -1413,6 +1976,7 @@ app.post('/api/create-portal-session', async (req, res) => {
         // Use hardcoded base URL
         const baseUrl = 'https://stripe-deploy.onrender.com';
         
+        const session = await stripe.billingPortal.sessions.create({
             customer: customerId,
             return_url: `${baseUrl}/account`,
         });
@@ -1789,8 +2353,6 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             canChat: true,
             upgradeRequired: false,
             upgradeUrl: '/waitlist',
-            checkoutUrls: null,
-            paymentData: null,
             // Add user personal information
             user: {
                 id: req.userId,
@@ -1880,6 +2442,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
                 monthlyLimit: monthlyLimit,
                 upgradeRequired: !isProUser && requestsUsed >= monthlyLimit,
                 upgradeUrl: '/waitlist',
+                // Add subscription information for cancellation
+                stripe_subscription_id: subscription.stripe_subscription_id,
                 // Add cancellation information
                 subscriptionStatus: displayStatus,
                 isCancelled: isCancelled,
@@ -2372,6 +2936,7 @@ app.post('/api/delete-account', async (req, res) => {
         }
         
         
+        // 1. Cancel any active Stripe subscription
         try {
             const subscriptionResponse = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&status=eq.active`, {
                 method: 'GET'
@@ -2379,8 +2944,17 @@ app.post('/api/delete-account', async (req, res) => {
             
             if (subscriptionResponse && subscriptionResponse.length > 0) {
                 const subscription = subscriptionResponse[0];
+                if (subscription.stripe_subscription_id) {
+                    
+                    // Cancel the subscription in Stripe
+                    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+                    await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
+                    
+                }
             }
         } catch (stripeError) {
+            // Error:⚠️ Error canceling Stripe subscription:', stripeError);
+            // Continue with account deletion even if Stripe cancellation fails
         }
         
         // 2. Delete user subscription record
@@ -2974,12 +3548,161 @@ app.use((error, req, res, next) => {
 });
 
 
+// Webhook handler functions for Supabase integration
 
+async function handleCheckoutCompleted(session) {
+    try {
+        
+        // Get subscription details from Stripe
+        const subscription = await stripe.subscriptions.retrieve(session.subscription);
+        
+        // Get customer details from Stripe
+        const customer = await stripe.customers.retrieve(subscription.customer);
+        
+        // Find user by email in Supabase
+        try {
+            
+            // Use the correct Supabase admin API endpoint
+            const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                // Error: Failed to fetch users from Supabase:', response.status, response.statusText);
+                return;
+            }
+            
+            const users = await response.json();
+            
+            const user = users.find(u => u.email === customer.email);
+            if (!user) {
+                return;
+            }
+            
+            
+            // Update or create subscription record
+            const subscriptionData = {
+                user_id: user.id,
+                stripe_subscription_id: subscription.id,
+                stripe_customer_id: subscription.customer,
+                status: subscription.status,
+                current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+                current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+                tokens_limit: -1, // Unlimited for Pro
+                tokens_used: 0, // Reset token usage
+                updated_at: new Date().toISOString()
+            };
+            
+            
+            const subResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_subscriptions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'apikey': SUPABASE_SERVICE_ROLE_KEY,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'resolution=merge-duplicates'
+                },
+                body: JSON.stringify(subscriptionData)
+            });
+            
+            if (!subResponse.ok) {
+                // Error: Failed to save subscription:', subResponse.status, subResponse.statusText);
+                const errorText = await subResponse.text();
+                // Error: Error details:', errorText);
+                return;
+            }
+            
+            const savedSubscription = await subResponse.json();
+            
+            
+        } catch (supabaseError) {
+            // Error: Error saving subscription to Supabase:', supabaseError);
+        }
+        
+    } catch (error) {
+        // Error: Error handling checkout completed:', error);
+    }
+}
 
+async function handleSubscriptionCreated(subscription) {
+    try {
+        
+        // DEPRECATED: Subscription creation no longer handled - using waitlist system
+        // Subscription created event received but ignored - using waitlist system instead
+        
+        // Get customer details from Stripe for logging
+        const customer = await stripe.customers.retrieve(subscription.customer);
+        // Customer subscription created but not processed (waitlist system active)
+        
+    } catch (error) {
+        // Error handling subscription created
+    }
+}
 
+async function handleSubscriptionUpdated(subscription) {
+    try {
+        // DEPRECATED: Subscription updates no longer handled - using waitlist system
+        // Subscription updated event received but ignored - using waitlist system instead
+        // Subscription updated but not processed (waitlist system active)
+        
+    } catch (error) {
+        // Error handling subscription updated
+    }
+}
 
+async function handleSubscriptionDeleted(subscription) {
+    try {
+        // DEPRECATED: Subscription deletions no longer handled - using waitlist system
+        // Subscription deleted event received but ignored - using waitlist system instead
+        // Subscription deleted but not processed (waitlist system active)
+        
+    } catch (error) {
+        // Error handling subscription deleted
+    }
+}
 
+async function handlePaymentSucceeded(invoice) {
+    try {
+        
+        // If this is a subscription invoice, update the subscription
+        if (invoice.subscription) {
+            await handleSubscriptionUpdated({
+                id: invoice.subscription,
+                status: 'active',
+                current_period_start: invoice.period_start,
+                current_period_end: invoice.period_end
+            });
+        }
+        
+    } catch (error) {
+        // Error:Error handling payment succeeded:', error);
+    }
+}
 
+async function handlePaymentFailed(invoice) {
+    try {
+        
+        // Update subscription status to past_due
+        if (invoice.subscription) {
+            await supabaseRequest(`user_subscriptions?stripe_subscription_id=eq.${invoice.subscription}`, {
+                method: 'PATCH',
+                body: {
+                    status: 'past_due',
+                    updated_at: new Date().toISOString()
+                }
+            });
+            
+        }
+        
+    } catch (error) {
+        // Error:Error updating failed payment in Supabase:', error);
+    }
+}
 
 // Job Description Detection and Storage Endpoint
 app.post('/api/detect-job-description', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, res) => {
