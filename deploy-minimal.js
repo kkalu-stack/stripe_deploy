@@ -7,7 +7,8 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
 const cookieParser = require('cookie-parser');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Redis } = require('@upstash/redis');
 
 // Supabase configuration for direct HTTP requests
@@ -319,7 +320,7 @@ const SECURITY_CONFIG = {
         'X-Frame-Options': 'DENY',
         'X-XSS-Protection': '1; mode=block',
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.stripe.com;"
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self';"
     }
 };
 
@@ -405,7 +406,7 @@ app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'ok', 
         timestamp: new Date().toISOString(),
-        message: 'Trontiq Stripe API is running',
+        message: 'Trontiq API is running',
         environment: process.env.NODE_ENV || 'production'
     });
 });
@@ -2967,8 +2968,10 @@ app.post('/api/delete-account', async (req, res) => {
                 if (subscription.stripe_subscription_id) {
                     
                     // Cancel the subscription in Stripe
-                    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-                    await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
+                    // STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+// const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+                    // STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
+                    // await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
                     
                 }
             }
