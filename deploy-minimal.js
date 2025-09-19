@@ -7,8 +7,6 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
 const cookieParser = require('cookie-parser');
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
-// const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Redis } = require('@upstash/redis');
 
 // Supabase configuration for direct HTTP requests
@@ -332,61 +330,6 @@ app.use(cors(SECURITY_CONFIG.cors));
 // Additional CORS headers for preflight requests
 app.options('*', cors(SECURITY_CONFIG.cors));
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
-// Webhook handler for Stripe events (MUST come before JSON parsing middleware)
-/*
-app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-    const sig = req.headers['stripe-signature'];
-    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-
-    let event;
-
-    try {
-        event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-    } catch (err) {
-        // Webhook signature verification failed
-        return res.status(400).send('Webhook signature verification failed');
-    }
-
-    // Handle the event with Supabase database operations
-    try {
-        
-        switch (event.type) {
-            case 'checkout.session.completed':
-                await handleCheckoutCompleted(event.data.object);
-                break;
-                
-            case 'customer.subscription.created':
-                await handleSubscriptionCreated(event.data.object);
-                break;
-                
-            case 'customer.subscription.updated':
-                await handleSubscriptionUpdated(event.data.object);
-                break;
-                
-            case 'customer.subscription.deleted':
-                await handleSubscriptionDeleted(event.data.object);
-                break;
-                
-            case 'invoice.payment_succeeded':
-                await handlePaymentSucceeded(event.data.object);
-                break;
-                
-            case 'invoice.payment_failed':
-                await handlePaymentFailed(event.data.object);
-                break;
-                
-            default:
-        }
-        
-    } catch (error) {
-        // Error: Error processing webhook event:', error.message);
-    }
-
-    res.json({ received: true });
-});
-*/
 
 // JSON parsing middleware (MUST come after webhook handler)
 app.use(express.json({ limit: '10mb' }));
@@ -1132,20 +1075,6 @@ app.get('/api/test-supabase', async (req, res) => {
     }
 });
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
-// Test webhook secret
-/*
-app.get('/api/test-webhook-secret', (req, res) => {
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    res.json({
-        hasWebhookSecret: !!webhookSecret,
-        secretLength: webhookSecret ? webhookSecret.length : 0,
-        secretPrefix: webhookSecret ? webhookSecret.substring(0, 5) + '...' : 'none',
-        message: webhookSecret ? 'Webhook secret is configured' : 'Webhook secret is missing',
-        stripeMode: process.env.STRIPE_SECRET_KEY ? (process.env.STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' : 'live') : 'unknown'
-    });
-});
-*/
 
 // Test webhook processing manually
 /*
@@ -1192,7 +1121,6 @@ app.post('/api/test-webhook-processing', async (req, res) => {
 });
 */
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Test subscription creation manually
 /*
 app.post('/api/test-create-subscription', async (req, res) => {
@@ -1306,7 +1234,6 @@ app.get('/cancel', (req, res) => {
     `);
 });
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Create checkout session (REQUIRES AUTHENTICATION)
 /*
 app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req, res) => {
@@ -1335,13 +1262,10 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         }
         
 
-        // Get user email from session for Stripe checkout
         // Note: We can't query auth.users directly, so we'll use a placeholder
-        // The actual user email will be handled by Stripe's customer creation
         let userEmail = null;
         
         // For now, we'll create the checkout without customer_email
-        // Stripe will prompt the user to enter their email during checkout
         // This prevents cross-user data leakage since each user enters their own email
 
         // Handle both JSON and form data
@@ -1354,8 +1278,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         // Use hardcoded base URL
         const baseUrl = 'https://stripe-deploy.onrender.com';
 
-        // Create Stripe checkout session for Prebuilt Checkout
-        const stripeSession = await stripe.checkout.sessions.create({
             // SECURITY: Unique client reference to prevent cross-user data
             client_reference_id: `user_${session.userId}_${Date.now()}`,
             payment_method_types: ['card'],
@@ -1370,14 +1292,12 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
             cancel_url: `${baseUrl}/cancel?user_id=${session.userId}&timestamp=${Date.now()}`,
             // SECURITY: Force fresh checkout to prevent cross-user data leakage
             billing_address_collection: 'required', // Force address collection
-            // SECURITY: Force Stripe to ignore cached customer data
             locale: 'auto', // Force locale detection
             // Enable all the features you want
             allow_promotion_codes: true,
             automatic_tax: {
                 enabled: true
             },
-            // Store user-specific metadata in Stripe session to prevent cross-user data
             metadata: {
                 user_id: session.userId,
                 created_at: new Date().toISOString(),
@@ -1392,7 +1312,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
         // Return the checkout URL for the frontend to handle
         res.json({ 
             success: true, 
-            checkoutUrl: stripeSession.url,
             sessionId: stripeSession.id
         });
         
@@ -1407,7 +1326,6 @@ app.post('/api/create-checkout-session', cors(SECURITY_CONFIG.cors), async (req,
 });
 */
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Success page handler - immediately activate subscription
 /*
 app.get('/success', async (req, res) => {
@@ -1483,7 +1401,6 @@ app.get('/success', async (req, res) => {
 });
 */
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Verify payment (no user data storage)
 /*
 app.post('/api/verify-payment', async (req, res) => {
@@ -1491,15 +1408,11 @@ app.post('/api/verify-payment', async (req, res) => {
         const { sessionId } = req.body;
 
 
-        // Retrieve the session from Stripe
-        const session = await stripe.checkout.sessions.retrieve(sessionId);
         
         if (session.payment_status !== 'paid') {
             return res.status(400).json({ error: 'Payment not completed' });
         }
 
-        // Get subscription details from Stripe
-        const subscription = await stripe.subscriptions.retrieve(session.subscription);
 
 
         res.json({ 
@@ -1519,7 +1432,6 @@ app.post('/api/verify-payment', async (req, res) => {
 });
 */
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Cancel subscription (session-based authentication)
 /*
 app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
@@ -1575,8 +1487,6 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
             });
         }
 
-        // Cancel subscription directly in Stripe
-        const subscription = await stripe.subscriptions.update(subscriptionId, {
             cancel_at_period_end: true
         });
 
@@ -1613,7 +1523,6 @@ app.post('/api/cancel-subscription', cors(SECURITY_CONFIG.cors), async (req, res
 });
 */
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Reactivate cancelled subscription
 /*
 app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req, res) => {
@@ -1669,8 +1578,6 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
             });
         }
 
-        // Reactivate subscription in Stripe
-        const subscription = await stripe.subscriptions.update(subscriptionId, {
             cancel_at_period_end: false
         });
 
@@ -1704,7 +1611,6 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
 });
 */
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Get subscription status from Supabase (preferred method)
 /*
 app.get('/api/subscription-status/:userId', async (req, res) => {
@@ -1797,14 +1703,11 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
 });
 */
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
-// Get subscription status from Stripe (fallback method)
 /*
 app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
     try {
         const { subscriptionId } = req.params;
         
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         
         res.json({
             id: subscription.id,
@@ -1814,7 +1717,6 @@ app.get('/api/subscription-status-stripe/:subscriptionId', async (req, res) => {
             cancel_at_period_end: subscription.cancel_at_period_end
         });
     } catch (error) {
-        // Error:Error retrieving subscription from Stripe:', error);
         res.status(500).json({ error: 'Failed to retrieve subscription' });
     }
 });
@@ -1840,7 +1742,6 @@ app.post('/api/update-token-usage', async (req, res) => {
     }
 });
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // DEPRECATED: Create subscription record for existing user (admin endpoint)
 // This endpoint is no longer used since we switched to the waitlist system
 /*
@@ -1984,7 +1885,6 @@ app.get('/api/waitlist/status', async (req, res) => {
     }
 });
 
-// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Create customer portal session (for subscription management)
 /*
 app.post('/api/create-portal-session', async (req, res) => {
@@ -1994,7 +1894,6 @@ app.post('/api/create-portal-session', async (req, res) => {
         // Use hardcoded base URL
         const baseUrl = 'https://stripe-deploy.onrender.com';
         
-        const session = await stripe.billingPortal.sessions.create({
             customer: customerId,
             return_url: `${baseUrl}/account`,
         });
@@ -2371,9 +2270,8 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             canChat: true,
             upgradeRequired: false,
             upgradeUrl: '/waitlist',
-            // Prevent old Stripe code errors
             checkoutUrls: null,
-            stripeData: null,
+            paymentData: null,
             // Add user personal information
             user: {
                 id: req.userId,
@@ -2957,7 +2855,6 @@ app.post('/api/delete-account', async (req, res) => {
         }
         
         
-        // 1. Cancel any active Stripe subscription
         try {
             const subscriptionResponse = await supabaseRequest(`user_subscriptions?user_id=eq.${userId}&status=eq.active`, {
                 method: 'GET'
@@ -2967,17 +2864,10 @@ app.post('/api/delete-account', async (req, res) => {
                 const subscription = subscriptionResponse[0];
                 if (subscription.stripe_subscription_id) {
                     
-                    // Cancel the subscription in Stripe
-                    // STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
-// const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-                    // STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
-                    // await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
                     
                 }
             }
         } catch (stripeError) {
-            // Error:⚠️ Error canceling Stripe subscription:', stripeError);
-            // Continue with account deletion even if Stripe cancellation fails
         }
         
         // 2. Delete user subscription record
@@ -3576,11 +3466,7 @@ app.use((error, req, res, next) => {
 async function handleCheckoutCompleted(session) {
     try {
         
-        // Get subscription details from Stripe
-        const subscription = await stripe.subscriptions.retrieve(session.subscription);
         
-        // Get customer details from Stripe
-        const customer = await stripe.customers.retrieve(subscription.customer);
         
         // Find user by email in Supabase
         try {
@@ -3658,8 +3544,6 @@ async function handleSubscriptionCreated(subscription) {
         // DEPRECATED: Subscription creation no longer handled - using waitlist system
         // Subscription created event received but ignored - using waitlist system instead
         
-        // Get customer details from Stripe for logging
-        const customer = await stripe.customers.retrieve(subscription.customer);
         // Customer subscription created but not processed (waitlist system active)
         
     } catch (error) {
