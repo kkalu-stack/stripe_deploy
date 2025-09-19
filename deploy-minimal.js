@@ -1191,7 +1191,9 @@ app.post('/api/test-webhook-processing', async (req, res) => {
 });
 */
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Test subscription creation manually
+/*
 app.post('/api/test-create-subscription', async (req, res) => {
     try {
         const { userId, email } = req.body;
@@ -1223,6 +1225,7 @@ app.post('/api/test-create-subscription', async (req, res) => {
         });
     }
 });
+*/
 
 // Success page endpoint
 app.get('/success', (req, res) => {
@@ -1700,7 +1703,9 @@ app.post('/api/reactivate-subscription', cors(SECURITY_CONFIG.cors), async (req,
 });
 */
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Get subscription status from Supabase (preferred method)
+/*
 app.get('/api/subscription-status/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -1789,6 +1794,7 @@ app.get('/api/subscription-status/:userId', async (req, res) => {
         });
     }
 });
+*/
 
 // STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // Get subscription status from Stripe (fallback method)
@@ -1833,8 +1839,10 @@ app.post('/api/update-token-usage', async (req, res) => {
     }
 });
 
+// STRIPE DISABLED FOR FREE TIER + WAITLIST RELEASE
 // DEPRECATED: Create subscription record for existing user (admin endpoint)
 // This endpoint is no longer used since we switched to the waitlist system
+/*
 app.post('/api/create-subscription-record', async (req, res) => {
     try {
         const { userId, status = 'free' } = req.body;
@@ -1860,6 +1868,7 @@ app.post('/api/create-subscription-record', async (req, res) => {
         res.status(500).json({ error: 'Failed to process request' });
     }
 });
+*/
 
 // Waitlist endpoints
 app.post('/api/waitlist', async (req, res) => {
