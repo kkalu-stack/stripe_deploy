@@ -2353,6 +2353,9 @@ app.get('/api/me', cors(SECURITY_CONFIG.cors), authenticateSession, async (req, 
             canChat: true,
             upgradeRequired: false,
             upgradeUrl: '/waitlist',
+            // Prevent old Stripe code errors
+            checkoutUrls: null,
+            stripeData: null,
             // Add user personal information
             user: {
                 id: req.userId,
